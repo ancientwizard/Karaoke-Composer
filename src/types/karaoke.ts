@@ -41,6 +41,18 @@ export interface AudioFile {
   url?: string
   duration?: number
   sampleRate?: number
+  storedData?: StoredAudioFile // For persistence
+}
+
+export interface StoredAudioFile {
+  name: string
+  size: number
+  type: string
+  lastModified: number
+  storageType: 'base64' | 'indexeddb' | 'reference'
+  data?: string // base64 data
+  originalPath?: string // for reference storage
+  indexed_id?: string // for indexeddb storage
 }
 
 export interface KaraokeProject {

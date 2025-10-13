@@ -2,24 +2,133 @@
   <div class="waveform-viewer">
     <div class="card">
       <div class="card-header d-flex justify-content-between align-items-center">
-        <h5 class="mb-0">🌊 Audio Waveform</h5>
+        <h5 class="mb-0">🌊 Audio Waveform & Controls</h5>
+        <div class="d-flex align-items-center">
+          <div class="mode-indicator me-3" v-if="isTimingMode !== undefined">
+            <span class="badge" :class="isTimingMode ? 'bg-warning' : 'bg-secondary'">
+              {{ isTimingMode ? 'Timing Mode' : 'Playback Mode' }}
+            </span>
+          </div>
+          <div class="loading-spinner me-2" v-if="isLoading">
+            <div class="spinner-border spinner-border-sm" role="status">
+              <span class="visually-hidden">Loadin  // Default to sliding window mode with 15 seconds as requested
+  viewMode.value = 'window'  
+  windowDuration.value = 15
+  autoScroll.value = true</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Integrated Timing Controls -->
+      <div class="card-body border-bottom" v-if="playbackState">
+        <div class="timing-controls-section">
+          <!-- Audio Player Controls -->
+          <div class="player-controls d-flex justify-content-center align-items-center gap-2 mb-3">
+            <button 
+              class="btn btn-outline-secondary btn-sm"
+              @click="emit('skip-backward')"
+              title="Skip backward 10s"
+            >
+              <i class="bi bi-skip-backward"></i>
+            </button>
+            
+            <button 
+              class="btn btn-primary"
+              @click="emit('play-pause')"
+              :disabled="!audioFile?.file"
+            >
+              <i :class="playbackState.isPlaying ? 'bi bi-pause-fill' : 'bi bi-play-fill'"></i>
+            </button>
+            
+            <button 
+              class="btn btn-outline-secondary btn-sm"
+              @click="emit('skip-forward')"
+              title="Skip forward 10s"
+            >
+              <i class="bi bi-skip-forward"></i>
+            </button>
+          </div>
+
+          <!-- Progress Bar -->
+          <div class="progress-container mb-2">
+            <div class="progress" style="height: 8px; cursor: pointer;" @click="seekToClick">
+              <div 
+                class="progress-bar" 
+                :style="{ width: progressPercent + '%' }"
+                role="progressbar"
+              ></div>
+            </div>
+            <div class="time-display d-flex justify-content-between mt-1">
+              <small class="text-muted">{{ formatTime(currentTime * 1000) }}</small>
+              <small class="text-muted">{{ formatTime((audioFile?.duration || 0) * 1000) }}</small>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Waveform Controls -->
+      <div class="card-body border-bottom py-2">
         <div class="waveform-controls">
+          <!-- View Mode Toggle -->
+          <div class="btn-group me-2" role="group">
+            <button 
+              class="btn btn-sm"
+              :class="viewMode === 'window' ? 'btn-primary' : 'btn-outline-primary'"
+              @click="setViewMode('window')"
+              title="Sliding window view"
+            >
+              <i class="bi bi-window"></i> Window
+            </button>
+            <button 
+              class="btn btn-sm"
+              :class="viewMode === 'full' ? 'btn-primary' : 'btn-outline-primary'"
+              @click="setViewMode('full')"
+              title="Full song view"
+            >
+              <i class="bi bi-arrows-fullscreen"></i> Full
+            </button>
+          </div>
+          
+          <!-- Zoom Controls (only for full view) -->
+          <div v-if="viewMode === 'full'" class="zoom-controls me-2">
+            <button 
+              class="btn btn-sm btn-outline-secondary me-1"
+              @click="zoomOut"
+              :disabled="zoomLevel <= 1"
+              title="Zoom out"
+            >
+              <i class="bi bi-zoom-out"></i>
+            </button>
+            <span class="zoom-level">{{ Math.round(zoomLevel * 100) }}%</span>
+            <button 
+              class="btn btn-sm btn-outline-secondary ms-1"
+              @click="zoomIn"
+              :disabled="zoomLevel >= 5"
+              title="Zoom in"
+            >
+              <i class="bi bi-zoom-in"></i>
+            </button>
+          </div>
+          
+          <!-- Window Duration Control (only for window view) -->
+          <div v-if="viewMode === 'window'" class="window-controls me-2">
+            <select class="form-select form-select-sm" v-model="windowDuration" @change="onWindowDurationChange">
+              <option :value="10">10s</option>
+              <option :value="15">15s</option>
+              <option :value="25">25s</option>
+            </select>
+          </div>
+          
+          <!-- Auto-scroll toggle -->
           <button 
-            class="btn btn-sm btn-outline-secondary me-2"
-            @click="zoomOut"
-            :disabled="zoomLevel <= 1"
-            title="Zoom out"
+            v-if="viewMode === 'window'"
+            class="btn btn-sm"
+            :class="autoScroll ? 'btn-success' : 'btn-outline-success'"
+            @click="toggleAutoScroll"
+            title="Auto-scroll with playback"
           >
-            <i class="bi bi-zoom-out"></i>
-          </button>
-          <span class="zoom-level">{{ Math.round(zoomLevel * 100) }}%</span>
-          <button 
-            class="btn btn-sm btn-outline-secondary ms-2"
-            @click="zoomIn"
-            :disabled="zoomLevel >= 5"
-            title="Zoom in"
-          >
-            <i class="bi bi-zoom-in"></i>
+            <i class="bi bi-skip-end"></i>
           </button>
         </div>
       </div>
@@ -127,10 +236,13 @@ interface Props {
   currentTime: number
   waveformData: WaveformData | null
   currentLineIndex?: number
+  playbackState?: any
+  isTimingMode?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  currentLineIndex: 0
+  currentLineIndex: 0,
+  isTimingMode: false
 })
 
 // Emits
@@ -138,20 +250,30 @@ const emit = defineEmits<{
   'seek': [time: number]
   'lyrics-position': [lineIndex: number, time: number]
   'selection': [startTime: number, endTime: number]
+  'play-pause': []
+  'skip-backward': []
+  'skip-forward': []
 }>()
 
 // Reactive state
 const waveformContainer = ref<HTMLElement>()
 const waveformCanvas = ref<HTMLCanvasElement>()
 const isLoading = ref(false)
+const generatedWaveformData = ref<WaveformData | null>(null)
 const zoomLevel = ref(1)
 const canvasWidth = ref(800)
-const canvasHeight = ref(150)
+const canvasHeight = ref(120) // Increased height for better visibility
 const selectionStart = ref<number | null>(null)
 const selectionEnd = ref<number | null>(null)
 const isDragging = ref(false)
 const dragMarkerIndex = ref(-1)
 const selectedMarkers = ref<number[]>([])
+
+// New waveform enhancement controls
+const viewMode = ref<'full' | 'window'>('window') // Default to sliding window
+const windowDuration = ref(15) // 15 seconds window (in seconds for UI)
+const windowStart = ref(0) // Start position of the window in seconds
+const autoScroll = ref(true) // Auto-scroll with playback
 
 // Computed properties
 const positionedLyrics = computed(() => {
@@ -168,7 +290,13 @@ const playbackPosition = computed(() => {
 })
 
 const timedLyricsCount = computed(() => {
-  return props.lyrics.filter(lyric => lyric.startTime !== undefined).length
+  return props.lyrics.filter((line: LyricLine) => line.startTime !== undefined).length
+})
+
+// Progress bar computed properties
+const progressPercent = computed(() => {
+  if (!props.playbackState || !props.audioFile?.duration) return 0
+  return Math.min((props.currentTime / props.audioFile.duration) * 100, 100)
 })
 
 const selectedDuration = computed(() => {
@@ -332,9 +460,61 @@ const zoomOut = () => {
   }
 }
 
+// View mode controls
+const setViewMode = (mode: 'full' | 'window') => {
+  viewMode.value = mode
+  if (mode === 'window') {
+    // Reset zoom when switching to window mode
+    zoomLevel.value = 1
+    updateWindowPosition()
+  }
+  drawWaveform()
+}
+
+const onWindowDurationChange = () => {
+  updateWindowPosition()
+  drawWaveform()
+}
+
+const toggleAutoScroll = () => {
+  autoScroll.value = !autoScroll.value
+}
+
+const updateWindowPosition = () => {
+  if (viewMode.value === 'window') {
+    if (autoScroll.value && props.currentTime > 0) {
+      // Center the window around current time when playing
+      windowStart.value = Math.max(0, props.currentTime - windowDuration.value / 2)
+    } else {
+      // When not playing or at start, show from beginning
+      windowStart.value = 0
+    }
+    console.log('Window position updated:', { 
+      windowStart: windowStart.value, 
+      windowDuration: windowDuration.value, 
+      currentTime: props.currentTime,
+      autoScroll: autoScroll.value 
+    })
+  }
+}
+
+// Timing controls methods
+const seekToClick = (event: MouseEvent) => {
+  if (!props.audioFile?.duration) return
+  
+  const progressBar = event.currentTarget as HTMLElement
+  const rect = progressBar.getBoundingClientRect()
+  const clickX = event.clientX - rect.left
+  const percentage = clickX / rect.width
+  const seekTime = percentage * props.audioFile.duration
+  
+  emit('seek', seekTime)
+}
+
 const drawWaveform = async () => {
   const canvas = waveformCanvas.value
-  if (!canvas || !props.waveformData) return
+  const waveformData = props.waveformData || generatedWaveformData.value
+  if (!canvas || !waveformData) return
   
   const ctx = canvas.getContext('2d')
   if (!ctx) return
@@ -343,19 +523,110 @@ const drawWaveform = async () => {
   ctx.clearRect(0, 0, canvas.width, canvas.height)
   
   // Draw waveform
-  const { peaks } = props.waveformData
+  const { peaks } = waveformData
   const width = canvas.width
   const height = canvas.height
-  const barWidth = width / peaks.length
   
-  ctx.fillStyle = '#007bff'
+  // Calculate visible range based on view mode
+  let visiblePeaks = peaks
+  let startIndex = 0
   
-  for (let i = 0; i < peaks.length; i += Math.ceil(peaks.length / (width * zoomLevel.value))) {
-    const barHeight = Math.abs(peaks[i]) * height * 0.8
-    const x = (i / peaks.length) * width * zoomLevel.value
-    const y = (height - barHeight) / 2
+  if (viewMode.value === 'window') {
+    // Show only the window duration worth of peaks
+    const totalDuration = waveformData.duration || props.audioFile?.duration || 1
+    const startRatio = windowStart.value / totalDuration
+    const durationRatio = windowDuration.value / totalDuration
     
-    ctx.fillRect(x, y, Math.max(1, barWidth * zoomLevel.value), barHeight)
+    startIndex = Math.floor(startRatio * peaks.length)
+    const endIndex = Math.min(Math.floor((startRatio + durationRatio) * peaks.length), peaks.length)
+    visiblePeaks = peaks.slice(startIndex, endIndex)
+    
+    // Debug logging
+    console.log('Window mode debug:', { 
+      totalDuration, 
+      windowStart: windowStart.value, 
+      windowDuration: windowDuration.value, 
+      startRatio, 
+      durationRatio,
+      peaksLength: peaks.length,
+      startIndex, 
+      endIndex, 
+      visiblePeaksLength: visiblePeaks.length,
+      visiblePeaksPreview: visiblePeaks.slice(0, 5)
+    })
+    
+    // Fallback: if no visible peaks (edge case), show first portion
+    if (visiblePeaks.length === 0) {
+      const fallbackEndIndex = Math.min(Math.floor(peaks.length * 0.2), peaks.length) // Show first 20%
+      visiblePeaks = peaks.slice(0, fallbackEndIndex)
+      console.log('Fallback applied, showing first 20% of peaks:', visiblePeaks.length)
+    }
+  }
+  
+  const barWidth = width / visiblePeaks.length
+  
+  // Enhanced visualization: top-half waves, bottom-centered, auto-height
+  ctx.fillStyle = '#3b82f6'
+  ctx.strokeStyle = '#1d4ed8'
+  
+  // Calculate step size for proper zoom level - with 8000 samples, we can afford smaller steps
+  const stepSize = viewMode.value === 'window' 
+    ? Math.max(1, Math.ceil(visiblePeaks.length / (width * 2))) // More detail for window mode
+    : Math.max(1, Math.ceil(visiblePeaks.length / (width * zoomLevel.value * 2))) // More detail for full mode too
+  
+  for (let i = 0; i < visiblePeaks.length; i += stepSize) {
+    // Only show top half of waveform (positive amplitudes only)
+    const amplitude = Math.abs(visiblePeaks[i])
+    
+    // More aggressive height scaling - multiply by a scaling factor
+    const scalingFactor = 3.0 // Increase this to make waveform taller
+    const barHeight = Math.min(amplitude * height * scalingFactor, height * 0.95) // Use up to 95% of height
+    
+    const x = viewMode.value === 'window' 
+      ? (i / visiblePeaks.length) * width
+      : (i / visiblePeaks.length) * width * zoomLevel.value
+    const y = height - barHeight // Bottom-centered: start from bottom and go up
+    
+    // Calculate bar width based on view mode
+    const actualBarWidth = viewMode.value === 'window'
+      ? Math.max(1, width / visiblePeaks.length * stepSize)
+      : Math.max(1, barWidth * zoomLevel.value)
+    
+    // Draw the bar
+    if (barHeight > 1) {
+      ctx.fillRect(x, y, actualBarWidth, barHeight)
+    }
+  }
+  
+  // Draw baseline at bottom
+  ctx.strokeStyle = '#6b7280'
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.moveTo(0, height - 1)
+  ctx.lineTo(width, height - 1)
+  ctx.stroke()
+  
+  // Draw current time indicator if provided
+  if (props.currentTime !== undefined) {
+    const totalDuration = waveformData.duration || props.audioFile?.duration
+    if (totalDuration) {
+      let timeX
+      if (viewMode.value === 'window') {
+        // In window mode, always show red bar at 50% (middle) - waveform scrolls underneath
+        timeX = width / 2
+      } else {
+        timeX = (props.currentTime / totalDuration) * width * zoomLevel.value
+      }
+      
+      if (timeX >= 0 && timeX <= width) {
+        ctx.strokeStyle = '#ef4444'
+        ctx.lineWidth = 3 // Make it slightly thicker for better visibility
+        ctx.beginPath()
+        ctx.moveTo(timeX, 0)
+        ctx.lineTo(timeX, height)
+        ctx.stroke()
+      }
+    }
   }
 }
 
@@ -370,9 +641,15 @@ const generateWaveformData = async () => {
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer)
     
     const channelData = audioBuffer.getChannelData(0)
-    const samples = 1000 // Number of samples for visualization
+    const samples = 8000 // Much higher sample count for smooth waveform
     const blockSize = Math.floor(channelData.length / samples)
     const peaks = []
+    
+    // Find the overall maximum to normalize peaks properly
+    let globalMax = 0
+    for (let i = 0; i < channelData.length; i++) {
+      globalMax = Math.max(globalMax, Math.abs(channelData[i]))
+    }
     
     for (let i = 0; i < samples; i++) {
       const start = i * blockSize
@@ -383,10 +660,23 @@ const generateWaveformData = async () => {
         max = Math.max(max, Math.abs(channelData[j]))
       }
       
-      peaks.push(max)
+      // Normalize peaks to use full height range
+      peaks.push(globalMax > 0 ? max / globalMax : 0)
     }
     
-    // Update waveform data (this would typically come from props)
+    // Store the generated waveform data
+    generatedWaveformData.value = {
+      peaks,
+      sampleRate: audioBuffer.sampleRate,
+      duration: audioBuffer.duration,
+      channels: audioBuffer.numberOfChannels
+    }
+    
+    // Initialize window position now that we have duration
+    if (viewMode.value === 'window') {
+      updateWindowPosition()
+    }
+    
     nextTick(() => {
       drawWaveform()
     })
@@ -426,10 +716,35 @@ watch(() => props.waveformData, () => {
   }
 })
 
+watch(() => generatedWaveformData.value, () => {
+  if (generatedWaveformData.value) {
+    nextTick(() => {
+      drawWaveform()
+    })
+  }
+})
+
+watch(() => props.currentTime, (newTime) => {
+  // Auto-scroll in window mode - keep red bar at 50% (middle), wave scrolls left
+  if (viewMode.value === 'window' && autoScroll.value && newTime !== undefined && props.audioFile?.duration) {
+    const halfWindow = windowDuration.value / 2
+    
+    // Always keep current time centered in the window (red bar at 50%)
+    // This makes the waveform scroll left while red bar stays in middle
+    windowStart.value = Math.max(0, Math.min(newTime - halfWindow, props.audioFile.duration - windowDuration.value))
+  }
+  
+  nextTick(() => {
+    drawWaveform()
+  })
+})
+
 // Lifecycle
 onMounted(() => {
   updateCanvasSize()
   window.addEventListener('resize', updateCanvasSize)
+  
+  // Values are already set in ref initialization - 15 seconds window mode with auto-scroll
 })
 </script>
 
