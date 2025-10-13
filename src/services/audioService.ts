@@ -93,7 +93,10 @@ export class AudioService {
       })
 
       this.playbackState.isLoaded = true
-      this.playbackState.duration = this.audio.duration * 1000 // Convert to ms
+      
+      // Robust duration detection
+      const duration = await this.detectAudioDuration(audioFile)
+      this.playbackState.duration = duration
       this.updatePlaybackState()
       
       return true
@@ -261,6 +264,55 @@ export class AudioService {
     } catch (error) {
       console.error('Failed to generate waveform data:', error)
       return null
+    }
+  }
+
+  private async detectAudioDuration(audioFile: AudioFile): Promise<number> {
+    // First check if we have a stored duration from previous detection
+    if (audioFile.duration && audioFile.duration > 0) {
+      console.log('✅ Using stored duration:', audioFile.duration / 1000, 'seconds')
+      return audioFile.duration
+    }
+
+    // Second try the simple approach - if HTML5 audio has valid duration
+    if (this.audio && isFinite(this.audio.duration) && this.audio.duration > 0) {
+      console.log('📏 Duration from HTML5 audio:', this.audio.duration, 'seconds')
+      return this.audio.duration * 1000 // Convert to ms
+    }
+
+    console.log('⏳ HTML5 duration invalid, using Web Audio API to detect duration...')
+    
+    try {
+      // Use Web Audio API to decode the entire file and get accurate duration
+      const arrayBuffer = await this.fileToArrayBuffer(audioFile)
+      
+      if (!this.audioContext) {
+        throw new Error('AudioContext not initialized')
+      }
+
+      const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer)
+      const durationMs = audioBuffer.duration * 1000
+      
+      console.log('🎵 Duration detected via Web Audio API:', audioBuffer.duration, 'seconds')
+      return durationMs
+      
+    } catch (error) {
+      console.error('❌ Failed to detect audio duration:', error)
+      
+      // Fallback: return a default duration and warn user
+      console.warn('⚠️ Using fallback duration of 3 minutes - waveform scrolling may not work correctly')
+      return 180000 // 3 minutes in ms
+    }
+  }
+
+  private async fileToArrayBuffer(audioFile: AudioFile): Promise<ArrayBuffer> {
+    if (audioFile.file) {
+      return await audioFile.file.arrayBuffer()
+    } else if (audioFile.url) {
+      const response = await fetch(audioFile.url)
+      return await response.arrayBuffer()
+    } else {
+      throw new Error('No audio file or URL available')
     }
   }
 

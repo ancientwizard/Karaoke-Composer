@@ -11,10 +11,7 @@
           </div>
           <div class="loading-spinner me-2" v-if="isLoading">
             <div class="spinner-border spinner-border-sm" role="status">
-              <span class="visually-hidden">Loadin  // Default to sliding window mode with 15 seconds as requested
-  viewMode.value = 'window'  
-  windowDuration.value = 15
-  autoScroll.value = true</span>
+              <span class="visually-hidden">Loading...</span>
             </div>
           </div>
         </div>
@@ -60,8 +57,8 @@
               ></div>
             </div>
             <div class="time-display d-flex justify-content-between mt-1">
-              <small class="text-muted">{{ formatTime(currentTime * 1000) }}</small>
-              <small class="text-muted">{{ formatTime((audioFile?.duration || 0) * 1000) }}</small>
+              <small class="text-muted">{{ formatTime(currentTime) }}</small>
+              <small class="text-muted">{{ formatTime(audioFile?.duration || 0) }}</small>
             </div>
           </div>
         </div>
@@ -158,11 +155,7 @@
               @click="seekToPosition"
             ></canvas>
 
-            <!-- Playback Position Indicator -->
-            <div 
-              class="playback-indicator"
-              :style="{ left: playbackPosition + 'px' }"
-            ></div>
+            <!-- Playback position handled by canvas drawing -->
 
             <!-- Lyrics Markers -->
             <div 
@@ -285,9 +278,7 @@ const positionedLyrics = computed(() => {
     }))
 })
 
-const playbackPosition = computed(() => {
-  return timeToPixel(props.currentTime)
-})
+// Playback position now handled by canvas drawing
 
 const timedLyricsCount = computed(() => {
   return props.lyrics.filter((line: LyricLine) => line.startTime !== undefined).length
@@ -482,18 +473,28 @@ const toggleAutoScroll = () => {
 
 const updateWindowPosition = () => {
   if (viewMode.value === 'window') {
+    const halfWindow = windowDuration.value / 2
+    
     if (autoScroll.value && props.currentTime > 0) {
-      // Center the window around current time when playing
-      windowStart.value = Math.max(0, props.currentTime - windowDuration.value / 2)
+      if (props.currentTime <= halfWindow) {
+        // Before mid-point: keep window at start
+        windowStart.value = 0
+      } else {
+        // After mid-point: center the window around current time
+        windowStart.value = Math.max(0, props.currentTime - halfWindow)
+      }
     } else {
       // When not playing or at start, show from beginning
       windowStart.value = 0
     }
+    
     console.log('Window position updated:', { 
       windowStart: windowStart.value, 
       windowDuration: windowDuration.value, 
       currentTime: props.currentTime,
-      autoScroll: autoScroll.value 
+      halfWindow,
+      autoScroll: autoScroll.value,
+      phase: props.currentTime <= halfWindow ? 'line-moves' : 'wave-scrolls'
     })
   }
 }
@@ -612,8 +613,16 @@ const drawWaveform = async () => {
     if (totalDuration) {
       let timeX
       if (viewMode.value === 'window') {
-        // In window mode, always show red bar at 50% (middle) - waveform scrolls underneath
-        timeX = width / 2
+        // Smart positioning: start from left, center only after reaching mid-screen
+        const halfWindow = windowDuration.value / 2
+        
+        if (props.currentTime <= halfWindow) {
+          // Before mid-point: show actual position from left
+          timeX = (props.currentTime / windowDuration.value) * width
+        } else {
+          // After mid-point: keep centered, scroll waveform
+          timeX = width / 2
+        }
       } else {
         timeX = (props.currentTime / totalDuration) * width * zoomLevel.value
       }
@@ -725,13 +734,24 @@ watch(() => generatedWaveformData.value, () => {
 })
 
 watch(() => props.currentTime, (newTime) => {
-  // Auto-scroll in window mode - keep red bar at 50% (middle), wave scrolls left
+  // Auto-scroll in window mode with smart positioning
   if (viewMode.value === 'window' && autoScroll.value && newTime !== undefined && props.audioFile?.duration) {
     const halfWindow = windowDuration.value / 2
     
-    // Always keep current time centered in the window (red bar at 50%)
-    // This makes the waveform scroll left while red bar stays in middle
-    windowStart.value = Math.max(0, Math.min(newTime - halfWindow, props.audioFile.duration - windowDuration.value))
+    if (newTime <= halfWindow) {
+      // Before mid-point: keep window at start, red line moves from left
+      windowStart.value = 0
+    } else {
+      // After mid-point: center current time, red line stays at 50%
+      windowStart.value = Math.max(0, Math.min(newTime - halfWindow, props.audioFile.duration - windowDuration.value))
+    }
+    
+    console.log('Auto-scroll update:', {
+      currentTime: newTime,
+      halfWindow,
+      windowStart: windowStart.value,
+      behavior: newTime <= halfWindow ? 'red-line-moves' : 'waveform-scrolls'
+    })
   }
   
   nextTick(() => {
@@ -774,27 +794,7 @@ onMounted(() => {
   background: white;
 }
 
-.playback-indicator {
-  position: absolute;
-  top: 20px;
-  bottom: 40px;
-  width: 2px;
-  background-color: #dc3545;
-  z-index: 10;
-  pointer-events: none;
-}
-
-.playback-indicator::before {
-  content: '';
-  position: absolute;
-  top: -8px;
-  left: -6px;
-  width: 0;
-  height: 0;
-  border-left: 6px solid transparent;
-  border-right: 6px solid transparent;
-  border-top: 8px solid #dc3545;
-}
+/* Playback position now handled by canvas drawing */
 
 .lyric-marker {
   position: absolute;
@@ -894,6 +894,13 @@ onMounted(() => {
 .waveform-controls {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-height: 38px; /* Ensure consistent height */
+}
+
+.waveform-controls > * {
+  flex-shrink: 0; /* Prevent controls from shrinking */
 }
 
 /* Scrollbar styling */

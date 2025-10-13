@@ -11,13 +11,13 @@
           <button class="btn btn-primary me-2" @click="showCreateProject = true">
             <i class="bi bi-plus-circle"></i> New Project
           </button>
-          <button class="btn btn-outline-secondary me-2" @click="showProjectList = true">
+          <button class="btn btn-secondary me-2" @click="showProjectList = true">
             <i class="bi bi-folder2-open"></i> Open Project
           </button>
-          <button class="btn btn-outline-info btn-sm me-2" @click="openStorageInfo" title="Audio storage information">
+          <button class="btn btn-info btn-sm me-2" @click="openStorageInfo" title="Audio storage information">
             <i class="bi bi-info-circle"></i> Storage
           </button>
-          <button class="btn btn-outline-danger btn-sm" @click="clearAllProjects" title="Clear all saved projects">
+          <button class="btn btn-danger btn-sm" @click="clearAllProjects" title="Clear all saved projects">
             <i class="bi bi-trash3"></i> Clear All
           </button>
         </div>
@@ -241,6 +241,66 @@
       </div>
     </div>
 
+    <!-- Hotkey Help Modal -->
+    <div class="modal" :class="{ show: showHotkeyModal }" v-if="showHotkeyModal" @click="closeHotkeyModal">
+      <div class="modal-dialog modal-lg" @click.stop>
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">🎹 Hotkey Reference Guide</h5>
+            <button type="button" class="btn-close" @click="closeHotkeyModal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="row">
+              <div class="col-md-6">
+                <h6 class="text-primary">⏯️ Playback Controls</h6>
+                <ul class="list-unstyled mb-4">
+                  <li class="mb-2"><kbd>Spacebar</kbd> - Play/Pause (or Timing in Timing Mode)</li>
+                  <li class="mb-2"><kbd>Numpad Enter</kbd> - Play/Pause</li>
+                  <li class="mb-2"><kbd>Ctrl+P</kbd> - Play/Pause</li>
+                </ul>
+
+                <h6 class="text-success">⏩ Navigation</h6>
+                <ul class="list-unstyled mb-4">
+                  <li class="mb-2"><kbd>Numpad +</kbd> - Skip forward 1 second</li>
+                  <li class="mb-2"><kbd>Numpad -</kbd> - Skip backward 1 second</li>
+                  <li class="mb-2"><kbd>Ctrl+R</kbd> - Skip forward 10 seconds</li>
+                  <li class="mb-2"><kbd>Ctrl+L</kbd> - Skip backward 10 seconds</li>
+                </ul>
+              </div>
+              <div class="col-md-6">
+                <h6 class="text-warning">⏱️ Timing Assignment</h6>
+                <ul class="list-unstyled mb-4">
+                  <li class="mb-2"><kbd>Spacebar</kbd> - Assign timing (in Timing Mode)</li>
+                  <li class="mb-2"><kbd>Numpad 0</kbd> or <kbd>.</kbd> - Assign timing</li>
+                  <li class="mb-2"><kbd>Alt+T</kbd> - Toggle Timing Mode</li>
+                </ul>
+
+                <h6 class="text-info">📝 Editing</h6>
+                <ul class="list-unstyled mb-4">
+                  <li class="mb-2"><kbd>Double-click</kbd> any lyric line to edit</li>
+                  <li class="mb-2"><kbd>Enter</kbd> or <kbd>Blur</kbd> to save</li>
+                  <li class="mb-2"><kbd>Escape</kbd> to cancel</li>
+                </ul>
+              </div>
+            </div>
+            
+            <div class="alert alert-info mt-3">
+              <strong>💡 Pro Tips:</strong>
+              <ul class="mb-0 mt-2">
+                <li>Use the numpad for fastest timing assignment workflow</li>
+                <li>Toggle Timing Mode (<kbd>Alt+T</kbd>) to focus on timing vs playback</li>
+                <li>Double-click lyrics for quick inline editing</li>
+                <li>Use 1-second skips for precise timing adjustments</li>
+              </ul>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-primary" @click="closeHotkeyModal">Got it!</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Main Sync Editor -->
     <div v-if="currentProject" class="sync-editor">
       <div class="row">
@@ -253,11 +313,20 @@
                   <p class="mb-0 text-muted">by {{ currentProject.artist }}</p>
                 </div>
                 <div class="col-md-4 text-end">
-                  <button class="btn btn-outline-primary btn-sm me-2" @click="saveProject">
+                  <button class="btn btn-success btn-sm me-2" @click="saveProject">
                     <i class="bi bi-save"></i> Save
                   </button>
-                  <button class="btn btn-outline-secondary btn-sm" @click="closeProject">
+                  <button class="btn btn-danger btn-sm me-2" @click="closeProject">
                     <i class="bi bi-x-circle"></i> Close
+                  </button>
+                  <!-- Hotkey Help Button -->
+                  <button 
+                    class="btn btn-primary btn-sm" 
+                    type="button"
+                    :title="hotkeyHelpText"
+                    @click="showHotkeyHelp"
+                  >
+                    <i class="bi bi-question-circle"></i> Help
                   </button>
                 </div>
               </div>
@@ -402,12 +471,18 @@ import WaveformViewer from '@/components/WaveformViewer.vue'
 const showCreateProject = ref(false)
 const showProjectList = ref(false)
 const showStorageInfo = ref(false)
+const showHotkeyModal = ref(false)
 const currentProject = ref<KaraokeProject | null>(null)
 const projects = ref<KaraokeProject[]>([])
 const currentLine = ref(0)
 const isTimingMode = ref(false)
 const waveformData = ref<WaveformData | null>(null)
+// Storage and IndexedDB testing
+const indexedDBTestResult = ref<string>('')
 const storageInfo = ref<{ method: string; sizeMB: number; count: number; quotaUsedMB: number; quotaLimitMB: number } | null>(null)
+
+// Global hotkeys cleanup
+let cleanupGlobalHotkeys: (() => void) | null = null
 
 // New project form
 const newProject = ref({
@@ -450,6 +525,10 @@ const timingStats = computed(() => {
   return getTimingStats(currentProject.value.lyrics)
 })
 
+const hotkeyHelpText = computed(() => {
+  return "Click for complete hotkey reference guide"
+})
+
 // Methods
 const closeCreateProject = () => {
   showCreateProject.value = false
@@ -462,6 +541,10 @@ const closeProjectList = () => {
 
 const closeStorageInfo = () => {
   showStorageInfo.value = false
+}
+
+const closeHotkeyModal = () => {
+  showHotkeyModal.value = false
 }
 
 const openStorageInfo = () => {
@@ -519,6 +602,11 @@ const getStorageBadgeText = (storageType: string) => {
     case 'reference': return '📁 Reference'
     default: return 'Unknown'
   }
+}
+
+// Show hotkey help in a proper modal dialog
+const showHotkeyHelp = () => {
+  showHotkeyModal.value = true
 }
 
 const resetNewProject = () => {
@@ -631,6 +719,14 @@ const loadProjectAudio = async (project: KaraokeProject) => {
       const state = audioService.getPlaybackState()
       playbackState.value = { ...state }
       
+      // Store the detected duration in the project for future use
+      if (!project.audioFile.duration || project.audioFile.duration !== state.duration) {
+        console.log('💾 Storing detected audio duration:', state.duration / 1000, 'seconds')
+        project.audioFile.duration = state.duration
+        project.updatedAt = new Date()
+        saveProjectsToStorage() // Save the updated duration
+      }
+      
       // Generate waveform data if needed
       if (!waveformData.value) {
         const peaks = await audioService.generateWaveformData(1000)
@@ -701,8 +797,69 @@ const skipForward = () => {
   audioService.seek(newTime)
 }
 
+// Short skip functions for 1-second precision
+const skipBackwardShort = () => {
+  const newTime = Math.max(0, playbackState.value.currentTime - 1)
+  audioService.seek(newTime)
+}
+
+const skipForwardShort = () => {
+  const duration = currentProject.value?.audioFile?.duration || 0
+  const newTime = Math.min(duration, playbackState.value.currentTime + 1)
+  audioService.seek(newTime)
+}
+
 const toggleTimingMode = () => {
   isTimingMode.value = !isTimingMode.value
+}
+
+// Smart duration calculation helper
+const calculateSmartDuration = (currentLineIndex: number, currentWordIndex: number): number => {
+  if (!currentProject.value) return 500
+  
+  const lyrics = currentProject.value.lyrics
+  const currentLine = lyrics[currentLineIndex]
+  if (!currentLine) return 500
+  
+  let nextTiming: number | undefined
+  
+  // Try to find next word timing
+  if (currentWordIndex < currentLine.words.length - 1) {
+    // Next word in same line
+    const nextWord = currentLine.words[currentWordIndex + 1]
+    nextTiming = nextWord.startTime
+  } else if (currentLineIndex < lyrics.length - 1) {
+    // First word of next line
+    const nextLine = lyrics[currentLineIndex + 1]
+    if (nextLine.words.length > 0) {
+      nextTiming = nextLine.words[0].startTime
+    }
+  }
+  
+  if (nextTiming) {
+    const currentTime = playbackState.value.currentTime
+    const timeToNext = (nextTiming / 1000) - currentTime // Convert to seconds
+    
+    // Determine if this is a phrase/verse break (longer gap)
+    const isLongBreak = timeToNext > 3 // More than 3 seconds = phrase break
+    
+    if (isLongBreak) {
+      // 50% of time to next for phrase/verse breaks
+      return Math.max(300, timeToNext * 0.5 * 1000) // Min 300ms, max 50% in milliseconds
+    } else {
+      // 80-85% of time to next for normal word spacing
+      return Math.max(200, timeToNext * 0.825 * 1000) // Min 200ms, 82.5% average in milliseconds
+    }
+  }
+  
+  // Fallback durations based on word length
+  const currentWord = currentLine.words[currentWordIndex]
+  if (currentWord) {
+    const wordLength = currentWord.word.length
+    return Math.max(200, wordLength * 80) // ~80ms per character, min 200ms
+  }
+  
+  return 500 // Default fallback
 }
 
 const assignTiming = () => {
@@ -713,14 +870,24 @@ const assignTiming = () => {
   const currentTime = playbackState.value.currentTime
   
   if (lineIndex < currentProject.value.lyrics.length) {
-    // Assign timing to current word using spacebar
+    // Calculate smart duration
+    const smartDuration = calculateSmartDuration(lineIndex, wordIndex)
+    
+    // Assign timing to current word using spacebar with smart duration
     currentProject.value.lyrics = assignWordTiming(
       currentProject.value.lyrics,
       lineIndex,
       wordIndex,
       currentTime,
-      500 // 500ms default word duration
+      smartDuration
     )
+    
+    console.log('⏱️ Smart timing assigned:', {
+      word: currentProject.value.lyrics[lineIndex].words[wordIndex].word,
+      startTime: currentTime,
+      duration: smartDuration,
+      calculation: smartDuration > 400 ? 'phrase-break' : 'normal-spacing'
+    })
     
     // Move to next word/line
     moveToNextWord()
@@ -865,9 +1032,135 @@ const setupAudioListeners = () => {
 }
 
 // Lifecycle
+// Global hotkey system
+const setupGlobalHotkeys = () => {
+  const handleKeyDown = (event: KeyboardEvent) => {
+    // Ignore if user is typing in an input field
+    if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+      return
+    }
+    
+    switch (event.code) {
+      case 'Space':
+        event.preventDefault() // Prevent page scroll
+        if (isTimingMode.value) {
+          // Spacebar for timing assignment (keydown based)
+          assignTiming()
+        } else {
+          // Spacebar for play/pause
+          togglePlayPause()
+        }
+        break
+        
+      // Numpad Enter for play/pause
+      case 'NumpadEnter':
+      case 'Enter':
+        if (!event.ctrlKey && !event.metaKey) {
+          event.preventDefault()
+          togglePlayPause()
+        }
+        break
+        
+      // Numpad 0 and . for timing
+      case 'Numpad0':
+      case 'NumpadDecimal':
+        event.preventDefault()
+        if (isTimingMode.value) {
+          assignTiming()
+        }
+        break
+        
+      // Numpad +/- for 1 second forward/backward
+      case 'NumpadAdd':
+        event.preventDefault()
+        skipForwardShort() // 1 second
+        break
+        
+      case 'NumpadSubtract':
+        event.preventDefault()
+        skipBackwardShort() // 1 second
+        break
+        
+      case 'KeyT':
+        if (event.altKey) {
+          event.preventDefault()
+          toggleTimingMode()
+        }
+        break
+        
+      case 'KeyP':
+        if (event.ctrlKey || event.metaKey) {
+          event.preventDefault()
+          togglePlayPause()
+        }
+        break
+        
+      case 'KeyL':
+        if (event.ctrlKey || event.metaKey) {
+          event.preventDefault()
+          skipBackward() // 10 seconds
+        }
+        break
+        
+      case 'KeyR':
+        if (event.ctrlKey || event.metaKey) {
+          event.preventDefault()
+          skipForward() // 10 seconds
+        }
+        break
+        
+      // Keep existing arrow keys as backup
+      case 'ArrowLeft':
+        if (event.ctrlKey || event.metaKey) {
+          event.preventDefault()
+          skipBackward()
+        }
+        break
+        
+      case 'ArrowRight':
+        if (event.ctrlKey || event.metaKey) {
+          event.preventDefault()
+          skipForward()
+        }
+        break
+        
+      case 'Escape':
+        if (showHotkeyModal.value) {
+          event.preventDefault()
+          closeHotkeyModal()
+        } else if (showProjectList.value) {
+          event.preventDefault()
+          closeProjectList()
+        } else if (showCreateProject.value) {
+          event.preventDefault()
+          closeCreateProject()
+        } else if (showStorageInfo.value) {
+          event.preventDefault()
+          closeStorageInfo()
+        }
+        break
+    }
+  }
+  
+  window.addEventListener('keydown', handleKeyDown)
+  
+  // Return cleanup function
+  return () => {
+    window.removeEventListener('keydown', handleKeyDown)
+  }
+}
+
 onMounted(async () => {
   loadProjectsFromStorage()
   setupAudioListeners()
+  
+  // Setup global hotkeys
+  const cleanupHotkeys = setupGlobalHotkeys()
+  
+  // Store cleanup function for onUnmounted  
+  cleanupGlobalHotkeys = cleanupHotkeys
+  
+  // Help button uses simple click handler - no complex tooltip initialization needed
   
   // Wait a moment for IndexedDB to initialize
   await new Promise(resolve => setTimeout(resolve, 100))
@@ -897,6 +1190,11 @@ onMounted(async () => {
 
 onUnmounted(() => {
   audioService.dispose()
+  
+  // Cleanup global hotkeys
+  if (cleanupGlobalHotkeys) {
+    cleanupGlobalHotkeys()
+  }
 })
 </script>
 

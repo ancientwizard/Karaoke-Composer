@@ -11,16 +11,9 @@
           >
             <i class="bi bi-plus"></i>
           </button>
-          <button 
-            class="btn btn-sm btn-outline-secondary me-2" 
-            @click="toggleEditMode"
-            :class="{ active: isEditMode }"
-            title="Toggle edit mode"
-          >
-            <i class="bi bi-pencil"></i>
-          </button>
+
           <span class="badge" :class="isTimingMode ? 'bg-success' : 'bg-secondary'">
-            {{ isTimingMode ? 'Timing Mode' : 'Edit Mode' }}
+            {{ isTimingMode ? 'Timing Mode' : 'Editing Ready' }}
           </span>
         </div>
       </div>
@@ -53,7 +46,7 @@
             <!-- Lyrics Text -->
             <div class="lyric-text-container">
               <input 
-                v-if="isEditMode && editingLine === index"
+                v-if="editingLine === index"
                 type="text"
                 class="form-control form-control-sm"
                 v-model="lyric.text"
@@ -167,7 +160,6 @@ const emit = defineEmits<{
 }>()
 
 // Reactive state
-const isEditMode = ref(false)
 const editingLine = ref(-1)
 const lyricsContainer = ref<HTMLElement>()
 const editInput = ref<HTMLInputElement[]>()
@@ -250,12 +242,7 @@ const clearTiming = (index: number) => {
   emit('lyrics-update', updatedLyrics)
 }
 
-const toggleEditMode = () => {
-  isEditMode.value = !isEditMode.value
-  if (!isEditMode.value) {
-    editingLine.value = -1
-  }
-}
+// Edit mode removed - double-click now works directly
 
 const updateLineNumbers = (lyrics: LyricLine[]) => {
   lyrics.forEach((lyric, index) => {
