@@ -111,9 +111,9 @@
           <!-- Window Duration Control (only for window view) -->
           <div v-if="viewMode === 'window'" class="window-controls me-2">
             <select class="form-select form-select-sm" v-model="windowDuration" @change="onWindowDurationChange">
-              <option :value="10">10s</option>
-              <option :value="15">15s</option>
-              <option :value="25">25s</option>
+              <option :value="10000">10s</option>
+              <option :value="15000">15s</option>
+              <option :value="25000">25s</option>
             </select>
           </div>
           
@@ -264,8 +264,8 @@ const selectedMarkers = ref<number[]>([])
 
 // New waveform enhancement controls
 const viewMode = ref<'full' | 'window'>('window') // Default to sliding window
-const windowDuration = ref(15) // 15 seconds window (in seconds for UI)
-const windowStart = ref(0) // Start position of the window in seconds
+const windowDuration = ref(15000) // 15 seconds window (in milliseconds)
+const windowStart = ref(0) // Start position of the window in milliseconds
 const autoScroll = ref(true) // Auto-scroll with playback
 
 // Computed properties
@@ -315,15 +315,43 @@ const timeMarks = computed(() => {
   if (!props.audioFile?.duration) return []
   
   const marks = []
-  const duration = props.audioFile.duration
-  const interval = duration > 60000 ? 10000 : 5000 // 10s or 5s intervals
   
-  for (let time = 0; time <= duration; time += interval) {
-    marks.push({
-      time,
-      position: timeToPixel(time),
-      label: formatTime(time)
-    })
+  if (viewMode.value === 'window') {
+    // Window mode: show marks only for the visible window (all values in milliseconds)
+    const windowStartMs = Math.floor(windowStart.value) // Already in milliseconds
+    const windowDurationMs = windowDuration.value // Already in milliseconds
+    const windowEndMs = windowStartMs + windowDurationMs
+    const intervalMs = windowDurationMs > 30000 ? 5000 : 2000 // 5s or 2s intervals
+    
+    // Calculate starting mark aligned to interval boundaries
+    const firstMarkMs = Math.ceil(windowStartMs / intervalMs) * intervalMs
+    
+    for (let timeMs = firstMarkMs; timeMs <= windowEndMs; timeMs += intervalMs) {
+      if (timeMs >= windowStartMs) {
+        const positionInWindow = (timeMs - windowStartMs) / windowDurationMs
+        
+        // Only add marks that are within the visible window
+        if (positionInWindow >= 0 && positionInWindow <= 1) {
+          marks.push({
+            time: timeMs,
+            position: positionInWindow * canvasWidth.value,
+            label: formatTime(timeMs)
+          })
+        }
+      }
+    }
+  } else {
+    // Full mode: show marks for the entire duration
+    const duration = props.audioFile.duration
+    const interval = duration > 60000 ? 10000 : 5000 // 10s or 5s intervals
+    
+    for (let time = 0; time <= duration; time += interval) {
+      marks.push({
+        time,
+        position: timeToPixel(time),
+        label: formatTime(time)
+      })
+    }
   }
   
   return marks
@@ -473,7 +501,7 @@ const toggleAutoScroll = () => {
 
 const updateWindowPosition = () => {
   if (viewMode.value === 'window') {
-    const halfWindow = windowDuration.value / 2
+    const halfWindow = windowDuration.value / 2 // Half window in milliseconds
     
     if (autoScroll.value && props.currentTime > 0) {
       if (props.currentTime <= halfWindow) {
@@ -542,25 +570,27 @@ const drawWaveform = async () => {
     const endIndex = Math.min(Math.floor((startRatio + durationRatio) * peaks.length), peaks.length)
     visiblePeaks = peaks.slice(startIndex, endIndex)
     
-    // Debug logging
-    console.log('Window mode debug:', { 
-      totalDuration, 
-      windowStart: windowStart.value, 
-      windowDuration: windowDuration.value, 
-      startRatio, 
-      durationRatio,
-      peaksLength: peaks.length,
-      startIndex, 
-      endIndex, 
-      visiblePeaksLength: visiblePeaks.length,
-      visiblePeaksPreview: visiblePeaks.slice(0, 5)
-    })
+    // Debug logging - TMI for the console; it just noise!
+    //  we could add a vue based element to show this in the brower UI if needed
+    // console.log('Window mode debug:', { 
+    //   totalDuration, 
+    //   windowStart: windowStart.value, 
+    //   windowDuration: windowDuration.value, 
+    //   startRatio, 
+    //   durationRatio,
+    //   peaksLength: peaks.length,
+    //   startIndex, 
+    //   endIndex, 
+    //   visiblePeaksLength: visiblePeaks.length,
+    //   visiblePeaksPreview: visiblePeaks.slice(0, 5)
+    // })
     
     // Fallback: if no visible peaks (edge case), show first portion
     if (visiblePeaks.length === 0) {
       const fallbackEndIndex = Math.min(Math.floor(peaks.length * 0.2), peaks.length) // Show first 20%
       visiblePeaks = peaks.slice(0, fallbackEndIndex)
-      console.log('Fallback applied, showing first 20% of peaks:', visiblePeaks.length)
+      // Better as a UI visualization than console logging
+      // console.log('Fallback applied, showing first 20% of peaks:', visiblePeaks.length)
     }
   }
   
@@ -745,13 +775,15 @@ watch(() => props.currentTime, (newTime) => {
       // After mid-point: center current time, red line stays at 50%
       windowStart.value = Math.max(0, Math.min(newTime - halfWindow, props.audioFile.duration - windowDuration.value))
     }
-    
-    console.log('Auto-scroll update:', {
-      currentTime: newTime,
-      halfWindow,
-      windowStart: windowStart.value,
-      behavior: newTime <= halfWindow ? 'red-line-moves' : 'waveform-scrolls'
-    })
+
+    // TMI: Debug logging - can be removed later
+    // This would be better as a vue based UI element if needed
+    // console.log('Auto-scroll update:', {
+    //   currentTime: newTime,
+    //   halfWindow,
+    //   windowStart: windowStart.value,
+    //   behavior: newTime <= halfWindow ? 'red-line-moves' : 'waveform-scrolls'
+    // })
   }
   
   nextTick(() => {
@@ -783,7 +815,7 @@ onMounted(() => {
 
 .waveform-canvas-container {
   position: relative;
-  padding: 20px 10px 40px;
+  padding: 20px 10px 5px;
   min-height: 200px;
 }
 
@@ -859,7 +891,7 @@ onMounted(() => {
   bottom: 0;
   left: 10px;
   right: 10px;
-  height: 30px;
+  height: 15px;
 }
 
 .time-mark {
@@ -876,7 +908,7 @@ onMounted(() => {
 
 .time-mark-label {
   position: absolute;
-  top: 12px;
+  top: 3px;
   left: 50%;
   transform: translateX(-50%);
   font-size: 0.75rem;

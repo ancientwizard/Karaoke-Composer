@@ -261,6 +261,8 @@
 
                 <h6 class="text-success">⏩ Navigation</h6>
                 <ul class="list-unstyled mb-4">
+                  <li class="mb-2"><kbd>Home</kbd> - Jump to start (0:00)</li>
+                  <li class="mb-2"><kbd>End</kbd> - Jump to end of song</li>
                   <li class="mb-2"><kbd>Numpad +</kbd> - Skip forward 1 second</li>
                   <li class="mb-2"><kbd>Numpad -</kbd> - Skip backward 1 second</li>
                   <li class="mb-2"><kbd>Ctrl+R</kbd> - Skip forward 10 seconds</li>
@@ -287,6 +289,7 @@
             <div class="alert alert-info mt-3">
               <strong>💡 Pro Tips:</strong>
               <ul class="mb-0 mt-2">
+                <li>Use <kbd>Home</kbd>/<kbd>End</kbd> for instant navigation to start/end</li>
                 <li>Use the numpad for fastest timing assignment workflow</li>
                 <li>Toggle Timing Mode (<kbd>Alt+T</kbd>) to focus on timing vs playback</li>
                 <li>Double-click lyrics for quick inline editing</li>
@@ -694,6 +697,15 @@ const loadProjectAudio = async (project: KaraokeProject) => {
     return
   }
 
+  console.log('🔄 Loading project audio:', {
+    projectName: project.name,
+    audioFileName: project.audioFile.name,
+    hasFile: !!project.audioFile.file,
+    hasStoredData: !!project.audioFile.storedData,
+    storageType: project.audioFile.storedData?.storageType,
+    duration: project.audioFile.duration
+  })
+
   try {
     let audioFile = project.audioFile
 
@@ -703,10 +715,19 @@ const loadProjectAudio = async (project: KaraokeProject) => {
       const retrievedFile = await audioStorageService.retrieveAudioFile(audioFile.storedData)
       
       if (retrievedFile) {
-        audioFile = retrievedFile
-        // Update the project with the retrieved file
+        // IMPORTANT: Preserve the original storedData and other properties
+        audioFile = {
+          ...audioFile, // Keep original properties including storedData
+          ...retrievedFile // Add the retrieved file and url
+        }
+        // Update the project with the enhanced audio file
         project.audioFile = audioFile
-        console.log('Audio file retrieved successfully')
+        console.log('✅ Audio file retrieved successfully with preserved storage metadata:', {
+          name: audioFile.name,
+          hasFile: !!audioFile.file,
+          hasStoredData: !!audioFile.storedData,
+          storageType: audioFile.storedData?.storageType
+        })
       } else {
         console.error('Failed to retrieve audio file')
         alert('Could not load the audio file for this project. Please re-select the audio file.')
@@ -787,26 +808,44 @@ const seekAudio = (time: number) => {
 }
 
 const skipBackward = () => {
-  const newTime = Math.max(0, playbackState.value.currentTime - 10)
+  const newTime = Math.max(0, playbackState.value.currentTime - 10000) // 10 seconds in ms
   audioService.seek(newTime)
 }
 
 const skipForward = () => {
   const duration = currentProject.value?.audioFile?.duration || 0
-  const newTime = Math.min(duration, playbackState.value.currentTime + 10)
-  audioService.seek(newTime)
+  if (duration > 0) {
+    const newTime = Math.min(duration - 100, playbackState.value.currentTime + 10000) // 10 seconds in ms, stay 100ms from end
+    audioService.seek(newTime)
+  }
 }
 
 // Short skip functions for 1-second precision
 const skipBackwardShort = () => {
-  const newTime = Math.max(0, playbackState.value.currentTime - 1)
+  const newTime = Math.max(0, playbackState.value.currentTime - 1000) // 1 second in ms
   audioService.seek(newTime)
 }
 
 const skipForwardShort = () => {
   const duration = currentProject.value?.audioFile?.duration || 0
-  const newTime = Math.min(duration, playbackState.value.currentTime + 1)
-  audioService.seek(newTime)
+  if (duration > 0) {
+    const newTime = Math.min(duration - 100, playbackState.value.currentTime + 1000) // 1 second in ms, stay 100ms from end
+    audioService.seek(newTime)
+  }
+}
+
+// Home/End navigation functions
+const seekToStart = () => {
+  audioService.seek(0)
+}
+
+const seekToEnd = () => {
+  const duration = currentProject.value?.audioFile?.duration || 0
+  if (duration > 0) {
+    // Seek to 1 second before the end to avoid edge cases
+    const newTime = Math.max(0, duration - 1000)
+    audioService.seek(newTime)
+  }
 }
 
 const toggleTimingMode = () => {
@@ -881,7 +920,8 @@ const assignTiming = () => {
       currentTime,
       smartDuration
     )
-    
+
+    // Possible TMI for the console
     console.log('⏱️ Smart timing assigned:', {
       word: currentProject.value.lyrics[lineIndex].words[wordIndex].word,
       startTime: currentTime,
@@ -980,7 +1020,16 @@ const saveProjectsToStorage = () => {
     }))
     
     localStorage.setItem('karaokeProjects', JSON.stringify(serializableProjects))
-    console.log(`Saved ${projects.value.length} projects to storage`)
+    console.log(`💾 Saved ${projects.value.length} projects to storage`)
+    
+    // Debug: Check if storedData is preserved
+    serializableProjects.forEach((project, index) => {
+      console.log(`Project ${index}: ${project.name} - StoredData preserved:`, {
+        hasStoredData: !!project.audioFile.storedData,
+        storageType: project.audioFile.storedData?.storageType,
+        duration: project.audioFile.duration
+      })
+    })
   } catch (error) {
     console.error('Error saving projects:', error)
   }
@@ -1107,6 +1156,17 @@ const setupGlobalHotkeys = () => {
           event.preventDefault()
           skipForward() // 10 seconds
         }
+        break
+        
+      // Home/End navigation keys
+      case 'Home':
+        event.preventDefault()
+        seekToStart()
+        break
+        
+      case 'End':
+        event.preventDefault()
+        seekToEnd()
         break
         
       // Keep existing arrow keys as backup
