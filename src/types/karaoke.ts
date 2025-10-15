@@ -3,16 +3,16 @@
 export interface SyllableTiming {
   syllable: string
   startTime?: number // in milliseconds
-  endTime?: number   // in milliseconds
-  duration?: number  // calculated duration
+  endTime?: number // in milliseconds
+  duration?: number // calculated duration
 }
 
 export interface WordTiming {
   word: string
   syllables: SyllableTiming[]
   startTime?: number // word start time
-  endTime?: number   // word end time
-  duration?: number  // calculated duration
+  endTime?: number // word end time
+  duration?: number // calculated duration
 }
 
 export interface LyricLine {
@@ -21,8 +21,8 @@ export interface LyricLine {
   text: string // original text with "/" syllable markers
   words: WordTiming[] // parsed words and syllables
   startTime?: number // line start time
-  endTime?: number   // line end time
-  duration?: number  // calculated duration
+  endTime?: number // line end time
+  duration?: number // calculated duration
 }
 
 export interface TimingData {
@@ -87,8 +87,8 @@ export interface PlaybackState {
   volume: number
   playbackRate: number
   isLoaded: boolean
-  currentWord?: { lineIndex: number, wordIndex: number }
-  currentSyllable?: { lineIndex: number, wordIndex: number, syllableIndex: number }
+  currentWord?: { lineIndex: number; wordIndex: number }
+  currentSyllable?: { lineIndex: number; wordIndex: number; syllableIndex: number }
 }
 
 export interface SyncEditorState {

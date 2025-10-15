@@ -4,11 +4,7 @@
       <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0">📝 Lyrics Editor</h5>
         <div class="editor-controls">
-          <button 
-            class="btn btn-sm btn-outline-primary me-2" 
-            @click="addLine"
-            title="Add new line"
-          >
+          <button class="btn btn-sm btn-outline-primary me-2" @click="addLine" title="Add new line">
             <i class="bi bi-plus"></i>
           </button>
 
@@ -19,14 +15,14 @@
       </div>
       <div class="card-body p-0">
         <div class="lyrics-container" ref="lyricsContainer">
-          <div 
-            v-for="(lyric, index) in lyrics" 
+          <div
+            v-for="(lyric, index) in lyrics"
             :key="lyric.id"
             class="lyric-line"
             :class="{
-              'active': index === currentLine,
+              active: index === currentLine,
               'has-timing': lyric.startTime !== undefined,
-              'timing-mode': isTimingMode
+              'timing-mode': isTimingMode,
             }"
             @click="selectLine(index)"
           >
@@ -45,7 +41,7 @@
 
             <!-- Lyrics Text -->
             <div class="lyric-text-container">
-              <input 
+              <input
                 v-if="editingLine === index"
                 type="text"
                 class="form-control form-control-sm"
@@ -56,24 +52,19 @@
                 ref="editInput"
                 placeholder="Use / to separate syllables: Hel/lo world a/maz/ing"
               />
-              <div 
-                v-else
-                class="lyric-text"
-                @dblclick="startEditing(index)"
-                :class="{ 'empty': !lyric.text.trim() }"
-              >
+              <div v-else class="lyric-text" @dblclick="startEditing(index)" :class="{ empty: !lyric.text.trim() }">
                 <!-- Show words with syllable breakdown -->
                 <div v-if="lyric.words.length > 0" class="words-display">
-                  <span 
-                    v-for="(word, wordIndex) in lyric.words" 
+                  <span
+                    v-for="(word, wordIndex) in lyric.words"
                     :key="wordIndex"
                     class="word-item"
-                    :class="{ 
+                    :class="{
                       'current-word': index === currentLine && wordIndex === currentWord,
-                      'timed-word': word.startTime !== undefined 
+                      'timed-word': word.startTime !== undefined,
                     }"
                   >
-                    <span 
+                    <span
                       v-for="(syllable, sylIndex) in word.syllables"
                       :key="sylIndex"
                       class="syllable-item"
@@ -83,23 +74,16 @@
                     </span>
                   </span>
                 </div>
-                <div v-else class="empty-text">
-                  Empty line - double click to edit
-                </div>
+                <div v-else class="empty-text">Empty line - double click to edit</div>
               </div>
             </div>
 
             <!-- Line Actions -->
             <div class="line-actions">
-              <button 
-                v-if="!isTimingMode"
-                class="btn btn-sm btn-outline-danger"
-                @click="deleteLine(index)"
-                title="Delete line"
-              >
+              <button v-if="!isTimingMode" class="btn btn-sm btn-outline-danger" @click="deleteLine(index)" title="Delete line">
                 <i class="bi bi-trash3"></i>
               </button>
-              <button 
+              <button
                 v-if="isTimingMode && lyric.startTime !== undefined"
                 class="btn btn-sm btn-outline-warning"
                 @click="clearTiming(index)"
@@ -119,18 +103,11 @@
       <div class="card-footer">
         <div class="row align-items-center">
           <div class="col-sm-6">
-            <small class="text-muted">
-              {{ lyrics.length }} lines • 
-              {{ completedTimings }}/{{ lyrics.length }} timed
-            </small>
+            <small class="text-muted"> {{ lyrics.length }} lines • {{ completedTimings }}/{{ lyrics.length }} timed </small>
           </div>
           <div class="col-sm-6 text-end">
-            <small class="text-muted" v-if="isTimingMode">
-              Press <kbd>Space</kbd> to assign timing to current line
-            </small>
-            <small class="text-muted" v-else>
-              Double-click to edit lyrics
-            </small>
+            <small class="text-muted" v-if="isTimingMode"> Press <kbd>Space</kbd> to assign timing to current line </small>
+            <small class="text-muted" v-else> Double-click to edit lyrics </small>
           </div>
         </div>
       </div>
@@ -176,11 +153,11 @@ const selectLine = (index: number) => {
 
 const addLine = () => {
   const newLine = parseLyricsLine('', props.lyrics.length + 1, `line-${Date.now()}`)
-  
+
   const updatedLyrics = [...props.lyrics, newLine]
   updateLineNumbers(updatedLyrics)
   emit('lyrics-update', updatedLyrics)
-  
+
   // Start editing the new line
   nextTick(() => {
     startEditing(updatedLyrics.length - 1)
@@ -197,7 +174,7 @@ const deleteLine = (index: number) => {
 
 const startEditing = (index: number) => {
   if (props.isTimingMode) return
-  
+
   editingLine.value = index
   nextTick(() => {
     const input = editInput.value?.[0]
@@ -237,7 +214,7 @@ const clearTiming = (index: number) => {
     ...updatedLyrics[index],
     startTime: undefined,
     endTime: undefined,
-    duration: undefined
+    duration: undefined,
   }
   emit('lyrics-update', updatedLyrics)
 }
@@ -258,20 +235,23 @@ const formatTime = (timeMs: number): string => {
 }
 
 // Watch for current line changes to scroll into view
-watch(() => props.currentLine, (newLine) => {
-  nextTick(() => {
-    const container = lyricsContainer.value
-    if (container) {
-      const activeElement = container.querySelector('.lyric-line.active')
-      if (activeElement) {
-        activeElement.scrollIntoView({
-          behavior: 'smooth',
-          block: 'center'
-        })
+watch(
+  () => props.currentLine,
+  newLine => {
+    nextTick(() => {
+      const container = lyricsContainer.value
+      if (container) {
+        const activeElement = container.querySelector('.lyric-line.active')
+        if (activeElement) {
+          activeElement.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center',
+          })
+        }
       }
-    }
-  })
-})
+    })
+  }
+)
 
 // Keyboard shortcuts
 const handleKeydown = (event: KeyboardEvent) => {

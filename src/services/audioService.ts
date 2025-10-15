@@ -8,14 +8,14 @@ export class AudioService {
   private analyser: AnalyserNode | null = null
   private gainNode: GainNode | null = null
   private isInitialized = false
-  
+
   private playbackState: PlaybackState = {
     isPlaying: false,
     currentTime: 0,
     duration: 0,
     volume: 1,
     playbackRate: 1,
-    isLoaded: false
+    isLoaded: false,
   }
 
   private timeUpdateCallback?: (time: number) => void
@@ -40,11 +40,11 @@ export class AudioService {
         this.audioContext = new AudioContext()
         this.analyser = this.audioContext.createAnalyser()
         this.gainNode = this.audioContext.createGain()
-        
+
         this.analyser.fftSize = 2048
         this.analyser.connect(this.audioContext.destination)
         this.gainNode.connect(this.analyser)
-        
+
         this.isInitialized = true
         console.log('Audio context initialized successfully')
       }
@@ -71,7 +71,7 @@ export class AudioService {
       }
 
       this.audio = new Audio()
-      
+
       // Set up event listeners
       this.setupAudioEventListeners()
 
@@ -107,7 +107,7 @@ export class AudioService {
           this.audio!.removeEventListener('error', handleError)
           resolve()
         }
-        
+
         const handleError = (error: Event) => {
           this.audio!.removeEventListener('canplaythrough', handleCanPlay)
           this.audio!.removeEventListener('error', handleError)
@@ -120,12 +120,12 @@ export class AudioService {
       })
 
       this.playbackState.isLoaded = true
-      
+
       // Robust duration detection
       const duration = await this.detectAudioDuration(audioFile)
       this.playbackState.duration = duration
       this.updatePlaybackState()
-      
+
       return true
     } catch (error) {
       console.error('Failed to load audio file:', error)
@@ -141,7 +141,7 @@ export class AudioService {
     this.audio.addEventListener('timeupdate', () => {
       this.playbackState.currentTime = this.audio!.currentTime * 1000 // Convert to ms
       this.updatePlaybackState()
-      
+
       if (this.timeUpdateCallback) {
         this.timeUpdateCallback(this.playbackState.currentTime)
       }
@@ -175,13 +175,13 @@ export class AudioService {
     try {
       // Ensure audio context is properly initialized
       await this.initializeAudioContext()
-      
+
       // Resume AudioContext if suspended (required by some browsers)
       if (this.audioContext && this.audioContext.state === 'suspended') {
         await this.audioContext.resume()
         console.log('Audio context resumed for playback')
       }
-      
+
       await this.audio.play()
       this.playbackState.isPlaying = true
       this.updatePlaybackState()
@@ -216,11 +216,11 @@ export class AudioService {
       this.audio.volume = Math.max(0, Math.min(1, volume))
       this.playbackState.volume = this.audio.volume
     }
-    
+
     if (this.gainNode) {
       this.gainNode.gain.value = this.playbackState.volume
     }
-    
+
     this.updatePlaybackState()
   }
 
@@ -229,7 +229,7 @@ export class AudioService {
       this.audio.playbackRate = Math.max(0.25, Math.min(4, rate))
       this.playbackState.playbackRate = this.audio.playbackRate
     }
-    
+
     this.updatePlaybackState()
   }
 
@@ -254,7 +254,7 @@ export class AudioService {
   // Get frequency data for visualization
   getFrequencyData(): Uint8Array | null {
     if (!this.analyser) return null
-    
+
     const dataArray = new Uint8Array(this.analyser.frequencyBinCount)
     this.analyser.getByteFrequencyData(dataArray)
     return dataArray
@@ -263,7 +263,7 @@ export class AudioService {
   // Get time domain data for waveform
   getTimeDomainData(): Uint8Array | null {
     if (!this.analyser) return null
-    
+
     const dataArray = new Uint8Array(this.analyser.frequencyBinCount)
     this.analyser.getByteTimeDomainData(dataArray)
     return dataArray
@@ -278,23 +278,23 @@ export class AudioService {
       const response = await fetch(this.audio.src)
       const arrayBuffer = await response.arrayBuffer()
       const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer)
-      
+
       const channelData = audioBuffer.getChannelData(0)
       const blockSize = Math.floor(channelData.length / samples)
       const peaks: number[] = []
-      
+
       for (let i = 0; i < samples; i++) {
         const start = i * blockSize
         const end = start + blockSize
         let max = 0
-        
+
         for (let j = start; j < end; j++) {
           max = Math.max(max, Math.abs(channelData[j]))
         }
-        
+
         peaks.push(max)
       }
-      
+
       return peaks
     } catch (error) {
       console.error('Failed to generate waveform data:', error)
@@ -316,24 +316,23 @@ export class AudioService {
     }
 
     console.log('⏳ HTML5 duration invalid, using Web Audio API to detect duration...')
-    
+
     try {
       // Use Web Audio API to decode the entire file and get accurate duration
       const arrayBuffer = await this.fileToArrayBuffer(audioFile)
-      
+
       if (!this.audioContext) {
         throw new Error('AudioContext not initialized')
       }
 
       const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer)
       const durationMs = audioBuffer.duration * 1000
-      
+
       console.log('🎵 Duration detected via Web Audio API:', audioBuffer.duration, 'seconds')
       return durationMs
-      
     } catch (error) {
       console.error('❌ Failed to detect audio duration:', error)
-      
+
       // Fallback: return a default duration and warn user
       console.warn('⚠️ Using fallback duration of 3 minutes - waveform scrolling may not work correctly')
       return 180000 // 3 minutes in ms
@@ -356,15 +355,15 @@ export class AudioService {
       this.audio.pause()
       this.audio.src = ''
     }
-    
+
     if (this.source) {
       this.source.disconnect()
     }
-    
+
     if (this.audioContext) {
       this.audioContext.close()
     }
-    
+
     this.timeUpdateCallback = undefined
     this.playbackStateCallback = undefined
   }

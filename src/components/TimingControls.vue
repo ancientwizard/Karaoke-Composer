@@ -13,27 +13,15 @@
         <!-- Audio Player Controls -->
         <div class="player-section mb-4">
           <div class="player-controls d-flex justify-content-center align-items-center gap-2 mb-3">
-            <button 
-              class="btn btn-outline-secondary btn-sm"
-              @click="skipBackward"
-              title="Skip backward 10s"
-            >
+            <button class="btn btn-outline-secondary btn-sm" @click="skipBackward" title="Skip backward 10s">
               <i class="bi bi-skip-backward"></i>
             </button>
-            
-            <button 
-              class="btn btn-primary btn-lg"
-              @click="togglePlayPause"
-              :disabled="!hasAudio"
-            >
+
+            <button class="btn btn-primary btn-lg" @click="togglePlayPause" :disabled="!hasAudio">
               <i :class="playbackState.isPlaying ? 'bi bi-pause-fill' : 'bi bi-play-fill'"></i>
             </button>
-            
-            <button 
-              class="btn btn-outline-secondary btn-sm"
-              @click="skipForward"
-              title="Skip forward 10s"
-            >
+
+            <button class="btn btn-outline-secondary btn-sm" @click="skipForward" title="Skip forward 10s">
               <i class="bi bi-skip-forward"></i>
             </button>
           </div>
@@ -41,11 +29,7 @@
           <!-- Progress Bar -->
           <div class="progress-container mb-3">
             <div class="progress" @click="seekToClick">
-              <div 
-                class="progress-bar" 
-                :style="{ width: progressPercent + '%' }"
-                role="progressbar"
-              ></div>
+              <div class="progress-bar" :style="{ width: progressPercent + '%' }" role="progressbar"></div>
             </div>
             <div class="time-display d-flex justify-content-between mt-1">
               <small class="text-muted">{{ formatTime(playbackState.currentTime) }}</small>
@@ -59,15 +43,15 @@
               <label class="form-label">Speed</label>
               <div class="d-flex align-items-center gap-2">
                 <span class="small">0.5x</span>
-                <input 
-                  type="range" 
-                  class="form-range" 
-                  min="0.5" 
-                  max="2" 
+                <input
+                  type="range"
+                  class="form-range"
+                  min="0.5"
+                  max="2"
                   step="0.1"
                   v-model="playbackState.playbackRate"
                   @input="updatePlaybackRate"
-                >
+                />
                 <span class="small">2x</span>
                 <span class="badge bg-light text-dark">{{ playbackState.playbackRate }}x</span>
               </div>
@@ -76,15 +60,15 @@
               <label class="form-label">Volume</label>
               <div class="d-flex align-items-center gap-2">
                 <i class="bi bi-volume-down"></i>
-                <input 
-                  type="range" 
-                  class="form-range" 
-                  min="0" 
-                  max="1" 
+                <input
+                  type="range"
+                  class="form-range"
+                  min="0"
+                  max="1"
                   step="0.1"
                   v-model="playbackState.volume"
                   @input="updateVolume"
-                >
+                />
                 <i class="bi bi-volume-up"></i>
               </div>
             </div>
@@ -95,17 +79,13 @@
         <div class="timing-section">
           <div class="row mb-3">
             <div class="col-md-6">
-              <button 
-                class="btn w-100"
-                :class="isTimingMode ? 'btn-warning' : 'btn-outline-warning'"
-                @click="toggleTimingMode"
-              >
+              <button class="btn w-100" :class="isTimingMode ? 'btn-warning' : 'btn-outline-warning'" @click="toggleTimingMode">
                 <i class="bi bi-stopwatch"></i>
                 {{ isTimingMode ? 'Exit Timing Mode' : 'Enter Timing Mode' }}
               </button>
             </div>
             <div class="col-md-6">
-              <button 
+              <button
                 class="btn btn-outline-primary w-100"
                 @click="autoSync"
                 :disabled="!hasAudio || isTimingMode"
@@ -135,31 +115,20 @@
           <div v-if="isTimingMode" class="quick-actions">
             <div class="row">
               <div class="col-md-4">
-                <button 
-                  class="btn btn-success w-100 btn-sm"
-                  @click="assignTiming"
-                  :disabled="!hasAudio"
-                >
+                <button class="btn btn-success w-100 btn-sm" @click="assignTiming" :disabled="!hasAudio">
                   <i class="bi bi-check-circle"></i>
                   Assign Time
-                  <br><small>(Space)</small>
+                  <br /><small>(Space)</small>
                 </button>
               </div>
               <div class="col-md-4">
-                <button 
-                  class="btn btn-outline-warning w-100 btn-sm"
-                  @click="clearCurrentTiming"
-                >
+                <button class="btn btn-outline-warning w-100 btn-sm" @click="clearCurrentTiming">
                   <i class="bi bi-clock-history"></i>
                   Clear Time
                 </button>
               </div>
               <div class="col-md-4">
-                <button 
-                  class="btn btn-outline-info w-100 btn-sm"
-                  @click="playFromCurrent"
-                  :disabled="!hasAudio"
-                >
+                <button class="btn btn-outline-info w-100 btn-sm" @click="playFromCurrent" :disabled="!hasAudio">
                   <i class="bi bi-play-circle"></i>
                   Play from Line
                 </button>
@@ -226,18 +195,18 @@ const props = withDefaults(defineProps<Props>(), {
   totalWords: 0,
   timedWords: 0,
   totalSyllables: 0,
-  timedSyllables: 0
+  timedSyllables: 0,
 })
 
 // Emits
 const emit = defineEmits<{
   'play-pause': []
-  'seek': [time: number]
+  seek: [time: number]
   'timing-mode': [enabled: boolean]
   'assign-timing': []
   'clear-timing': []
   'playback-rate': [rate: number]
-  'volume': [volume: number]
+  volume: [volume: number]
 }>()
 
 // Reactive state
@@ -332,7 +301,7 @@ const formatTime = (timeMs: number): string => {
 // Keyboard shortcuts
 const handleKeydown = (event: KeyboardEvent) => {
   if (event.target instanceof HTMLInputElement) return // Don't interfere with input fields
-  
+
   switch (event.code) {
     case 'Space':
       if (props.isTimingMode) {
@@ -451,13 +420,23 @@ if (typeof window !== 'undefined') {
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
 }
 
 @keyframes flash {
-  0%, 100% { background-color: #ffc107; }
-  50% { background-color: #ffca2c; }
+  0%,
+  100% {
+    background-color: #ffc107;
+  }
+  50% {
+    background-color: #ffca2c;
+  }
 }
 
 .btn:disabled {
@@ -474,11 +453,11 @@ if (typeof window !== 'undefined') {
   .quick-actions .btn {
     margin-bottom: 0.5rem;
   }
-  
+
   .stat-value {
     font-size: 1.25rem;
   }
-  
+
   .player-controls {
     flex-wrap: wrap;
     gap: 1rem !important;

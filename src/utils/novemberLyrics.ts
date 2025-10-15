@@ -60,14 +60,14 @@ export function parseNovemberLyrics(): TimedWord[] {
   let currentTime = 0
   let wordId = 0
   const beatInterval = 0.8 // Longer intervals for more obvious gaps
-  const wordDuration = 0.4 // Words are shorter than the beat interval  
+  const wordDuration = 0.4 // Words are shorter than the beat interval
   const gapBetweenWords = 0.4 // Larger gap between words for easier dragging
-  
+
   console.log(`🎵 Generating lyrics with: wordDuration=${wordDuration}s, beatInterval=${beatInterval}s, gap=${gapBetweenWords}s`)
 
   // Split into lines and process each line
   const lines = NOVEMBER_LYRICS.split('\n').filter(line => line.trim())
-  
+
   for (const line of lines) {
     // Skip lines that are just stage directions
     if (line.trim().startsWith('(') && line.trim().endsWith(')')) {
@@ -79,59 +79,70 @@ export function parseNovemberLyrics(): TimedWord[] {
 
     // Split line into words (separated by spaces)
     const lineWords = line.split(/\s+/).filter(word => word.trim())
-    
+
     for (const word of lineWords) {
       // Remove punctuation for processing but keep it for display
       const cleanWord = word.replace(/[.,!?;:]/g, '')
       const punctuation = word.match(/[.,!?;:]/g)?.[0] || ''
-      
+
       if (cleanWord.includes('/')) {
-        // Multi-syllable word
+        // Multi-syllable word with musical timing distribution
         const syllableParts = cleanWord.split('/')
         const syllables: Syllable[] = []
-        const syllableDuration = wordDuration / syllableParts.length
-        
+
+        // Create musical timing pattern: first syllables shorter, last longer
+        const weights = syllableParts.map((_, index) => {
+          if (index === syllableParts.length - 1) return 2.0 // Last syllable gets double time
+          return 0.7 + index * 0.15 // Earlier syllables shorter, gradually increasing
+        })
+
+        const totalWeight = weights.reduce((sum, weight) => sum + weight, 0)
+        const syllableDurations = weights.map(weight => (weight / totalWeight) * wordDuration)
+
+        let syllableStartTime = currentTime
         syllableParts.forEach((syllable, index) => {
-          const startTime = currentTime + (index * syllableDuration)
-          const endTime = startTime + syllableDuration
+          const endTime = syllableStartTime + syllableDurations[index]
           syllables.push({
             text: syllable + (index === syllableParts.length - 1 ? punctuation : ''),
-            startTime,
-            endTime
+            startTime: syllableStartTime,
+            endTime,
           })
+          syllableStartTime = endTime
         })
-        
+
         words.push({
           id: `word-${wordId++}`,
           text: cleanWord.replace(/\//g, '') + punctuation,
           startTime: currentTime,
           endTime: currentTime + wordDuration,
-          syllables
+          syllables,
         })
       } else {
         // Single word or "FULL" word
         const isFullWord = cleanWord.length > 6 // Longer words become "FULL"
-        
+
         if (isFullWord) {
           words.push({
             id: `word-${wordId++}`,
             text: 'FULL',
             startTime: currentTime,
             endTime: currentTime + wordDuration,
-            syllables: [{
-              text: 'FULL',
-              startTime: currentTime,
-              endTime: currentTime + wordDuration
-            }]
+            syllables: [
+              {
+                text: 'FULL',
+                startTime: currentTime,
+                endTime: currentTime + wordDuration,
+              },
+            ],
           })
         } else {
           words.push(createTimedWord(wordId++, cleanWord + punctuation, currentTime, currentTime + wordDuration))
         }
       }
-      
+
       currentTime += beatInterval
     }
-    
+
     // Add pause between lines
     currentTime += beatInterval * 0.5
   }
@@ -139,7 +150,9 @@ export function parseNovemberLyrics(): TimedWord[] {
   // Debug: Log first few words to see timing
   console.log('📊 First 5 words timing:')
   words.slice(0, 5).forEach((word, index) => {
-    console.log(`  ${index + 1}. "${word.text}": ${word.startTime.toFixed(2)}s - ${word.endTime.toFixed(2)}s (duration: ${(word.endTime - word.startTime).toFixed(2)}s)`)
+    console.log(
+      `  ${index + 1}. "${word.text}": ${word.startTime.toFixed(2)}s - ${word.endTime.toFixed(2)}s (duration: ${(word.endTime - word.startTime).toFixed(2)}s)`
+    )
   })
 
   return words
@@ -151,11 +164,13 @@ function createTimedWord(id: number, text: string, startTime: number, endTime: n
     text,
     startTime,
     endTime,
-    syllables: [{
-      text,
-      startTime,
-      endTime
-    }]
+    syllables: [
+      {
+        text,
+        startTime,
+        endTime,
+      },
+    ],
   }
 }
 

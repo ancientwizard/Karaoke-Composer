@@ -4,30 +4,21 @@ export default {
   extensionsToTreatAsEsm: ['.ts'],
   globals: {
     'ts-jest': {
-      useESM: true
-    }
+      useESM: true,
+    },
   },
   moduleNameMapping: {
-    '^@/(.*)$': '<rootDir>/src/$1'
+    '^@/(.*)$': '<rootDir>/src/$1',
   },
   transform: {
     '^.+\\.vue$': '@vue/vue3-jest',
     '^.+\\.(ts|tsx)$': 'ts-jest',
-    '^.+\\.(js|jsx)$': 'babel-jest'
+    '^.+\\.(js|jsx)$': 'babel-jest',
   },
-  testMatch: [
-    '<rootDir>/src/**/__tests__/**/*.(ts|js)',
-    '<rootDir>/src/**/*.(test|spec).(ts|js)'
-  ],
+  testMatch: ['<rootDir>/src/**/__tests__/**/*.(ts|js)', '<rootDir>/src/**/*.(test|spec).(ts|js)'],
   moduleFileExtensions: ['vue', 'js', 'ts', 'jsx', 'tsx', 'json'],
-  transformIgnorePatterns: [
-    'node_modules/(?!(.*\\.mjs$))'
-  ],
-  collectCoverageFrom: [
-    'src/**/*.{ts,vue}',
-    '!src/**/*.d.ts',
-    '!src/**/index.ts'
-  ],
+  transformIgnorePatterns: ['node_modules/(?!(.*\\.mjs$))'],
+  collectCoverageFrom: ['src/**/*.{ts,vue}', '!src/**/*.d.ts', '!src/**/index.ts'],
   coverageDirectory: 'coverage',
-  coverageReporters: ['text', 'lcov', 'html']
+  coverageReporters: ['text', 'lcov', 'html'],
 }

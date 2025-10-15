@@ -13,14 +13,13 @@
           <div class="card-body">
             <h5 class="card-title">🎵 What is Karaoke Composer?</h5>
             <p class="card-text">
-              Karaoke Composer is a modern web application that allows you to create professional 
-              karaoke tracks by synchronizing lyrics with audio files. Perfect for musicians, 
-              content creators, or anyone who loves karaoke!
+              Karaoke Composer is a modern web application that allows you to create professional karaoke tracks by synchronizing
+              lyrics with audio files. Perfect for musicians, content creators, or anyone who loves karaoke!
             </p>
           </div>
         </div>
       </div>
-      
+
       <div class="col-md-6 mb-4">
         <div class="card h-100">
           <div class="card-body">
@@ -83,12 +82,8 @@
             <h5 class="card-title">🚀 Ready to Get Started?</h5>
             <p class="card-text">Create your first karaoke project and start making music come alive with synchronized lyrics!</p>
             <div class="d-grid gap-2 d-md-flex justify-content-md-center">
-              <router-link to="/compose" class="btn btn-primary btn-lg">
-                Start Composing
-              </router-link>
-              <router-link to="/library" class="btn btn-outline-secondary btn-lg">
-                Browse Library
-              </router-link>
+              <router-link to="/compose" class="btn btn-primary btn-lg"> Start Composing </router-link>
+              <router-link to="/library" class="btn btn-outline-secondary btn-lg"> Browse Library </router-link>
             </div>
           </div>
         </div>

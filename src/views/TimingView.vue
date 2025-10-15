@@ -1,5 +1,45 @@
 <template>
   <div class="timing-view" tabindex="0" ref="timingViewRef" @click="ensureAudioReady">
+    <!-- Slide-in Timing Assignment Panel -->
+    <div class="timing-panel-container">
+      <div class="timing-panel visible">
+        <div class="timing-content">
+          <h5><i class="bi bi-stopwatch"></i> Timing Assignment</h5>
+
+          <div class="timing-controls mb-3">
+            <button
+              class="btn btn-sm w-100 mb-2"
+              :class="isTimingMode ? 'btn-warning' : 'btn-outline-light'"
+              @click="toggleTimingMode"
+            >
+              <i class="bi bi-crosshair"></i>
+              {{ isTimingMode ? 'Exit Timing Mode' : 'Enter Timing Mode' }}
+            </button>
+            <button class="btn btn-success btn-sm w-100" @click="assignTiming" :disabled="!isTimingMode">
+              <i class="bi bi-check-circle"></i> Assign Timing
+            </button>
+          </div>
+
+          <!-- Progress Stats -->
+          <div class="timing-stats">
+            <h6 class="text-light mb-2">Progress</h6>
+            <div class="stat-row">
+              <span class="stat-label">Lines:</span>
+              <span class="stat-value">{{ timingStats.timedLines }}/{{ timingStats.totalLines }}</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Words:</span>
+              <span class="stat-value">{{ timingStats.timedWords }}/{{ timingStats.totalWords }}</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Syllables:</span>
+              <span class="stat-value">{{ timingStats.timedSyllables }}/{{ timingStats.totalSyllables }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Header with project info and navigation -->
     <div class="timing-header bg-light p-3 mb-4">
       <div class="row align-items-center">
@@ -7,9 +47,7 @@
           <nav aria-label="breadcrumb" class="mb-2">
             <ol class="breadcrumb mb-0">
               <li class="breadcrumb-item">
-                <router-link to="/compose" class="text-decoration-none">
-                  <i class="bi bi-arrow-left"></i> Projects
-                </router-link>
+                <router-link to="/compose" class="text-decoration-none"> <i class="bi bi-arrow-left"></i> Projects </router-link>
               </li>
               <li class="breadcrumb-item active" aria-current="page">Timing Editor</li>
             </ol>
@@ -18,20 +56,11 @@
           <p class="mb-0 text-muted">by {{ project?.artist }} • {{ project?.genre }}</p>
         </div>
         <div class="col-md-4 text-end">
-          <button class="btn btn-success btn-sm me-2" @click="saveProject">
-            <i class="bi bi-save"></i> Save
-          </button>
-          <button 
-            class="btn btn-primary btn-sm me-2" 
-            type="button"
-            :title="hotkeyHelpText"
-            @click="showHotkeyHelp"
-          >
+          <button class="btn btn-success btn-sm me-2" @click="saveProject"><i class="bi bi-save"></i> Save</button>
+          <button class="btn btn-primary btn-sm me-2" type="button" :title="hotkeyHelpText" @click="showHotkeyHelp">
             <i class="bi bi-question-circle"></i> Help
           </button>
-          <router-link to="/compose" class="btn btn-outline-secondary btn-sm">
-            <i class="bi bi-x-circle"></i> Close
-          </router-link>
+          <router-link to="/compose" class="btn btn-outline-secondary btn-sm"> <i class="bi bi-x-circle"></i> Close </router-link>
         </div>
       </div>
     </div>
@@ -42,7 +71,7 @@
       <div class="row mb-4">
         <!-- Lyrics Editor Column -->
         <div class="col-lg-6">
-          <LyricsEditor 
+          <LyricsEditor
             :lyrics="project.lyrics"
             :currentLine="currentLine"
             :currentWord="currentWordIndex"
@@ -57,7 +86,7 @@
           <div class="row">
             <!-- Lyrics Preview -->
             <div class="col-12 mb-3">
-              <LyricsPreview 
+              <LyricsPreview
                 :lyrics="project.lyrics"
                 :currentTime="playbackState.currentTime"
                 :currentLine="currentLine"
@@ -65,56 +94,8 @@
                 :currentSyllable="playbackState.currentSyllable?.syllableIndex"
               />
             </div>
-            
-            <!-- Timing Assignment Controls -->
-            <div class="col-12">
-              <div class="card">
-                <div class="card-header">
-                  <h5 class="mb-0">⏱️ Timing Assignment</h5>
-                </div>
-                <div class="card-body">
-                  <div class="d-flex justify-content-between align-items-center mb-3">
-                    <button 
-                      class="btn"
-                      :class="isTimingMode ? 'btn-warning' : 'btn-outline-secondary'"
-                      @click="toggleTimingMode"
-                    >
-                      <i class="bi bi-crosshair"></i>
-                      {{ isTimingMode ? 'Exit Timing Mode' : 'Enter Timing Mode' }}
-                    </button>
-                    <button 
-                      class="btn btn-success"
-                      @click="assignTiming"
-                      :disabled="!isTimingMode"
-                    >
-                      <i class="bi bi-check-circle"></i> Assign Timing
-                    </button>
-                  </div>
-                  
-                  <!-- Progress Stats -->
-                  <div class="row text-center">
-                    <div class="col-4">
-                      <div class="stat-item">
-                        <div class="stat-number">{{ timingStats.timedLines }}/{{ timingStats.totalLines }}</div>
-                        <div class="stat-label text-muted">Lines</div>
-                      </div>
-                    </div>
-                    <div class="col-4">
-                      <div class="stat-item">
-                        <div class="stat-number">{{ timingStats.timedWords }}/{{ timingStats.totalWords }}</div>
-                        <div class="stat-label text-muted">Words</div>
-                      </div>
-                    </div>
-                    <div class="col-4">
-                      <div class="stat-item">
-                        <div class="stat-number">{{ timingStats.timedSyllables }}/{{ timingStats.totalSyllables }}</div>
-                        <div class="stat-label text-muted">Syllables</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+
+            <!-- Timing Assignment Controls moved to slide-in panel -->
           </div>
         </div>
       </div>
@@ -122,7 +103,7 @@
       <!-- Waveform View - Full Width -->
       <div class="row">
         <div class="col-12">
-          <WaveformViewer 
+          <WaveformViewer
             :audioFile="project.audioFile"
             :lyrics="project.lyrics"
             :currentTime="playbackState.currentTime"
@@ -137,6 +118,13 @@
           />
         </div>
       </div>
+
+      <!-- Word Timing Editor -->
+      <div class="row mt-3">
+        <div class="col-12">
+          <WordTimingEditor :words="timingEditorWords" :duration="audioDuration" :view-start="0" :view-end="10" />
+        </div>
+      </div>
     </div>
 
     <!-- Loading State -->
@@ -149,13 +137,11 @@
 
     <!-- Project Not Found -->
     <div v-else class="error-screen text-center py-5">
-      <div class="card mx-auto" style="max-width: 500px;">
+      <div class="card mx-auto" style="max-width: 500px">
         <div class="card-body p-5">
           <h3>Project Not Found</h3>
           <p class="lead">The requested project could not be found.</p>
-          <router-link to="/compose" class="btn btn-primary">
-            <i class="bi bi-arrow-left"></i> Back to Projects
-          </router-link>
+          <router-link to="/compose" class="btn btn-primary"> <i class="bi bi-arrow-left"></i> Back to Projects </router-link>
         </div>
       </div>
     </div>
@@ -204,7 +190,7 @@
                 </ul>
               </div>
             </div>
-            
+
             <div class="alert alert-info mt-3">
               <strong>💡 Pro Tips:</strong>
               <ul class="mb-0 mt-2">
@@ -235,6 +221,7 @@ import { assignWordTiming, getCurrentPosition, getTimingStats } from '@/utils/ly
 import LyricsEditor from '@/components/LyricsEditor.vue'
 import LyricsPreview from '@/components/LyricsPreview.vue'
 import WaveformViewer from '@/components/WaveformViewer.vue'
+import WordTimingEditor from '@/components/WordTimingEditor.vue'
 
 // Router
 const route = useRoute()
@@ -245,6 +232,7 @@ const timingViewRef = ref<HTMLElement>()
 const project = ref<KaraokeProject | null>(null)
 const loading = ref(true)
 const showHotkeyModal = ref(false)
+const showTimingPanel = ref(false)
 const currentLine = ref(0)
 const currentWordIndex = ref(0)
 const isTimingMode = ref(false)
@@ -260,7 +248,7 @@ const playbackState = ref<PlaybackState>({
   duration: 0,
   volume: 1,
   playbackRate: 1,
-  isLoaded: false
+  isLoaded: false,
 })
 
 // Computed properties
@@ -273,14 +261,43 @@ const timingStats = computed(() => {
       timedWords: 0,
       totalSyllables: 0,
       timedSyllables: 0,
-      completionPercent: 0
+      completionPercent: 0,
     }
   }
   return getTimingStats(project.value.lyrics)
 })
 
 const hotkeyHelpText = computed(() => {
-  return "Click for complete hotkey reference guide"
+  return 'Click for complete hotkey reference guide'
+})
+
+// Computed properties for WordTimingEditor
+const timingEditorWords = computed(() => {
+  if (!project.value?.lyrics) return []
+
+  const words: { id: string; text: string; startTime: number; endTime: number; syllables?: any[] }[] = []
+
+  project.value.lyrics.forEach((line, lineIndex) => {
+    line.words.forEach((word, wordIndex) => {
+      words.push({
+        id: `line-${lineIndex}-word-${wordIndex}`,
+        text: word.word,
+        startTime: word.startTime || 0,
+        endTime: word.endTime || word.startTime || 0,
+        syllables: word.syllables?.map((syllable, syllableIndex) => ({
+          text: syllable.syllable,
+          startTime: syllable.startTime || 0,
+          endTime: syllable.endTime || syllable.startTime || 0,
+        })),
+      })
+    })
+  })
+
+  return words
+})
+
+const audioDuration = computed(() => {
+  return playbackState.value.duration || 60 // Default to 60 seconds if not loaded
 })
 
 // Methods
@@ -379,13 +396,13 @@ const ensureAudioReady = async () => {
 // Smart duration calculation helper
 const calculateSmartDuration = (currentLineIndex: number, currentWordIndex: number): number => {
   if (!project.value) return 500
-  
+
   const lyrics = project.value.lyrics
   const currentLine = lyrics[currentLineIndex]
   if (!currentLine) return 500
-  
+
   let nextTiming: number | undefined
-  
+
   // Try to find next word timing
   if (currentWordIndex < currentLine.words.length - 1) {
     // Next word in same line
@@ -398,14 +415,14 @@ const calculateSmartDuration = (currentLineIndex: number, currentWordIndex: numb
       nextTiming = nextLine.words[0].startTime
     }
   }
-  
+
   if (nextTiming) {
     const currentTime = playbackState.value.currentTime
-    const timeToNext = (nextTiming / 1000) - currentTime // Convert to seconds
-    
+    const timeToNext = nextTiming / 1000 - currentTime // Convert to seconds
+
     // Determine if this is a phrase/verse break (longer gap)
     const isLongBreak = timeToNext > 3 // More than 3 seconds = phrase break
-    
+
     if (isLongBreak) {
       // 50% of time to next for phrase/verse breaks
       return Math.max(300, timeToNext * 0.5 * 1000) // Min 300ms, max 50% in milliseconds
@@ -414,44 +431,38 @@ const calculateSmartDuration = (currentLineIndex: number, currentWordIndex: numb
       return Math.max(200, timeToNext * 0.825 * 1000) // Min 200ms, 82.5% average in milliseconds
     }
   }
-  
+
   // Fallback durations based on word length
   const currentWord = currentLine.words[currentWordIndex]
   if (currentWord) {
     const wordLength = currentWord.word.length
     return Math.max(200, wordLength * 80) // ~80ms per character, min 200ms
   }
-  
+
   return 500 // Default fallback
 }
 
 const assignTiming = () => {
   if (!project.value || !isTimingMode.value) return
-  
+
   const lineIndex = currentLine.value
   const wordIndex = currentWordIndex.value
   const currentTime = playbackState.value.currentTime
-  
+
   if (lineIndex < project.value.lyrics.length) {
     // Calculate smart duration
     const smartDuration = calculateSmartDuration(lineIndex, wordIndex)
-    
+
     // Assign timing to current word using spacebar with smart duration
-    project.value.lyrics = assignWordTiming(
-      project.value.lyrics,
-      lineIndex,
-      wordIndex,
-      currentTime,
-      smartDuration
-    )
+    project.value.lyrics = assignWordTiming(project.value.lyrics, lineIndex, wordIndex, currentTime, smartDuration)
 
     console.log('⏱️ Smart timing assigned:', {
       word: project.value.lyrics[lineIndex].words[wordIndex].word,
       startTime: currentTime,
       duration: smartDuration,
-      calculation: smartDuration > 400 ? 'phrase-break' : 'normal-spacing'
+      calculation: smartDuration > 400 ? 'phrase-break' : 'normal-spacing',
     })
-    
+
     // Move to next word/line
     moveToNextWord()
   }
@@ -459,10 +470,10 @@ const assignTiming = () => {
 
 const moveToNextWord = () => {
   if (!project.value) return
-  
+
   const currentLyricLine = project.value.lyrics[currentLine.value]
   if (!currentLyricLine) return
-  
+
   if (currentWordIndex.value < currentLyricLine.words.length - 1) {
     // Move to next word in same line
     currentWordIndex.value++
@@ -475,7 +486,7 @@ const moveToNextWord = () => {
 
 const updateLyricsPosition = (lineIndex: number, time: number) => {
   if (!project.value) return
-  
+
   const lyric = project.value.lyrics[lineIndex]
   if (lyric) {
     lyric.startTime = time
@@ -484,10 +495,10 @@ const updateLyricsPosition = (lineIndex: number, time: number) => {
 
 const saveProject = () => {
   if (!project.value) return
-  
+
   project.value.updatedAt = new Date()
   saveProjectsToStorage()
-  
+
   // Show save confirmation
   // TODO: Could add a toast notification here
   console.log('Project saved:', project.value.name)
@@ -506,7 +517,7 @@ const loadProject = async (projectId: string) => {
   try {
     const projects = JSON.parse(stored)
     const foundProject = projects.find((p: any) => p.id === projectId)
-    
+
     if (!foundProject) {
       console.warn(`Project ${projectId} not found, redirecting to compose page`)
       alert('⚠️ Project not found. It may have been deleted. Redirecting to the compose page.')
@@ -521,21 +532,23 @@ const loadProject = async (projectId: string) => {
       updatedAt: new Date(foundProject.updatedAt),
       audioFile: {
         ...foundProject.audioFile,
-        file: null // Will be restored from storage if needed
-      }
+        file: null, // Will be restored from storage if needed
+      },
     }
 
     project.value = restoredProject
-    
+
     // Try to load project audio, redirect if it fails
     const audioLoadSuccess = await loadProjectAudio(restoredProject)
     if (!audioLoadSuccess) {
       console.warn(`Failed to load audio for project ${projectId}, redirecting to compose page`)
-      alert('⚠️ Could not load the audio file for this project. Please check if the file still exists or try re-importing it. Redirecting to the compose page.')
+      alert(
+        '⚠️ Could not load the audio file for this project. Please check if the file still exists or try re-importing it. Redirecting to the compose page.'
+      )
       router.push('/compose')
       return
     }
-    
+
     loading.value = false
   } catch (error) {
     console.error('Error loading project:', error)
@@ -556,7 +569,7 @@ const loadProjectAudio = async (proj: KaraokeProject): Promise<boolean> => {
     hasFile: !!proj.audioFile.file,
     hasStoredData: !!proj.audioFile.storedData,
     storageType: proj.audioFile.storedData?.storageType,
-    duration: proj.audioFile.duration
+    duration: proj.audioFile.duration,
   })
 
   try {
@@ -566,11 +579,11 @@ const loadProjectAudio = async (proj: KaraokeProject): Promise<boolean> => {
     if (!audioFile.file && audioFile.storedData) {
       console.log('Retrieving stored audio file...')
       const retrievedFile = await audioStorageService.retrieveAudioFile(audioFile.storedData)
-      
+
       if (retrievedFile) {
         audioFile = {
           ...audioFile,
-          ...retrievedFile
+          ...retrievedFile,
         }
         proj.audioFile = audioFile
         console.log('✅ Audio file retrieved successfully')
@@ -582,17 +595,17 @@ const loadProjectAudio = async (proj: KaraokeProject): Promise<boolean> => {
 
     let success = false
     let retries = 3
-    
+
     // Retry logic for audio loading
     while (!success && retries > 0) {
       try {
-        console.log(`Attempting to load audio (${4-retries}/3)...`)
+        console.log(`Attempting to load audio (${4 - retries}/3)...`)
         success = await audioService.loadAudioFile(audioFile)
-        
+
         if (success) {
           const state = audioService.getPlaybackState()
           playbackState.value = { ...state }
-          
+
           // Store the detected duration in the project for future use
           if (!proj.audioFile.duration || proj.audioFile.duration !== state.duration) {
             console.log('💾 Storing detected audio duration:', state.duration / 1000, 'seconds')
@@ -600,7 +613,7 @@ const loadProjectAudio = async (proj: KaraokeProject): Promise<boolean> => {
             proj.updatedAt = new Date()
             saveProjectsToStorage()
           }
-          
+
           // Generate waveform data if needed
           if (!waveformData.value) {
             const peaks = await audioService.generateWaveformData(1000)
@@ -609,7 +622,7 @@ const loadProjectAudio = async (proj: KaraokeProject): Promise<boolean> => {
                 peaks,
                 sampleRate: 44100,
                 duration: state.duration,
-                channels: 1
+                channels: 1,
               }
             }
           }
@@ -630,12 +643,12 @@ const loadProjectAudio = async (proj: KaraokeProject): Promise<boolean> => {
         }
       }
     }
-    
+
     if (!success) {
       console.error('Failed to load audio after multiple attempts')
       return false
     }
-    
+
     return true
   } catch (error) {
     console.error('Error loading project audio:', error)
@@ -645,11 +658,11 @@ const loadProjectAudio = async (proj: KaraokeProject): Promise<boolean> => {
 
 const saveProjectsToStorage = () => {
   if (!project.value) return
-  
+
   try {
     const stored = localStorage.getItem('karaokeProjects')
     const projects = stored ? JSON.parse(stored) : []
-    
+
     // Find and update the project
     const projectIndex = projects.findIndex((p: any) => p.id === project.value!.id)
     if (projectIndex !== -1) {
@@ -659,10 +672,10 @@ const saveProjectsToStorage = () => {
         audioFile: {
           ...project.value.audioFile,
           file: null, // Remove File object
-          url: undefined // Remove blob URL
-        }
+          url: undefined, // Remove blob URL
+        },
       }
-      
+
       projects[projectIndex] = serializableProject
       localStorage.setItem('karaokeProjects', JSON.stringify(projects))
       console.log('💾 Project saved to storage')
@@ -674,29 +687,29 @@ const saveProjectsToStorage = () => {
 
 // Setup audio service listeners
 const setupAudioListeners = () => {
-  audioService.onTimeUpdate((time) => {
+  audioService.onTimeUpdate(time => {
     playbackState.value.currentTime = time
-    
+
     // Update current position based on timing
     if (project.value) {
       const position = getCurrentPosition(project.value.lyrics, time)
       currentLine.value = position.lineIndex
       currentWordIndex.value = position.wordIndex
-      
+
       playbackState.value.currentWord = {
         lineIndex: position.lineIndex,
-        wordIndex: position.wordIndex
+        wordIndex: position.wordIndex,
       }
-      
+
       playbackState.value.currentSyllable = {
         lineIndex: position.lineIndex,
         wordIndex: position.wordIndex,
-        syllableIndex: position.syllableIndex
+        syllableIndex: position.syllableIndex,
       }
     }
   })
-  
-  audioService.onPlaybackStateChange((state) => {
+
+  audioService.onPlaybackStateChange(state => {
     playbackState.value = { ...state }
   })
 }
@@ -708,7 +721,7 @@ const setupGlobalHotkeys = () => {
     if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
       return
     }
-    
+
     switch (event.code) {
       case 'Space':
         event.preventDefault()
@@ -718,7 +731,7 @@ const setupGlobalHotkeys = () => {
           togglePlayPause()
         }
         break
-        
+
       case 'NumpadEnter':
       case 'Enter':
         if (!event.ctrlKey && !event.metaKey) {
@@ -726,7 +739,7 @@ const setupGlobalHotkeys = () => {
           togglePlayPause()
         }
         break
-        
+
       case 'Numpad0':
       case 'NumpadDecimal':
         event.preventDefault()
@@ -734,69 +747,69 @@ const setupGlobalHotkeys = () => {
           assignTiming()
         }
         break
-        
+
       case 'NumpadAdd':
         event.preventDefault()
         skipForwardShort()
         break
-        
+
       case 'NumpadSubtract':
         event.preventDefault()
         skipBackwardShort()
         break
-        
+
       case 'KeyT':
         if (event.altKey) {
           event.preventDefault()
           toggleTimingMode()
         }
         break
-        
+
       case 'KeyP':
         if (event.ctrlKey || event.metaKey) {
           event.preventDefault()
           togglePlayPause()
         }
         break
-        
+
       case 'KeyL':
         if (event.ctrlKey || event.metaKey) {
           event.preventDefault()
           skipBackward()
         }
         break
-        
+
       case 'KeyR':
         if (event.ctrlKey || event.metaKey) {
           event.preventDefault()
           skipForward()
         }
         break
-        
+
       case 'Home':
         event.preventDefault()
         seekToStart()
         break
-        
+
       case 'End':
         event.preventDefault()
         seekToEnd()
         break
-        
+
       case 'ArrowLeft':
         if (event.ctrlKey || event.metaKey) {
           event.preventDefault()
           skipBackward()
         }
         break
-        
+
       case 'ArrowRight':
         if (event.ctrlKey || event.metaKey) {
           event.preventDefault()
           skipForward()
         }
         break
-        
+
       case 'Escape':
         if (showHotkeyModal.value) {
           event.preventDefault()
@@ -805,9 +818,9 @@ const setupGlobalHotkeys = () => {
         break
     }
   }
-  
+
   window.addEventListener('keydown', handleKeyDown)
-  
+
   return () => {
     window.removeEventListener('keydown', handleKeyDown)
   }
@@ -821,13 +834,13 @@ onMounted(async () => {
   } else {
     loading.value = false
   }
-  
+
   setupAudioListeners()
-  
+
   // Setup global hotkeys
   const cleanupHotkeys = setupGlobalHotkeys()
   cleanupGlobalHotkeys = cleanupHotkeys
-  
+
   // Focus the component so hotkeys work
   setTimeout(() => {
     if (timingViewRef.value) {
@@ -841,7 +854,7 @@ onUnmounted(() => {
   // Don't dispose the audio service - it should persist across routes
   // Just pause any playing audio
   audioService.pause()
-  
+
   // Cleanup global hotkeys
   if (cleanupGlobalHotkeys) {
     cleanupGlobalHotkeys()
@@ -902,5 +915,77 @@ onUnmounted(() => {
 
 .stat-label {
   font-size: 0.875rem;
+}
+
+/* Slide-in Timing Assignment Panel */
+.timing-panel-container {
+  position: fixed;
+  top: 50%;
+  left: 0;
+  z-index: 1000;
+  transform: translateY(-50%);
+}
+
+.timing-panel {
+  position: relative;
+  width: 280px;
+  background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+  border-radius: 8px;
+  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.25);
+  color: white;
+}
+
+.timing-content {
+  padding: 20px;
+}
+
+.timing-content h5 {
+  margin: 0 0 15px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  padding-bottom: 8px;
+}
+
+.timing-content h5 i {
+  margin-right: 8px;
+  color: #ffd700;
+}
+
+.timing-controls .btn {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.timing-stats {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.timing-stats h6 {
+  color: #ffd700;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2px 0;
+  font-size: 12px;
+}
+
+.stat-row .stat-label {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
+}
+
+.stat-value {
+  color: #ffd700;
+  font-weight: 600;
 }
 </style>

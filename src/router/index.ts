@@ -7,36 +7,36 @@ const router = createRouter({
     {
       path: '/',
       name: 'home',
-      component: HomeView
+      component: HomeView,
     },
     {
       path: '/compose',
       name: 'compose',
       // Route level code-splitting for better performance
-      component: () => import('@/views/ComposeView.vue')
+      component: () => import('@/views/ComposeView.vue'),
     },
     {
       path: '/timing/:projectId',
       name: 'timing',
       component: () => import('@/views/TimingView.vue'),
-      props: true
+      props: true,
     },
     {
       path: '/library',
       name: 'library',
-      component: () => import('@/views/LibraryView.vue')
+      component: () => import('@/views/LibraryView.vue'),
     },
     {
       path: '/about',
       name: 'about',
-      component: () => import('@/views/AboutView.vue')
+      component: () => import('@/views/AboutView.vue'),
     },
     {
       path: '/test-timing',
       name: 'test-timing',
-      component: () => import('@/views/TestTimingView.vue')
-    }
-  ]
+      component: () => import('@/views/TestTimingView.vue'),
+    },
+  ],
 })
 
 export default router

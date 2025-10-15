@@ -1,0 +1,6 @@
+# Prettier ignore file
+# Add patterns for files where you want to preserve manual formatting
+
+# Example: Ignore files with aligned comments
+# **/aligned-comments.ts
+# **/config-with-aligned-comments.js

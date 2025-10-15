@@ -4,7 +4,7 @@
       <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0">👁️ Lyrics Preview</h5>
         <div class="preview-controls">
-          <button 
+          <button
             class="btn btn-sm btn-outline-secondary me-2"
             @click="toggleKaraokeMode"
             :class="{ active: isKaraokeMode }"
@@ -13,21 +13,21 @@
             <i class="bi bi-display"></i>
           </button>
           <div class="btn-group" role="group">
-            <button 
+            <button
               class="btn btn-sm btn-outline-primary"
               :class="{ active: fontSize === 'small' }"
               @click="setFontSize('small')"
             >
               A
             </button>
-            <button 
+            <button
               class="btn btn-sm btn-outline-primary"
               :class="{ active: fontSize === 'medium' }"
               @click="setFontSize('medium')"
             >
               A
             </button>
-            <button 
+            <button
               class="btn btn-sm btn-outline-primary"
               :class="{ active: fontSize === 'large' }"
               @click="setFontSize('large')"
@@ -46,41 +46,33 @@
           <div v-if="isKaraokeMode" class="karaoke-display">
             <div class="context-lines">
               <!-- Previous lines -->
-              <div 
-                v-for="(lyric, index) in previousLines" 
-                :key="`prev-${lyric.id}`"
-                class="context-line previous"
-              >
+              <div v-for="(lyric, index) in previousLines" :key="`prev-${lyric.id}`" class="context-line previous">
                 {{ getCleanText(lyric) }}
               </div>
             </div>
 
             <!-- Current Line - Prominent -->
-            <div 
-              v-if="currentLyric"
-              class="current-line-display"
-              :class="{ 'highlighted': isCurrentLinePlaying }"
-            >
+            <div v-if="currentLyric" class="current-line-display" :class="{ highlighted: isCurrentLinePlaying }">
               <div class="line-text">
                 <!-- Show word/syllable highlighting -->
-                <span 
-                  v-for="(word, wordIndex) in currentLyric.words" 
+                <span
+                  v-for="(word, wordIndex) in currentLyric.words"
                   :key="wordIndex"
                   class="karaoke-word"
-                  :class="{ 
+                  :class="{
                     'current-word': wordIndex === currentWord,
                     'past-word': isWordPast(currentLyric, wordIndex),
-                    'future-word': isWordFuture(currentLyric, wordIndex)
+                    'future-word': isWordFuture(currentLyric, wordIndex),
                   }"
                 >
-                  <span 
+                  <span
                     v-for="(syllable, sylIndex) in word.syllables"
                     :key="sylIndex"
                     class="karaoke-syllable"
-                    :class="{ 
+                    :class="{
                       'current-syllable': wordIndex === currentWord && sylIndex === currentSyllable,
                       'past-syllable': isSyllablePast(syllable),
-                      'future-syllable': isSyllableFuture(syllable)
+                      'future-syllable': isSyllableFuture(syllable),
                     }"
                   >
                     {{ syllable.syllable }}
@@ -95,11 +87,7 @@
 
             <div class="context-lines">
               <!-- Next lines -->
-              <div 
-                v-for="(lyric, index) in nextLines" 
-                :key="`next-${lyric.id}`"
-                class="context-line next"
-              >
+              <div v-for="(lyric, index) in nextLines" :key="`next-${lyric.id}`" class="context-line next">
                 {{ getCleanText(lyric) }}
               </div>
             </div>
@@ -107,16 +95,16 @@
 
           <!-- Normal Mode - All lyrics visible -->
           <div v-else class="normal-display">
-            <div 
-              v-for="(lyric, index) in lyrics" 
+            <div
+              v-for="(lyric, index) in lyrics"
               :key="lyric.id"
               class="preview-line"
               :class="{
-                'current': index === currentLine,
+                current: index === currentLine,
                 'has-timing': lyric.startTime !== undefined,
-                'past': lyric.startTime !== undefined && lyric.startTime < currentTime,
-                'future': lyric.startTime !== undefined && lyric.startTime > currentTime,
-                'playing': isLinePlaying(lyric, index)
+                past: lyric.startTime !== undefined && lyric.startTime < currentTime,
+                future: lyric.startTime !== undefined && lyric.startTime > currentTime,
+                playing: isLinePlaying(lyric, index),
               }"
             >
               <div class="line-content">
@@ -126,16 +114,10 @@
                   {{ formatTime(lyric.startTime) }}
                 </span>
               </div>
-              
+
               <!-- Progress bar for current playing line -->
-              <div 
-                v-if="isLinePlaying(lyric, index) && lyric.duration"
-                class="line-progress"
-              >
-                <div 
-                  class="progress-bar"
-                  :style="{ width: getLineProgress(lyric) + '%' }"
-                ></div>
+              <div v-if="isLinePlaying(lyric, index) && lyric.duration" class="line-progress">
+                <div class="progress-bar" :style="{ width: getLineProgress(lyric) + '%' }"></div>
               </div>
             </div>
           </div>
@@ -200,10 +182,10 @@ const isCurrentLinePlaying = computed(() => {
   if (!currentLyric.value || currentLyric.value.startTime === undefined) {
     return false
   }
-  
+
   const startTime = currentLyric.value.startTime
-  const endTime = currentLyric.value.endTime || (startTime + (currentLyric.value.duration || 3000))
-  
+  const endTime = currentLyric.value.endTime || startTime + (currentLyric.value.duration || 3000)
+
   return props.currentTime >= startTime && props.currentTime <= endTime
 })
 
@@ -227,19 +209,19 @@ const setFontSize = (size: 'small' | 'medium' | 'large') => {
 
 const isLinePlaying = (lyric: LyricLine, index: number): boolean => {
   if (lyric.startTime === undefined) return false
-  
+
   const startTime = lyric.startTime
-  const endTime = lyric.endTime || (startTime + (lyric.duration || 3000))
-  
+  const endTime = lyric.endTime || startTime + (lyric.duration || 3000)
+
   return props.currentTime >= startTime && props.currentTime <= endTime
 }
 
 const getLineProgress = (lyric: LyricLine): number => {
   if (!lyric.startTime || !lyric.duration) return 0
-  
+
   const elapsed = props.currentTime - lyric.startTime
   const progress = (elapsed / lyric.duration) * 100
-  
+
   return Math.max(0, Math.min(100, progress))
 }
 
@@ -278,22 +260,25 @@ const isSyllableFuture = (syllable: any): boolean => {
 }
 
 // Auto-scroll to current line in normal mode
-watch(() => props.currentLine, () => {
-  if (!isKaraokeMode.value) {
-    nextTick(() => {
-      const display = lyricsDisplay.value
-      if (display) {
-        const currentElement = display.querySelector('.preview-line.current')
-        if (currentElement) {
-          currentElement.scrollIntoView({
-            behavior: 'smooth',
-            block: 'center'
-          })
+watch(
+  () => props.currentLine,
+  () => {
+    if (!isKaraokeMode.value) {
+      nextTick(() => {
+        const display = lyricsDisplay.value
+        if (display) {
+          const currentElement = display.querySelector('.preview-line.current')
+          if (currentElement) {
+            currentElement.scrollIntoView({
+              behavior: 'smooth',
+              block: 'center',
+            })
+          }
         }
-      }
-    })
+      })
+    }
   }
-})
+)
 </script>
 
 <style scoped>
@@ -423,9 +408,15 @@ watch(() => props.currentLine, () => {
 }
 
 @keyframes syllable-highlight {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.2); }
-  100% { transform: scale(1); }
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 /* Normal Mode Styles */

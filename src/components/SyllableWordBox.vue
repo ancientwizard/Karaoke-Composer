@@ -1,7 +1,7 @@
 <template>
   <div
     class="syllable-word-box"
-    :class="{ 'selected': isSelected }"
+    :class="{ selected: isSelected }"
     :style="wordStyle"
     @mousedown="handleWordMouseDown"
     @click="handleClick"
@@ -15,7 +15,7 @@
       @mousedown.stop="handleSyllableMouseDown($event, index)"
     >
       <span class="syllable-text">{{ syllable.text }}</span>
-      
+
       <!-- Syllable divider (except for last syllable) -->
       <div
         v-if="index < word.syllables.length - 1"
@@ -23,12 +23,9 @@
         @mousedown.stop="handleDividerMouseDown($event, index)"
       ></div>
     </div>
-    
+
     <!-- Word resize handle for right edge -->
-    <div 
-      class="resize-handle right"
-      @mousedown.stop="handleWordResizeStart"
-    ></div>
+    <div class="resize-handle right" @mousedown.stop="handleWordResizeStart"></div>
   </div>
 </template>
 
@@ -62,7 +59,7 @@ interface Props {
 const props = defineProps<Props>()
 
 const emit = defineEmits<{
-  'select': [wordId: string]
+  select: [wordId: string]
   'update-timing': [wordId: string, startTime: number, endTime: number]
   'update-syllable-timing': [wordId: string, syllableIndex: number, startTime: number, endTime: number]
 }>()
@@ -81,12 +78,12 @@ const wordStyle = computed(() => {
   const relativeStartTime = props.word.startTime - props.viewStart
   const leftPercent = (relativeStartTime / props.duration) * 100
   const widthPercent = ((props.word.endTime - props.word.startTime) / props.duration) * 100
-  
+
   return {
     left: `${Math.max(leftPercent, 0)}%`,
     width: `${Math.max(widthPercent, 1)}%`, // Minimum width for visibility
     position: 'absolute' as const,
-    top: '0px'
+    top: '0px',
   }
 })
 
@@ -94,10 +91,10 @@ const getSyllableStyle = (syllable: Syllable, index: number) => {
   const wordDuration = props.word.endTime - props.word.startTime
   const syllableDuration = syllable.endTime - syllable.startTime
   const widthPercent = (syllableDuration / wordDuration) * 100
-  
+
   return {
     width: `${Math.max(widthPercent, 10)}%`, // Minimum width
-    backgroundColor: `hsl(${200 + index * 20}, 70%, ${50 + index * 5}%)` // Varied colors
+    backgroundColor: `hsl(${200 + index * 20}, 70%, ${50 + index * 5}%)`, // Varied colors
   }
 }
 
@@ -119,16 +116,16 @@ const handleClick = (event: MouseEvent) => {
 const handleWordMouseDown = (event: MouseEvent) => {
   event.preventDefault()
   event.stopPropagation()
-  
+
   isDraggingWord.value = true
   dragStartX.value = event.clientX
-  
+
   // Store initial times for all syllables
   initialTimes.value = props.word.syllables.map(s => s.startTime)
   initialTimes.value.push(props.word.endTime) // Add end time
-  
+
   emit('select', props.word.id)
-  
+
   document.addEventListener('mousemove', handleWordDrag)
   document.addEventListener('mouseup', handleWordDragEnd)
 }
@@ -142,16 +139,16 @@ const handleSyllableMouseDown = (event: MouseEvent, syllableIndex: number) => {
 const handleDividerMouseDown = (event: MouseEvent, dividerIndex: number) => {
   event.preventDefault()
   event.stopPropagation()
-  
+
   isDraggingDivider.value = true
   activeDividerIndex.value = dividerIndex
   dragStartX.value = event.clientX
-  
+
   // Store initial times
   initialTimes.value = props.word.syllables.map(s => s.endTime)
-  
+
   emit('select', props.word.id)
-  
+
   document.addEventListener('mousemove', handleDividerDrag)
   document.addEventListener('mouseup', handleDividerDragEnd)
 }
@@ -159,43 +156,40 @@ const handleDividerMouseDown = (event: MouseEvent, dividerIndex: number) => {
 const handleWordResizeStart = (event: MouseEvent) => {
   event.preventDefault()
   event.stopPropagation()
-  
+
   isResizingWord.value = true
   dragStartX.value = event.clientX
-  
+
   document.addEventListener('mousemove', handleWordResize)
   document.addEventListener('mouseup', handleWordResizeEnd)
 }
 
 const handleWordDrag = (event: MouseEvent) => {
   if (!isDraggingWord.value) return
-  
+
   const deltaX = event.clientX - dragStartX.value
   const timePerPixel = props.duration / props.timelineWidth
   const deltaTime = deltaX * timePerPixel
-  
-  const newStartTime = Math.max(
-    getMinStartTime(),
-    Math.min(initialTimes.value[0] + deltaTime, getMaxEndTime() - 0.1)
-  )
-  
+
+  const newStartTime = Math.max(getMinStartTime(), Math.min(initialTimes.value[0] + deltaTime, getMaxEndTime() - 0.1))
+
   const wordDuration = props.word.endTime - props.word.startTime
   const newEndTime = Math.min(newStartTime + wordDuration, getMaxEndTime())
-  
+
   emit('update-timing', props.word.id, newStartTime, newEndTime)
 }
 
 const handleDividerDrag = (event: MouseEvent) => {
   if (!isDraggingDivider.value) return
-  
+
   const deltaX = event.clientX - dragStartX.value
   const timePerPixel = props.duration / props.timelineWidth
   const deltaTime = deltaX * timePerPixel
-  
+
   const dividerIndex = activeDividerIndex.value
   const leftSyllable = props.word.syllables[dividerIndex]
   const rightSyllable = props.word.syllables[dividerIndex + 1]
-  
+
   // Calculate new boundary time
   const newBoundaryTime = Math.max(
     leftSyllable.startTime + 0.05, // Minimum syllable duration
@@ -204,7 +198,7 @@ const handleDividerDrag = (event: MouseEvent) => {
       rightSyllable.endTime - 0.05 // Minimum syllable duration
     )
   )
-  
+
   // Update both syllables
   emit('update-syllable-timing', props.word.id, dividerIndex, leftSyllable.startTime, newBoundaryTime)
   emit('update-syllable-timing', props.word.id, dividerIndex + 1, newBoundaryTime, rightSyllable.endTime)
@@ -212,16 +206,13 @@ const handleDividerDrag = (event: MouseEvent) => {
 
 const handleWordResize = (event: MouseEvent) => {
   if (!isResizingWord.value) return
-  
+
   const deltaX = event.clientX - dragStartX.value
   const timePerPixel = props.duration / props.timelineWidth
   const deltaTime = deltaX * timePerPixel
-  
-  const newEndTime = Math.max(
-    props.word.startTime + 0.1,
-    Math.min(props.word.endTime + deltaTime, getMaxEndTime())
-  )
-  
+
+  const newEndTime = Math.max(props.word.startTime + 0.1, Math.min(props.word.endTime + deltaTime, getMaxEndTime()))
+
   emit('update-timing', props.word.id, props.word.startTime, newEndTime)
 }
 
@@ -262,7 +253,7 @@ const handleWordResizeEnd = () => {
 
 .syllable-word-box:hover {
   transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .syllable-word-box.selected {
@@ -274,7 +265,7 @@ const handleWordResizeEnd = () => {
 .syllable-word-box.dragging {
   cursor: grabbing;
   transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
 }
 
 .syllable-section {

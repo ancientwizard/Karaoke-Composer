@@ -16,45 +16,29 @@
           </div>
         </div>
       </div>
-      
+
       <!-- Integrated Timing Controls -->
       <div class="card-body border-bottom" v-if="playbackState">
         <div class="timing-controls-section">
           <!-- Audio Player Controls -->
           <div class="player-controls d-flex justify-content-center align-items-center gap-2 mb-3">
-            <button 
-              class="btn btn-outline-secondary btn-sm"
-              @click="emit('skip-backward')"
-              title="Skip backward 10s"
-            >
+            <button class="btn btn-outline-secondary btn-sm" @click="emit('skip-backward')" title="Skip backward 10s">
               <i class="bi bi-skip-backward"></i>
             </button>
-            
-            <button 
-              class="btn btn-primary"
-              @click="emit('play-pause')"
-              :disabled="!audioFile?.file"
-            >
+
+            <button class="btn btn-primary" @click="emit('play-pause')" :disabled="!audioFile?.file">
               <i :class="playbackState.isPlaying ? 'bi bi-pause-fill' : 'bi bi-play-fill'"></i>
             </button>
-            
-            <button 
-              class="btn btn-outline-secondary btn-sm"
-              @click="emit('skip-forward')"
-              title="Skip forward 10s"
-            >
+
+            <button class="btn btn-outline-secondary btn-sm" @click="emit('skip-forward')" title="Skip forward 10s">
               <i class="bi bi-skip-forward"></i>
             </button>
           </div>
 
           <!-- Progress Bar -->
           <div class="progress-container mb-2">
-            <div class="progress" style="height: 8px; cursor: pointer;" @click="seekToClick">
-              <div 
-                class="progress-bar" 
-                :style="{ width: progressPercent + '%' }"
-                role="progressbar"
-              ></div>
+            <div class="progress" style="height: 8px; cursor: pointer" @click="seekToClick">
+              <div class="progress-bar" :style="{ width: progressPercent + '%' }" role="progressbar"></div>
             </div>
             <div class="time-display d-flex justify-content-between mt-1">
               <small class="text-muted">{{ formatTime(currentTime) }}</small>
@@ -63,13 +47,13 @@
           </div>
         </div>
       </div>
-      
+
       <!-- Waveform Controls -->
       <div class="card-body border-bottom py-2">
         <div class="waveform-controls">
           <!-- View Mode Toggle -->
           <div class="btn-group me-2" role="group">
-            <button 
+            <button
               class="btn btn-sm"
               :class="viewMode === 'window' ? 'btn-primary' : 'btn-outline-primary'"
               @click="setViewMode('window')"
@@ -77,7 +61,7 @@
             >
               <i class="bi bi-window"></i> Window
             </button>
-            <button 
+            <button
               class="btn btn-sm"
               :class="viewMode === 'full' ? 'btn-primary' : 'btn-outline-primary'"
               @click="setViewMode('full')"
@@ -86,28 +70,18 @@
               <i class="bi bi-arrows-fullscreen"></i> Full
             </button>
           </div>
-          
+
           <!-- Zoom Controls (only for full view) -->
           <div v-if="viewMode === 'full'" class="zoom-controls me-2">
-            <button 
-              class="btn btn-sm btn-outline-secondary me-1"
-              @click="zoomOut"
-              :disabled="zoomLevel <= 1"
-              title="Zoom out"
-            >
+            <button class="btn btn-sm btn-outline-secondary me-1" @click="zoomOut" :disabled="zoomLevel <= 1" title="Zoom out">
               <i class="bi bi-zoom-out"></i>
             </button>
             <span class="zoom-level">{{ Math.round(zoomLevel * 100) }}%</span>
-            <button 
-              class="btn btn-sm btn-outline-secondary ms-1"
-              @click="zoomIn"
-              :disabled="zoomLevel >= 5"
-              title="Zoom in"
-            >
+            <button class="btn btn-sm btn-outline-secondary ms-1" @click="zoomIn" :disabled="zoomLevel >= 5" title="Zoom in">
               <i class="bi bi-zoom-in"></i>
             </button>
           </div>
-          
+
           <!-- Window Duration Control (only for window view) -->
           <div v-if="viewMode === 'window'" class="window-controls me-2">
             <select class="form-select form-select-sm" v-model="windowDuration" @change="onWindowDurationChange">
@@ -116,9 +90,9 @@
               <option :value="25000">25s</option>
             </select>
           </div>
-          
+
           <!-- Auto-scroll toggle -->
-          <button 
+          <button
             v-if="viewMode === 'window'"
             class="btn btn-sm"
             :class="autoScroll ? 'btn-success' : 'btn-outline-success'"
@@ -146,8 +120,14 @@
           </div>
 
           <!-- Waveform Canvas -->
-          <div v-else class="waveform-canvas-container" @mousedown="startSelection" @mousemove="updateSelection" @mouseup="endSelection">
-            <canvas 
+          <div
+            v-else
+            class="waveform-canvas-container"
+            @mousedown="startSelection"
+            @mousemove="updateSelection"
+            @mouseup="endSelection"
+          >
+            <canvas
               ref="waveformCanvas"
               class="waveform-canvas"
               :width="canvasWidth"
@@ -158,13 +138,13 @@
             <!-- Playback position handled by canvas drawing -->
 
             <!-- Lyrics Markers -->
-            <div 
+            <div
               v-for="(lyric, index) in positionedLyrics"
               :key="lyric.id"
               class="lyric-marker"
-              :class="{ 
-                'active': index === currentLineIndex,
-                'selected': selectedMarkers.includes(index)
+              :class="{
+                active: index === currentLineIndex,
+                selected: selectedMarkers.includes(index),
               }"
               :style="{ left: lyric.position + 'px' }"
               @click="selectLyricMarker(index, $event)"
@@ -176,20 +156,11 @@
             </div>
 
             <!-- Selection Area -->
-            <div 
-              v-if="selectionStart !== null && selectionEnd !== null"
-              class="selection-area"
-              :style="selectionStyle"
-            ></div>
+            <div v-if="selectionStart !== null && selectionEnd !== null" class="selection-area" :style="selectionStyle"></div>
 
             <!-- Time Scale -->
             <div class="time-scale">
-              <div 
-                v-for="mark in timeMarks"
-                :key="mark.time"
-                class="time-mark"
-                :style="{ left: mark.position + 'px' }"
-              >
+              <div v-for="mark in timeMarks" :key="mark.time" class="time-mark" :style="{ left: mark.position + 'px' }">
                 <div class="time-mark-line"></div>
                 <div class="time-mark-label">{{ mark.label }}</div>
               </div>
@@ -201,16 +172,12 @@
         <div class="row align-items-center">
           <div class="col-sm-6">
             <small class="text-muted">
-              <span v-if="audioFile?.duration">
-                Duration: {{ formatTime(audioFile.duration) }}
-              </span>
+              <span v-if="audioFile?.duration"> Duration: {{ formatTime(audioFile.duration) }} </span>
               <span v-if="selectedDuration"> • Selection: {{ formatTime(selectedDuration) }}</span>
             </small>
           </div>
           <div class="col-sm-6 text-end">
-            <small class="text-muted">
-              {{ lyrics.length }} lyrics • {{ timedLyricsCount }} positioned
-            </small>
+            <small class="text-muted"> {{ lyrics.length }} lyrics • {{ timedLyricsCount }} positioned </small>
           </div>
         </div>
       </div>
@@ -235,14 +202,14 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   currentLineIndex: 0,
-  isTimingMode: false
+  isTimingMode: false,
 })
 
 // Emits
 const emit = defineEmits<{
-  'seek': [time: number]
+  seek: [time: number]
   'lyrics-position': [lineIndex: number, time: number]
-  'selection': [startTime: number, endTime: number]
+  selection: [startTime: number, endTime: number]
   'play-pause': []
   'skip-backward': []
   'skip-forward': []
@@ -274,7 +241,7 @@ const positionedLyrics = computed(() => {
     .filter(lyric => lyric.startTime !== undefined)
     .map((lyric, index) => ({
       ...lyric,
-      position: timeToPixel(lyric.startTime!)
+      position: timeToPixel(lyric.startTime!),
     }))
 })
 
@@ -305,7 +272,7 @@ const selectionStyle = computed(() => {
     const width = Math.abs(selectionEnd.value - selectionStart.value)
     return {
       left: left + 'px',
-      width: width + 'px'
+      width: width + 'px',
     }
   }
   return {}
@@ -313,29 +280,29 @@ const selectionStyle = computed(() => {
 
 const timeMarks = computed(() => {
   if (!props.audioFile?.duration) return []
-  
+
   const marks = []
-  
+
   if (viewMode.value === 'window') {
     // Window mode: show marks only for the visible window (all values in milliseconds)
     const windowStartMs = Math.floor(windowStart.value) // Already in milliseconds
     const windowDurationMs = windowDuration.value // Already in milliseconds
     const windowEndMs = windowStartMs + windowDurationMs
     const intervalMs = windowDurationMs > 30000 ? 5000 : 2000 // 5s or 2s intervals
-    
+
     // Calculate starting mark aligned to interval boundaries
     const firstMarkMs = Math.ceil(windowStartMs / intervalMs) * intervalMs
-    
+
     for (let timeMs = firstMarkMs; timeMs <= windowEndMs; timeMs += intervalMs) {
       if (timeMs >= windowStartMs) {
         const positionInWindow = (timeMs - windowStartMs) / windowDurationMs
-        
+
         // Only add marks that are within the visible window
         if (positionInWindow >= 0 && positionInWindow <= 1) {
           marks.push({
             time: timeMs,
             position: positionInWindow * canvasWidth.value,
-            label: formatTime(timeMs)
+            label: formatTime(timeMs),
           })
         }
       }
@@ -344,16 +311,16 @@ const timeMarks = computed(() => {
     // Full mode: show marks for the entire duration
     const duration = props.audioFile.duration
     const interval = duration > 60000 ? 10000 : 5000 // 10s or 5s intervals
-    
+
     for (let time = 0; time <= duration; time += interval) {
       marks.push({
         time,
         position: timeToPixel(time),
-        label: formatTime(time)
+        label: formatTime(time),
       })
     }
   }
-  
+
   return marks
 })
 
@@ -372,7 +339,7 @@ const pixelToTime = (pixel: number): number => {
 
 const seekToPosition = (event: MouseEvent) => {
   if (isDragging.value) return
-  
+
   const rect = waveformCanvas.value!.getBoundingClientRect()
   const x = event.clientX - rect.left
   const time = pixelToTime(x)
@@ -381,7 +348,7 @@ const seekToPosition = (event: MouseEvent) => {
 
 const selectLyricMarker = (index: number, event: MouseEvent) => {
   event.stopPropagation()
-  
+
   if (event.ctrlKey || event.metaKey) {
     // Multi-select
     const markerIndex = selectedMarkers.value.indexOf(index)
@@ -400,40 +367,40 @@ const startDragMarker = (index: number, event: MouseEvent) => {
   event.stopPropagation()
   isDragging.value = true
   dragMarkerIndex.value = index
-  
+
   const handleMouseMove = (moveEvent: MouseEvent) => {
     if (!isDragging.value) return
-    
+
     const rect = waveformCanvas.value!.getBoundingClientRect()
     const x = moveEvent.clientX - rect.left
     const time = pixelToTime(x)
-    
+
     // Update marker position temporarily (visual feedback)
     // The actual update happens on mouse up
   }
-  
+
   const handleMouseUp = () => {
     if (isDragging.value) {
       const rect = waveformCanvas.value!.getBoundingClientRect()
       const x = event.clientX - rect.left
       const time = pixelToTime(x)
-      
+
       emit('lyrics-position', dragMarkerIndex.value, Math.max(0, time))
     }
-    
+
     isDragging.value = false
     dragMarkerIndex.value = -1
     document.removeEventListener('mousemove', handleMouseMove)
     document.removeEventListener('mouseup', handleMouseUp)
   }
-  
+
   document.addEventListener('mousemove', handleMouseMove)
   document.addEventListener('mouseup', handleMouseUp)
 }
 
 const startSelection = (event: MouseEvent) => {
   if (event.target !== waveformCanvas.value) return
-  
+
   const rect = waveformCanvas.value!.getBoundingClientRect()
   const x = event.clientX - rect.left
   selectionStart.value = x
@@ -442,7 +409,7 @@ const startSelection = (event: MouseEvent) => {
 
 const updateSelection = (event: MouseEvent) => {
   if (selectionStart.value === null) return
-  
+
   const rect = waveformCanvas.value!.getBoundingClientRect()
   const x = event.clientX - rect.left
   selectionEnd.value = x
@@ -452,12 +419,12 @@ const endSelection = () => {
   if (selectionStart.value !== null && selectionEnd.value !== null) {
     const startTime = pixelToTime(Math.min(selectionStart.value, selectionEnd.value))
     const endTime = pixelToTime(Math.max(selectionStart.value, selectionEnd.value))
-    
+
     if (Math.abs(selectionEnd.value - selectionStart.value) > 5) {
       emit('selection', startTime, endTime)
     }
   }
-  
+
   // Clear selection after a delay
   setTimeout(() => {
     selectionStart.value = null
@@ -502,7 +469,7 @@ const toggleAutoScroll = () => {
 const updateWindowPosition = () => {
   if (viewMode.value === 'window') {
     const halfWindow = windowDuration.value / 2 // Half window in milliseconds
-    
+
     if (autoScroll.value && props.currentTime > 0) {
       if (props.currentTime <= halfWindow) {
         // Before mid-point: keep window at start
@@ -515,14 +482,14 @@ const updateWindowPosition = () => {
       // When not playing or at start, show from beginning
       windowStart.value = 0
     }
-    
-    console.log('Window position updated:', { 
-      windowStart: windowStart.value, 
-      windowDuration: windowDuration.value, 
+
+    console.log('Window position updated:', {
+      windowStart: windowStart.value,
+      windowDuration: windowDuration.value,
       currentTime: props.currentTime,
       halfWindow,
       autoScroll: autoScroll.value,
-      phase: props.currentTime <= halfWindow ? 'line-moves' : 'wave-scrolls'
+      phase: props.currentTime <= halfWindow ? 'line-moves' : 'wave-scrolls',
     })
   }
 }
@@ -530,13 +497,13 @@ const updateWindowPosition = () => {
 // Timing controls methods
 const seekToClick = (event: MouseEvent) => {
   if (!props.audioFile?.duration) return
-  
+
   const progressBar = event.currentTarget as HTMLElement
   const rect = progressBar.getBoundingClientRect()
   const clickX = event.clientX - rect.left
   const percentage = clickX / rect.width
   const seekTime = percentage * props.audioFile.duration
-  
+
   emit('seek', seekTime)
 }
 
@@ -544,47 +511,47 @@ const drawWaveform = async () => {
   const canvas = waveformCanvas.value
   const waveformData = props.waveformData || generatedWaveformData.value
   if (!canvas || !waveformData) return
-  
+
   const ctx = canvas.getContext('2d')
   if (!ctx) return
-  
+
   // Clear canvas
   ctx.clearRect(0, 0, canvas.width, canvas.height)
-  
+
   // Draw waveform
   const { peaks } = waveformData
   const width = canvas.width
   const height = canvas.height
-  
+
   // Calculate visible range based on view mode
   let visiblePeaks = peaks
   let startIndex = 0
-  
+
   if (viewMode.value === 'window') {
     // Show only the window duration worth of peaks
     const totalDuration = waveformData.duration || props.audioFile?.duration || 1
     const startRatio = windowStart.value / totalDuration
     const durationRatio = windowDuration.value / totalDuration
-    
+
     startIndex = Math.floor(startRatio * peaks.length)
     const endIndex = Math.min(Math.floor((startRatio + durationRatio) * peaks.length), peaks.length)
     visiblePeaks = peaks.slice(startIndex, endIndex)
-    
+
     // Debug logging - TMI for the console; it just noise!
     //  we could add a vue based element to show this in the brower UI if needed
-    // console.log('Window mode debug:', { 
-    //   totalDuration, 
-    //   windowStart: windowStart.value, 
-    //   windowDuration: windowDuration.value, 
-    //   startRatio, 
+    // console.log('Window mode debug:', {
+    //   totalDuration,
+    //   windowStart: windowStart.value,
+    //   windowDuration: windowDuration.value,
+    //   startRatio,
     //   durationRatio,
     //   peaksLength: peaks.length,
-    //   startIndex, 
-    //   endIndex, 
+    //   startIndex,
+    //   endIndex,
     //   visiblePeaksLength: visiblePeaks.length,
     //   visiblePeaksPreview: visiblePeaks.slice(0, 5)
     // })
-    
+
     // Fallback: if no visible peaks (edge case), show first portion
     if (visiblePeaks.length === 0) {
       const fallbackEndIndex = Math.min(Math.floor(peaks.length * 0.2), peaks.length) // Show first 20%
@@ -593,42 +560,43 @@ const drawWaveform = async () => {
       // console.log('Fallback applied, showing first 20% of peaks:', visiblePeaks.length)
     }
   }
-  
+
   const barWidth = width / visiblePeaks.length
-  
+
   // Enhanced visualization: top-half waves, bottom-centered, auto-height
   ctx.fillStyle = '#3b82f6'
   ctx.strokeStyle = '#1d4ed8'
-  
+
   // Calculate step size for proper zoom level - with 8000 samples, we can afford smaller steps
-  const stepSize = viewMode.value === 'window' 
-    ? Math.max(1, Math.ceil(visiblePeaks.length / (width * 2))) // More detail for window mode
-    : Math.max(1, Math.ceil(visiblePeaks.length / (width * zoomLevel.value * 2))) // More detail for full mode too
-  
+  const stepSize =
+    viewMode.value === 'window'
+      ? Math.max(1, Math.ceil(visiblePeaks.length / (width * 2))) // More detail for window mode
+      : Math.max(1, Math.ceil(visiblePeaks.length / (width * zoomLevel.value * 2))) // More detail for full mode too
+
   for (let i = 0; i < visiblePeaks.length; i += stepSize) {
     // Only show top half of waveform (positive amplitudes only)
     const amplitude = Math.abs(visiblePeaks[i])
-    
+
     // More aggressive height scaling - multiply by a scaling factor
     const scalingFactor = 3.0 // Increase this to make waveform taller
     const barHeight = Math.min(amplitude * height * scalingFactor, height * 0.95) // Use up to 95% of height
-    
-    const x = viewMode.value === 'window' 
-      ? (i / visiblePeaks.length) * width
-      : (i / visiblePeaks.length) * width * zoomLevel.value
+
+    const x =
+      viewMode.value === 'window' ? (i / visiblePeaks.length) * width : (i / visiblePeaks.length) * width * zoomLevel.value
     const y = height - barHeight // Bottom-centered: start from bottom and go up
-    
+
     // Calculate bar width based on view mode
-    const actualBarWidth = viewMode.value === 'window'
-      ? Math.max(1, width / visiblePeaks.length * stepSize)
-      : Math.max(1, barWidth * zoomLevel.value)
-    
+    const actualBarWidth =
+      viewMode.value === 'window'
+        ? Math.max(1, (width / visiblePeaks.length) * stepSize)
+        : Math.max(1, barWidth * zoomLevel.value)
+
     // Draw the bar
     if (barHeight > 1) {
       ctx.fillRect(x, y, actualBarWidth, barHeight)
     }
   }
-  
+
   // Draw baseline at bottom
   ctx.strokeStyle = '#6b7280'
   ctx.lineWidth = 1
@@ -636,7 +604,7 @@ const drawWaveform = async () => {
   ctx.moveTo(0, height - 1)
   ctx.lineTo(width, height - 1)
   ctx.stroke()
-  
+
   // Draw current time indicator if provided
   if (props.currentTime !== undefined) {
     const totalDuration = waveformData.duration || props.audioFile?.duration
@@ -645,7 +613,7 @@ const drawWaveform = async () => {
       if (viewMode.value === 'window') {
         // Smart positioning: start from left, center only after reaching mid-screen
         const halfWindow = windowDuration.value / 2
-        
+
         if (props.currentTime <= halfWindow) {
           // Before mid-point: show actual position from left
           timeX = (props.currentTime / windowDuration.value) * width
@@ -656,7 +624,7 @@ const drawWaveform = async () => {
       } else {
         timeX = (props.currentTime / totalDuration) * width * zoomLevel.value
       }
-      
+
       if (timeX >= 0 && timeX <= width) {
         ctx.strokeStyle = '#ef4444'
         ctx.lineWidth = 3 // Make it slightly thicker for better visibility
@@ -671,55 +639,54 @@ const drawWaveform = async () => {
 
 const generateWaveformData = async () => {
   if (!props.audioFile?.file) return
-  
+
   isLoading.value = true
-  
+
   try {
     const audioContext = new AudioContext()
     const arrayBuffer = await props.audioFile.file.arrayBuffer()
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer)
-    
+
     const channelData = audioBuffer.getChannelData(0)
     const samples = 8000 // Much higher sample count for smooth waveform
     const blockSize = Math.floor(channelData.length / samples)
     const peaks = []
-    
+
     // Find the overall maximum to normalize peaks properly
     let globalMax = 0
     for (let i = 0; i < channelData.length; i++) {
       globalMax = Math.max(globalMax, Math.abs(channelData[i]))
     }
-    
+
     for (let i = 0; i < samples; i++) {
       const start = i * blockSize
       const end = start + blockSize
       let max = 0
-      
+
       for (let j = start; j < end; j++) {
         max = Math.max(max, Math.abs(channelData[j]))
       }
-      
+
       // Normalize peaks to use full height range
       peaks.push(globalMax > 0 ? max / globalMax : 0)
     }
-    
+
     // Store the generated waveform data
     generatedWaveformData.value = {
       peaks,
       sampleRate: audioBuffer.sampleRate,
       duration: audioBuffer.duration,
-      channels: audioBuffer.numberOfChannels
+      channels: audioBuffer.numberOfChannels,
     }
-    
+
     // Initialize window position now that we have duration
     if (viewMode.value === 'window') {
       updateWindowPosition()
     }
-    
+
     nextTick(() => {
       drawWaveform()
     })
-    
   } catch (error) {
     console.error('Error generating waveform:', error)
   } finally {
@@ -741,61 +708,74 @@ const updateCanvasSize = () => {
 }
 
 // Watchers
-watch(() => props.audioFile, () => {
-  if (props.audioFile?.file) {
-    generateWaveformData()
-  }
-}, { immediate: true })
+watch(
+  () => props.audioFile,
+  () => {
+    if (props.audioFile?.file) {
+      generateWaveformData()
+    }
+  },
+  { immediate: true }
+)
 
-watch(() => props.waveformData, () => {
-  if (props.waveformData) {
-    nextTick(() => {
-      drawWaveform()
-    })
+watch(
+  () => props.waveformData,
+  () => {
+    if (props.waveformData) {
+      nextTick(() => {
+        drawWaveform()
+      })
+    }
   }
-})
+)
 
-watch(() => generatedWaveformData.value, () => {
-  if (generatedWaveformData.value) {
-    nextTick(() => {
-      drawWaveform()
-    })
+watch(
+  () => generatedWaveformData.value,
+  () => {
+    if (generatedWaveformData.value) {
+      nextTick(() => {
+        drawWaveform()
+      })
+    }
   }
-})
+)
 
-watch(() => props.currentTime, (newTime) => {
-  // Auto-scroll in window mode with smart positioning
-  if (viewMode.value === 'window' && autoScroll.value && newTime !== undefined && props.audioFile?.duration) {
-    const halfWindow = windowDuration.value / 2
-    
-    if (newTime <= halfWindow) {
-      // Before mid-point: keep window at start, red line moves from left
-      windowStart.value = 0
-    } else {
-      // After mid-point: center current time, red line stays at 50%
-      windowStart.value = Math.max(0, Math.min(newTime - halfWindow, props.audioFile.duration - windowDuration.value))
+watch(
+  () => props.currentTime,
+  newTime => {
+    // Auto-scroll in window mode with smart positioning
+    if (viewMode.value === 'window' && autoScroll.value && newTime !== undefined && props.audioFile?.duration) {
+      const halfWindow = windowDuration.value / 2
+
+      if (newTime <= halfWindow) {
+        // Before mid-point: keep window at start, red line moves from left
+        windowStart.value = 0
+      } else {
+        // After mid-point: center current time, red line stays at 50%
+        windowStart.value = Math.max(0, Math.min(newTime - halfWindow, props.audioFile.duration - windowDuration.value))
+      }
+
+      // TMI: Debug logging - can be removed later
+      // This would be better as a vue based UI element if needed
+      // console.log('Auto-scroll update:', {
+      //   currentTime: newTime,
+      //   halfWindow,
+      //   windowStart: windowStart.value,
+      //   behavior: newTime <= halfWindow ? 'red-line-moves' : 'waveform-scrolls'
+      // })
     }
 
-    // TMI: Debug logging - can be removed later
-    // This would be better as a vue based UI element if needed
-    // console.log('Auto-scroll update:', {
-    //   currentTime: newTime,
-    //   halfWindow,
-    //   windowStart: windowStart.value,
-    //   behavior: newTime <= halfWindow ? 'red-line-moves' : 'waveform-scrolls'
-    // })
+    nextTick(() => {
+      drawWaveform()
+    })
   }
-  
-  nextTick(() => {
-    drawWaveform()
-  })
-})
+)
 
 // Lifecycle
 onMounted(() => {
   updateCanvasSize()
   window.addEventListener('resize', updateCanvasSize)
-  
+
   // Values are already set in ref initialization - 15 seconds window mode with auto-scroll
 })
 </script>

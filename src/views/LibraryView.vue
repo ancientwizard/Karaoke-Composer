@@ -2,16 +2,11 @@
   <div class="library">
     <h1>🎵 Song Library</h1>
     <p class="lead">Browse and search through our karaoke song collection</p>
-    
+
     <div class="search-section mb-4">
       <div class="row">
         <div class="col-md-8">
-          <input 
-            type="text" 
-            class="form-control" 
-            placeholder="Search for songs, artists, or genres..."
-            v-model="searchQuery"
-          />
+          <input type="text" class="form-control" placeholder="Search for songs, artists, or genres..." v-model="searchQuery" />
         </div>
         <div class="col-md-4">
           <button class="btn btn-primary w-100" @click="searchSongs">Search</button>
@@ -31,8 +26,8 @@
             </div>
             <div v-else>
               <div class="list-group">
-                <div 
-                  v-for="song in filteredSongs" 
+                <div
+                  v-for="song in filteredSongs"
                   :key="song.id"
                   class="list-group-item d-flex justify-content-between align-items-center"
                 >
@@ -67,9 +62,9 @@ interface Song {
 const searchQuery = ref('')
 const songs = ref<Song[]>([
   // Sample data - replace with actual API calls
-  { id: 1, title: "Don't Stop Believin'", artist: "Journey", genre: "Rock", duration: "4:11" },
-  { id: 2, title: "Bohemian Rhapsody", artist: "Queen", genre: "Rock", duration: "5:55" },
-  { id: 3, title: "Sweet Caroline", artist: "Neil Diamond", genre: "Pop", duration: "3:21" }
+  { id: 1, title: "Don't Stop Believin'", artist: 'Journey', genre: 'Rock', duration: '4:11' },
+  { id: 2, title: 'Bohemian Rhapsody', artist: 'Queen', genre: 'Rock', duration: '5:55' },
+  { id: 3, title: 'Sweet Caroline', artist: 'Neil Diamond', genre: 'Pop', duration: '3:21' },
 ])
 
 // Computed properties
@@ -77,10 +72,11 @@ const filteredSongs = computed(() => {
   if (!searchQuery.value) {
     return songs.value
   }
-  return songs.value.filter(song => 
-    song.title.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-    song.artist.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-    song.genre.toLowerCase().includes(searchQuery.value.toLowerCase())
+  return songs.value.filter(
+    song =>
+      song.title.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
+      song.artist.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
+      song.genre.toLowerCase().includes(searchQuery.value.toLowerCase())
   )
 })
 

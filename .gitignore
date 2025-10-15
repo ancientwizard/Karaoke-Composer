@@ -67,6 +67,7 @@ build/
 *.njsproj
 *.sln
 *.sw?
+*.vue.bak
 # Compiled TypeScript & Vue files (should not be in src/)
 *.vue.js
 *.vue.d.ts

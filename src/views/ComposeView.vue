@@ -1,6 +1,5 @@
 <template>
   <div class="compose-view">
-
     <!-- Project Creation Modal -->
     <div class="modal" :class="{ show: showCreateProject }" v-if="showCreateProject" @click="closeCreateProject">
       <div class="modal-dialog" @click.stop>
@@ -13,25 +12,25 @@
             <form @submit.prevent="createProject">
               <div class="mb-3">
                 <label for="projectName" class="form-label">Song Title *</label>
-                <input 
-                  type="text" 
-                  class="form-control" 
+                <input
+                  type="text"
+                  class="form-control"
                   id="projectName"
-                  v-model="newProject.name" 
+                  v-model="newProject.name"
                   required
                   placeholder="Enter song title"
-                >
+                />
               </div>
               <div class="mb-3">
                 <label for="projectArtist" class="form-label">Artist *</label>
-                <input 
-                  type="text" 
-                  class="form-control" 
+                <input
+                  type="text"
+                  class="form-control"
                   id="projectArtist"
-                  v-model="newProject.artist" 
+                  v-model="newProject.artist"
                   required
                   placeholder="Enter artist name"
-                >
+                />
               </div>
               <div class="mb-3">
                 <label for="projectGenre" class="form-label">Genre</label>
@@ -49,19 +48,12 @@
               </div>
               <div class="mb-3">
                 <label for="audioFile" class="form-label">Audio File (MP3, WAV) *</label>
-                <input 
-                  type="file" 
-                  class="form-control" 
-                  id="audioFile"
-                  accept="audio/*"
-                  @change="handleAudioFile"
-                  required
-                >
+                <input type="file" class="form-control" id="audioFile" accept="audio/*" @change="handleAudioFile" required />
               </div>
               <div class="mb-3">
                 <label for="lyrics" class="form-label">Lyrics</label>
-                <textarea 
-                  class="form-control" 
+                <textarea
+                  class="form-control"
                   id="lyrics"
                   rows="8"
                   v-model="newProject.lyricsText"
@@ -80,8 +72,6 @@
         </div>
       </div>
     </div>
-
-
 
     <!-- Storage Info Modal -->
     <div class="modal" :class="{ show: showStorageInfo }" v-if="showStorageInfo" @click="closeStorageInfo">
@@ -130,15 +120,17 @@
                       <span>Storage Used:</span>
                       <strong>{{ storageInfo.quotaUsedMB }}/{{ storageInfo.quotaLimitMB }} MB</strong>
                     </div>
-                    
+
                     <!-- Quota warning -->
-                    <div v-if="storageInfo.quotaUsedMB > storageInfo.quotaLimitMB * 0.8" 
-                         class="alert alert-warning mt-2 mb-0 p-2">
+                    <div
+                      v-if="storageInfo.quotaUsedMB > storageInfo.quotaLimitMB * 0.8"
+                      class="alert alert-warning mt-2 mb-0 p-2"
+                    >
                       <small><i class="bi bi-exclamation-triangle"></i> Storage nearly full!</small>
                     </div>
                   </div>
                 </div>
-                
+
                 <!-- Storage actions -->
                 <div class="mt-2">
                   <button class="btn btn-outline-info btn-sm w-100 mb-2" @click="testIndexedDB">
@@ -153,9 +145,9 @@
                 </div>
               </div>
             </div>
-            
-            <hr>
-            
+
+            <hr />
+
             <div class="alert alert-info">
               <h6><i class="bi bi-info-circle"></i> Storage Methods Explained:</h6>
               <ul class="mb-0">
@@ -164,10 +156,11 @@
                 <li><strong>Reference:</strong> Fallback method - you'll need to re-select files when loading</li>
               </ul>
               <div class="mt-2 p-2 bg-light rounded">
-                <small><strong>💡 IndexedDB is a built-in browser feature:</strong></small><br>
-                <small>• No setup required - works automatically</small><br>
-                <small>• Available in all modern browsers (Chrome, Firefox, Safari, Edge)</small><br>
-                <small>• Perfect for your 4-5MB audio files - no quota issues!</small><br>
+                <small><strong>💡 IndexedDB is a built-in browser feature:</strong></small
+                ><br />
+                <small>• No setup required - works automatically</small><br />
+                <small>• Available in all modern browsers (Chrome, Firefox, Safari, Edge)</small><br />
+                <small>• Perfect for your 4-5MB audio files - no quota issues!</small><br />
                 <small>• Use "Test IndexedDB" button to verify it's working</small>
               </div>
             </div>
@@ -178,8 +171,6 @@
         </div>
       </div>
     </div>
-
-
 
     <!-- Projects Management Screen -->
     <div class="projects-screen py-4">
@@ -203,19 +194,15 @@
             </div>
           </div>
         </div>
-        
+
         <div class="card-body">
           <!-- Projects List -->
           <div v-if="projects.length > 0">
             <h5 class="mb-3">Your Projects</h5>
             <div class="list-group">
-              <div 
-                v-for="project in projects" 
-                :key="project.id"
-                class="list-group-item p-0 project-item"
-              >
+              <div v-for="project in projects" :key="project.id" class="list-group-item p-0 project-item">
                 <div class="btn-group w-100" role="group">
-                  <button 
+                  <button
                     class="btn btn-outline-secondary text-start flex-grow-1 project-content-btn"
                     @click="openProject(project)"
                   >
@@ -223,9 +210,7 @@
                       <i class="bi bi-music-note-beamed me-2 text-primary"></i>
                       {{ project.name }}
                     </div>
-                    <div class="text-muted small">
-                      by {{ project.artist }} • {{ project.genre }}
-                    </div>
+                    <div class="text-muted small">by {{ project.artist }} • {{ project.genre }}</div>
                     <div class="text-muted small">
                       <i class="bi bi-clock me-1"></i>
                       Last updated {{ formatDate(project.updatedAt) }}
@@ -233,23 +218,22 @@
                     <div class="text-muted small" v-if="project.audioFile">
                       <i class="bi bi-file-music me-1"></i>
                       {{ project.audioFile.name }}
-                      <span class="badge ms-2" :class="getStorageBadgeClass(project.audioFile.storedData?.storageType || 'unknown')">
+                      <span
+                        class="badge ms-2"
+                        :class="getStorageBadgeClass(project.audioFile.storedData?.storageType || 'unknown')"
+                      >
                         {{ getStorageBadgeText(project.audioFile.storedData?.storageType || 'unknown') }}
                       </span>
                     </div>
                   </button>
-                  <button 
-                    class="btn btn-warning delete-btn"
-                    @click.stop="deleteProject(project)"
-                    title="Delete project"
-                  >
+                  <button class="btn btn-warning delete-btn" @click.stop="deleteProject(project)" title="Delete project">
                     <i class="bi bi-trash3"></i>
                   </button>
                 </div>
               </div>
             </div>
           </div>
-          
+
           <!-- Empty State -->
           <div v-else class="text-center py-5">
             <i class="bi bi-music-note-list display-1 text-muted mb-3"></i>
@@ -277,7 +261,7 @@
           <i class="bi bi-chevron-down" :class="{ 'rotate-180': !showDevToolbar }"></i>
         </div>
       </div>
-      
+
       <!-- Toolbar Content (collapsible) -->
       <div v-if="showDevToolbar" class="toolbar-content">
         <div class="toolbar-buttons">
@@ -325,18 +309,16 @@ const newProject = ref({
   artist: '',
   genre: '',
   lyricsText: '',
-  audioFile: null as File | null
+  audioFile: null as File | null,
 })
 
 // Computed properties
 const canCreateProject = computed(() => {
-  return newProject.value.name && 
-         newProject.value.artist && 
-         newProject.value.audioFile
+  return newProject.value.name && newProject.value.artist && newProject.value.audioFile
 })
 
 const hotkeyHelpText = computed(() => {
-  return "Click for complete hotkey reference guide"
+  return 'Click for complete hotkey reference guide'
 })
 
 // Methods
@@ -349,15 +331,17 @@ const closeStorageInfo = () => {
   showStorageInfo.value = false
 }
 
-
-
 const openStorageInfo = () => {
   storageInfo.value = audioStorageService.getStorageInfo()
   showStorageInfo.value = true
 }
 
 const clearAudioCache = async () => {
-  if (confirm('This will remove all cached audio files from storage. Projects will still work but may need to re-select audio files. Continue?')) {
+  if (
+    confirm(
+      'This will remove all cached audio files from storage. Projects will still work but may need to re-select audio files. Continue?'
+    )
+  ) {
     const cleared = await audioStorageService.clearOldAudioFiles()
     alert(`Cleared ${cleared} audio files from cache.`)
     // Refresh storage info
@@ -367,15 +351,15 @@ const clearAudioCache = async () => {
 
 const testIndexedDB = async () => {
   const result = await audioStorageService.testIndexedDBConnection()
-  
+
   let message = '🔍 IndexedDB Test Results:\n\n'
-  
+
   if (result.available) {
     message += '✅ IndexedDB is supported by your browser\n'
   } else {
     message += '❌ IndexedDB is NOT supported by your browser\n'
   }
-  
+
   if (result.canStore) {
     message += '✅ Can store files in IndexedDB\n'
     message += '🎵 Your 4-5MB audio files will work perfectly!'
@@ -386,29 +370,35 @@ const testIndexedDB = async () => {
     }
     message += '⚠️ Will fallback to other storage methods'
   }
-  
+
   alert(message)
 }
 
 const getStorageBadgeClass = (storageType: string) => {
   switch (storageType) {
-    case 'base64': return 'bg-success'
-    case 'indexeddb': return 'bg-info'
-    case 'reference': return 'bg-warning'
-    default: return 'bg-secondary'
+    case 'base64':
+      return 'bg-success'
+    case 'indexeddb':
+      return 'bg-info'
+    case 'reference':
+      return 'bg-warning'
+    default:
+      return 'bg-secondary'
   }
 }
 
 const getStorageBadgeText = (storageType: string) => {
   switch (storageType) {
-    case 'base64': return '📦 Base64'
-    case 'indexeddb': return '🗄️ IndexedDB'
-    case 'reference': return '📁 Reference'
-    default: return 'Unknown'
+    case 'base64':
+      return '📦 Base64'
+    case 'indexeddb':
+      return '🗄️ IndexedDB'
+    case 'reference':
+      return '📁 Reference'
+    default:
+      return 'Unknown'
   }
 }
-
-
 
 const resetNewProject = () => {
   newProject.value = {
@@ -416,7 +406,7 @@ const resetNewProject = () => {
     artist: '',
     genre: '',
     lyricsText: '',
-    audioFile: null
+    audioFile: null,
   }
 }
 
@@ -432,9 +422,9 @@ const createProject = async () => {
     canCreate: canCreateProject.value,
     name: newProject.value.name,
     artist: newProject.value.artist,
-    audioFile: newProject.value.audioFile?.name
+    audioFile: newProject.value.audioFile?.name,
   })
-  
+
   if (!canCreateProject.value) {
     console.log('Cannot create project - missing requirements')
     return
@@ -442,9 +432,9 @@ const createProject = async () => {
 
   // Parse lyrics with syllable support
   const lyrics = parseLyricsText(newProject.value.lyricsText)
-  
+
   const projectId = `project-${Date.now()}`
-  
+
   // Store the audio file using the storage service
   console.log('Storing audio file...')
   const storedAudioFile = await audioStorageService.storeAudioFile(newProject.value.audioFile!, projectId)
@@ -460,20 +450,20 @@ const createProject = async () => {
       name: newProject.value.audioFile!.name,
       file: newProject.value.audioFile,
       url: URL.createObjectURL(newProject.value.audioFile!),
-      storedData: storedAudioFile
+      storedData: storedAudioFile,
     },
     lyrics,
     timings: [],
-    isCompleted: false
+    isCompleted: false,
   }
 
   projects.value.push(project)
-  
+
   try {
     saveProjectsToStorage()
     closeCreateProject()
     console.log('Project created successfully:', project.name)
-    
+
     // Navigate to the timing editor
     router.push(`/timing/${projectId}`)
   } catch (error) {
@@ -493,10 +483,10 @@ const deleteProject = async (project: KaraokeProject) => {
     const index = projects.value.findIndex(p => p.id === project.id)
     if (index > -1) {
       projects.value.splice(index, 1)
-      
+
       // Save updated projects to storage
       saveProjectsToStorage()
-      
+
       console.log(`Project "${project.name}" deleted successfully`)
     }
   }
@@ -507,7 +497,7 @@ const formatDate = (date: Date) => {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
-    minute: '2-digit'
+    minute: '2-digit',
   }).format(date)
 }
 
@@ -523,11 +513,11 @@ const loadProjectsFromStorage = () => {
         // Ensure audioFile has the right structure
         audioFile: {
           ...p.audioFile,
-          file: null // File objects can't be serialized, will be restored from storage
-        }
+          file: null, // File objects can't be serialized, will be restored from storage
+        },
       }))
       console.log(`Loaded ${projects.value.length} projects from storage`)
-      
+
       // Debug storage badge issue
       projects.value.forEach((project, index) => {
         console.log(`🔍 Project ${index + 1}: "${project.name}"`)
@@ -551,19 +541,19 @@ const saveProjectsToStorage = () => {
       audioFile: {
         ...project.audioFile,
         file: null, // Remove File object for serialization
-        url: undefined // Remove blob URL (will be recreated)
-      }
+        url: undefined, // Remove blob URL (will be recreated)
+      },
     }))
-    
+
     localStorage.setItem('karaokeProjects', JSON.stringify(serializableProjects))
     console.log(`💾 Saved ${projects.value.length} projects to storage`)
-    
+
     // Debug: Check if storedData is preserved
     serializableProjects.forEach((project, index) => {
       console.log(`Project ${index}: ${project.name} - StoredData preserved:`, {
         hasStoredData: !!project.audioFile.storedData,
         storageType: project.audioFile.storedData?.storageType,
-        duration: project.audioFile.duration
+        duration: project.audioFile.duration,
       })
     })
   } catch (error) {
@@ -573,33 +563,33 @@ const saveProjectsToStorage = () => {
 
 const fixStorageBadges = () => {
   let fixedCount = 0
-  
+
   projects.value.forEach(project => {
     if (project.audioFile && !project.audioFile.storedData) {
       // Try to infer storage type from available data
       let inferredStorageType = 'reference' // Default fallback
-      
+
       // Check if there's base64 data in localStorage
       const lastModified = project.audioFile.file?.lastModified || 0
       const audioKey = `audio_${project.id}_${project.audioFile.name}_${lastModified}`
       if (localStorage.getItem(`audio_${audioKey}`)) {
         inferredStorageType = 'base64'
       }
-      
+
       // Create minimal storedData
       project.audioFile.storedData = {
         name: project.audioFile.name,
         size: 0,
         type: 'audio/mpeg',
         lastModified: Date.now(),
-        storageType: inferredStorageType as 'base64' | 'indexeddb' | 'reference'
+        storageType: inferredStorageType as 'base64' | 'indexeddb' | 'reference',
       }
-      
+
       fixedCount++
       console.log(`🔧 Fixed storage badge for project: ${project.name} -> ${inferredStorageType}`)
     }
   })
-  
+
   if (fixedCount > 0) {
     saveProjectsToStorage()
     alert(`Fixed storage badges for ${fixedCount} project(s). Refresh the page to see the changes.`)
@@ -612,7 +602,7 @@ const clearAllProjects = () => {
   if (confirm('Are you sure you want to delete ALL saved projects? This cannot be undone.')) {
     localStorage.removeItem('karaokeProjects')
     projects.value = []
-    
+
     console.log('All projects cleared from localStorage')
     alert('All projects have been cleared. You can now start fresh!')
   }
@@ -637,32 +627,32 @@ const handleKeyDown = (event: KeyboardEvent) => {
 
 onMounted(async () => {
   loadProjectsFromStorage()
-  
+
   // Wait a moment for IndexedDB to initialize
   await new Promise(resolve => setTimeout(resolve, 100))
-  
+
   // Check storage health and IndexedDB status
   const info = audioStorageService.getStorageInfo()
   console.log('🔍 Audio storage service initialized:', info)
-  
+
   // Check IndexedDB availability
   if (window.indexedDB) {
     console.log('✅ IndexedDB is available in this browser')
   } else {
     console.warn('❌ IndexedDB is NOT available in this browser')
   }
-  
+
   if (info.quotaUsedMB > info.quotaLimitMB * 0.9) {
     console.warn('⚠️ Storage quota nearly full:', info.quotaUsedMB, '/', info.quotaLimitMB, 'MB')
   }
-  
+
   // Log storage method being used
   if (info.method === 'indexeddb') {
     console.log('🗄️ Using IndexedDB - perfect for 4-5MB files!')
   } else {
     console.log('📦 Using fallback storage method:', info.method)
   }
-  
+
   // Setup ESC key handler for closing modals
   window.addEventListener('keydown', handleKeyDown)
 })
@@ -765,7 +755,7 @@ onUnmounted(() => {
   right: 0;
   background: #f8f9fa;
   border-top: 2px solid #007bff;
-  box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
   z-index: 1000;
 }
 
@@ -780,7 +770,7 @@ onUnmounted(() => {
 }
 
 .toolbar-header:hover {
-  background-color: rgba(0,0,0,0.02);
+  background-color: rgba(0, 0, 0, 0.02);
 }
 
 .toolbar-label {

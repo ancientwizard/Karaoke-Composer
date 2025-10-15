@@ -1,10 +1,10 @@
 <template>
   <div
     class="word-box"
-    :class="{ 
-      'selected': isSelected,
+    :class="{
+      selected: isSelected,
       'full-word': word.syllables.length === 1 && word.syllables[0].text === 'FULL',
-      'dragging': isDragging || isResizing
+      dragging: isDragging || isResizing,
     }"
     :style="wordStyle"
     @mousedown="handleMouseDown"
@@ -13,13 +13,9 @@
     <!-- Full words show as dots, regular words show text -->
     <span v-if="isFullWord" class="full-word-dot">•</span>
     <span v-else class="word-text">{{ word.text }}</span>
-    
+
     <!-- Resize handle for right edge -->
-    <div 
-      v-if="!isFullWord"
-      class="resize-handle right"
-      @mousedown.stop="handleResizeStart"
-    ></div>
+    <div v-if="!isFullWord" class="resize-handle right" @mousedown.stop="handleResizeStart"></div>
   </div>
 </template>
 
@@ -53,7 +49,7 @@ interface Props {
 const props = defineProps<Props>()
 
 const emit = defineEmits<{
-  'select': [wordId: string]
+  select: [wordId: string]
   'update-timing': [wordId: string, startTime: number, endTime: number]
 }>()
 
@@ -74,7 +70,7 @@ const wordStyle = computed(() => {
   const relativeStartTime = props.word.startTime - props.viewStart
   const leftPercent = (relativeStartTime / props.duration) * 100
   const widthPercent = ((props.word.endTime - props.word.startTime) / props.duration) * 100
-  
+
   // Debug logging
   if (props.word.text === 'Meet' || props.word.text === 'me') {
     console.log(`📏 Word "${props.word.text}":`)
@@ -83,12 +79,12 @@ const wordStyle = computed(() => {
     console.log(`  relativeStartTime: ${relativeStartTime}, leftPercent: ${leftPercent.toFixed(2)}%`)
     console.log(`  wordDuration: ${props.word.endTime - props.word.startTime}, widthPercent: ${widthPercent.toFixed(2)}%`)
   }
-  
+
   return {
     left: `${Math.max(leftPercent, 0)}%`,
     width: `${Math.max(widthPercent, 0.1)}%`, // Reduced minimum width
     position: 'absolute' as const,
-    top: '0px'
+    top: '0px',
   }
 })
 
@@ -110,68 +106,68 @@ const handleClick = (event: MouseEvent) => {
 
 const handleMouseDown = (event: MouseEvent) => {
   if (isFullWord.value) return // Full words can't be dragged
-  
+
   event.preventDefault()
   event.stopPropagation()
-  
+
   console.log(`Starting drag for word "${props.word.text}"`)
-  
+
   isDragging.value = true
   dragStartX.value = event.clientX
   initialStartTime.value = props.word.startTime
   initialEndTime.value = props.word.endTime
-  
+
   emit('select', props.word.id)
-  
+
   document.addEventListener('mousemove', handleDrag)
   document.addEventListener('mouseup', handleDragEnd)
 }
 
 const handleResizeStart = (event: MouseEvent) => {
   if (isFullWord.value) return
-  
+
   event.preventDefault()
   event.stopPropagation()
-  
+
   isResizing.value = true
   dragStartX.value = event.clientX
   initialEndTime.value = props.word.endTime
-  
+
   document.addEventListener('mousemove', handleResize)
   document.addEventListener('mouseup', handleResizeEnd)
 }
 
 const handleDrag = (event: MouseEvent) => {
   if (!isDragging.value) return
-  
+
   const deltaX = event.clientX - dragStartX.value
   const timePerPixel = props.duration / props.timelineWidth
   const deltaTime = deltaX * timePerPixel
-  
+
   const newStartTime = Math.max(
     getMinStartTime(),
     Math.min(initialStartTime.value + deltaTime, getMaxEndTime() - 0.1) // Minimum duration
   )
-  
+
   const wordDuration = initialEndTime.value - initialStartTime.value
   const newEndTime = Math.min(newStartTime + wordDuration, getMaxEndTime())
-  
+
   console.log(`Dragging word "${props.word.text}": ${newStartTime.toFixed(2)}s - ${newEndTime.toFixed(2)}s`)
   emit('update-timing', props.word.id, newStartTime, newEndTime)
 }
 
 const handleResize = (event: MouseEvent) => {
   if (!isResizing.value) return
-  
+
   const deltaX = event.clientX - dragStartX.value
   const timePerPixel = props.duration / props.timelineWidth
   const deltaTime = deltaX * timePerPixel
-  
+
   const newEndTime = Math.max(
     props.word.startTime + 0.1, // Minimum duration
     Math.min(initialEndTime.value + deltaTime, getMaxEndTime())
   )
-  
+
   emit('update-timing', props.word.id, props.word.startTime, newEndTime)
 }
 
@@ -210,7 +206,7 @@ const handleResizeEnd = () => {
 .word-box:hover {
   background: #0056b3;
   transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .word-box.selected {
@@ -222,7 +218,7 @@ const handleResizeEnd = () => {
 .word-box.dragging {
   cursor: grabbing;
   transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
 }
 
 .word-box.dragging {
