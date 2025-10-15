@@ -67,6 +67,13 @@ build/
 *.njsproj
 *.sln
 *.sw?
+# Compiled TypeScript & Vue files (should not be in src/)
+*.vue.js
+*.vue.d.ts
+src/**/*.js
+src/**/*.d.ts
+!src/**/*.config.js
+!src/**/*.config.d.ts
 
 # Testing
 coverage/

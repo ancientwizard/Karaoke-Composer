@@ -16,6 +16,12 @@ const router = createRouter({
       component: () => import('@/views/ComposeView.vue')
     },
     {
+      path: '/timing/:projectId',
+      name: 'timing',
+      component: () => import('@/views/TimingView.vue'),
+      props: true
+    },
+    {
       path: '/library',
       name: 'library',
       component: () => import('@/views/LibraryView.vue')
@@ -24,6 +30,11 @@ const router = createRouter({
       path: '/about',
       name: 'about',
       component: () => import('@/views/AboutView.vue')
+    },
+    {
+      path: '/test-timing',
+      name: 'test-timing',
+      component: () => import('@/views/TestTimingView.vue')
     }
   ]
 })

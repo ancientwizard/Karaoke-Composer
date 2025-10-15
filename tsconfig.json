@@ -15,12 +15,14 @@
       "@/*": ["src/*"]
     },
     "types": [
+      "vite/client",
       "node",
       "jest",
       "@types/jest"
     ],
     "skipLibCheck": true,
     "allowSyntheticDefaultImports": true,
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "noEmit": true
   }
 }

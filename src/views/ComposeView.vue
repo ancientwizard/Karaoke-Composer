@@ -1,28 +1,5 @@
 <template>
   <div class="compose-view">
-    <!-- Header with project selection and actions -->
-    <div class="compose-header bg-light p-3 mb-4">
-      <div class="row align-items-center">
-        <div class="col-md-6">
-          <h2>🎼 Compose Karaoke</h2>
-          <p class="mb-0 text-muted">Create and sync your karaoke tracks</p>
-        </div>
-        <div class="col-md-6 text-end">
-          <button class="btn btn-primary me-2" @click="showCreateProject = true">
-            <i class="bi bi-plus-circle"></i> New Project
-          </button>
-          <button class="btn btn-secondary me-2" @click="showProjectList = true">
-            <i class="bi bi-folder2-open"></i> Open Project
-          </button>
-          <button class="btn btn-info btn-sm me-2" @click="openStorageInfo" title="Audio storage information">
-            <i class="bi bi-info-circle"></i> Storage
-          </button>
-          <button class="btn btn-danger btn-sm" @click="clearAllProjects" title="Clear all saved projects">
-            <i class="bi bi-trash3"></i> Clear All
-          </button>
-        </div>
-      </div>
-    </div>
 
     <!-- Project Creation Modal -->
     <div class="modal" :class="{ show: showCreateProject }" v-if="showCreateProject" @click="closeCreateProject">
@@ -104,49 +81,7 @@
       </div>
     </div>
 
-    <!-- Project List Modal -->
-    <div class="modal" :class="{ show: showProjectList }" v-if="showProjectList" @click="closeProjectList">
-      <div class="modal-dialog modal-lg" @click.stop>
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">Open Karaoke Project</h5>
-            <button type="button" class="btn-close" @click="closeProjectList"></button>
-          </div>
-          <div class="modal-body">
-            <div v-if="projects.length === 0" class="text-center text-muted py-4">
-              <p>No projects found. Create your first karaoke project!</p>
-            </div>
-            <div v-else class="list-group">
-              <div 
-                v-for="project in projects" 
-                :key="project.id"
-                class="list-group-item list-group-item-action d-flex justify-content-between align-items-start"
-                @click="openProject(project)"
-              >
-                <div class="ms-2 me-auto">
-                  <div class="fw-bold">{{ project.name }}</div>
-                  <small class="text-muted">{{ project.artist }} • {{ project.genre }}</small>
-                  <br>
-                  <small class="text-muted">
-                    Updated: {{ formatDate(project.updatedAt) }} • 
-                    {{ project.lyrics.length }} lines • 
-                    {{ project.isCompleted ? 'Completed' : 'In Progress' }}
-                  </small>
-                  <br>
-                  <small v-if="project.audioFile?.storedData" class="badge"
-                    :class="getStorageBadgeClass(project.audioFile.storedData.storageType)">
-                    {{ getStorageBadgeText(project.audioFile.storedData.storageType) }}
-                  </small>
-                </div>
-                <span class="badge bg-primary rounded-pill" v-if="project.isCompleted">
-                  ✓
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+
 
     <!-- Storage Info Modal -->
     <div class="modal" :class="{ show: showStorageInfo }" v-if="showStorageInfo" @click="closeStorageInfo">
@@ -209,6 +144,9 @@
                   <button class="btn btn-outline-info btn-sm w-100 mb-2" @click="testIndexedDB">
                     <i class="bi bi-gear"></i> Test IndexedDB
                   </button>
+                  <button class="btn btn-outline-success btn-sm w-100 mb-2" @click="fixStorageBadges">
+                    <i class="bi bi-wrench"></i> Fix Storage Badges
+                  </button>
                   <button class="btn btn-outline-warning btn-sm w-100" @click="clearAudioCache">
                     <i class="bi bi-trash3"></i> Clear Audio Cache
                   </button>
@@ -241,218 +179,120 @@
       </div>
     </div>
 
-    <!-- Hotkey Help Modal -->
-    <div class="modal" :class="{ show: showHotkeyModal }" v-if="showHotkeyModal" @click="closeHotkeyModal">
-      <div class="modal-dialog modal-lg" @click.stop>
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">🎹 Hotkey Reference Guide</h5>
-            <button type="button" class="btn-close" @click="closeHotkeyModal"></button>
-          </div>
-          <div class="modal-body">
-            <div class="row">
-              <div class="col-md-6">
-                <h6 class="text-primary">⏯️ Playback Controls</h6>
-                <ul class="list-unstyled mb-4">
-                  <li class="mb-2"><kbd>Spacebar</kbd> - Play/Pause (or Timing in Timing Mode)</li>
-                  <li class="mb-2"><kbd>Numpad Enter</kbd> - Play/Pause</li>
-                  <li class="mb-2"><kbd>Ctrl+P</kbd> - Play/Pause</li>
-                </ul>
 
-                <h6 class="text-success">⏩ Navigation</h6>
-                <ul class="list-unstyled mb-4">
-                  <li class="mb-2"><kbd>Home</kbd> - Jump to start (0:00)</li>
-                  <li class="mb-2"><kbd>End</kbd> - Jump to end of song</li>
-                  <li class="mb-2"><kbd>Numpad +</kbd> - Skip forward 1 second</li>
-                  <li class="mb-2"><kbd>Numpad -</kbd> - Skip backward 1 second</li>
-                  <li class="mb-2"><kbd>Ctrl+R</kbd> - Skip forward 10 seconds</li>
-                  <li class="mb-2"><kbd>Ctrl+L</kbd> - Skip backward 10 seconds</li>
-                </ul>
-              </div>
-              <div class="col-md-6">
-                <h6 class="text-warning">⏱️ Timing Assignment</h6>
-                <ul class="list-unstyled mb-4">
-                  <li class="mb-2"><kbd>Spacebar</kbd> - Assign timing (in Timing Mode)</li>
-                  <li class="mb-2"><kbd>Numpad 0</kbd> or <kbd>.</kbd> - Assign timing</li>
-                  <li class="mb-2"><kbd>Alt+T</kbd> - Toggle Timing Mode</li>
-                </ul>
 
-                <h6 class="text-info">📝 Editing</h6>
-                <ul class="list-unstyled mb-4">
-                  <li class="mb-2"><kbd>Double-click</kbd> any lyric line to edit</li>
-                  <li class="mb-2"><kbd>Enter</kbd> or <kbd>Blur</kbd> to save</li>
-                  <li class="mb-2"><kbd>Escape</kbd> to cancel</li>
-                </ul>
-              </div>
+    <!-- Projects Management Screen -->
+    <div class="projects-screen py-4">
+      <div class="card">
+        <div class="card-header compose-header">
+          <div class="row align-items-center">
+            <div class="col-md-6">
+              <h2 class="mb-1">🎼 Karaoke Composer</h2>
+              <p class="mb-0 text-muted">Create and sync your karaoke tracks</p>
             </div>
-            
-            <div class="alert alert-info mt-3">
-              <strong>💡 Pro Tips:</strong>
-              <ul class="mb-0 mt-2">
-                <li>Use <kbd>Home</kbd>/<kbd>End</kbd> for instant navigation to start/end</li>
-                <li>Use the numpad for fastest timing assignment workflow</li>
-                <li>Toggle Timing Mode (<kbd>Alt+T</kbd>) to focus on timing vs playback</li>
-                <li>Double-click lyrics for quick inline editing</li>
-                <li>Use 1-second skips for precise timing adjustments</li>
-              </ul>
+            <div class="col-md-6 text-end">
+              <button class="btn btn-primary me-2" @click="showCreateProject = true">
+                <i class="bi bi-plus-circle"></i> New Project
+              </button>
+              <button class="btn btn-info btn-sm me-2" @click="openStorageInfo" title="Audio storage information">
+                <i class="bi bi-info-circle"></i> Storage
+              </button>
+              <button class="btn btn-danger btn-sm" @click="clearAllProjects" title="Clear all saved projects">
+                <i class="bi bi-trash3"></i> Clear All
+              </button>
             </div>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-primary" @click="closeHotkeyModal">Got it!</button>
           </div>
         </div>
-      </div>
-    </div>
-
-    <!-- Main Sync Editor -->
-    <div v-if="currentProject" class="sync-editor">
-      <div class="row">
-        <div class="col-12 mb-3">
-          <div class="project-info card">
-            <div class="card-body">
-              <div class="row align-items-center">
-                <div class="col-md-8">
-                  <h4 class="mb-1">{{ currentProject.name }}</h4>
-                  <p class="mb-0 text-muted">by {{ currentProject.artist }}</p>
-                </div>
-                <div class="col-md-4 text-end">
-                  <button class="btn btn-success btn-sm me-2" @click="saveProject">
-                    <i class="bi bi-save"></i> Save
-                  </button>
-                  <button class="btn btn-danger btn-sm me-2" @click="closeProject">
-                    <i class="bi bi-x-circle"></i> Close
-                  </button>
-                  <!-- Hotkey Help Button -->
+        
+        <div class="card-body">
+          <!-- Projects List -->
+          <div v-if="projects.length > 0">
+            <h5 class="mb-3">Your Projects</h5>
+            <div class="list-group">
+              <div 
+                v-for="project in projects" 
+                :key="project.id"
+                class="list-group-item p-0 project-item"
+              >
+                <div class="btn-group w-100" role="group">
                   <button 
-                    class="btn btn-primary btn-sm" 
-                    type="button"
-                    :title="hotkeyHelpText"
-                    @click="showHotkeyHelp"
+                    class="btn btn-outline-secondary text-start flex-grow-1 project-content-btn"
+                    @click="openProject(project)"
                   >
-                    <i class="bi bi-question-circle"></i> Help
+                    <div class="fw-bold d-flex align-items-center">
+                      <i class="bi bi-music-note-beamed me-2 text-primary"></i>
+                      {{ project.name }}
+                    </div>
+                    <div class="text-muted small">
+                      by {{ project.artist }} • {{ project.genre }}
+                    </div>
+                    <div class="text-muted small">
+                      <i class="bi bi-clock me-1"></i>
+                      Last updated {{ formatDate(project.updatedAt) }}
+                    </div>
+                    <div class="text-muted small" v-if="project.audioFile">
+                      <i class="bi bi-file-music me-1"></i>
+                      {{ project.audioFile.name }}
+                      <span class="badge ms-2" :class="getStorageBadgeClass(project.audioFile.storedData?.storageType || 'unknown')">
+                        {{ getStorageBadgeText(project.audioFile.storedData?.storageType || 'unknown') }}
+                      </span>
+                    </div>
+                  </button>
+                  <button 
+                    class="btn btn-warning delete-btn"
+                    @click.stop="deleteProject(project)"
+                    title="Delete project"
+                  >
+                    <i class="bi bi-trash3"></i>
                   </button>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      </div>
-
-      <!-- Editor Layout -->
-      <div class="row">
-        <!-- Lyrics Editor Column -->
-        <div class="col-md-6">
-          <LyricsEditor 
-            :lyrics="currentProject.lyrics"
-            :currentLine="currentLine"
-            :currentWord="currentWordIndex"
-            :isTimingMode="isTimingMode"
-            @line-select="selectLine"
-            @lyrics-update="updateLyrics"
-          />
-        </div>
-
-        <!-- Preview and Controls Column -->
-        <div class="col-md-6">
-          <div class="row">
-            <!-- Lyrics Preview -->
-            <div class="col-12 mb-3">
-              <LyricsPreview 
-                :lyrics="currentProject.lyrics"
-                :currentTime="playbackState.currentTime"
-                :currentLine="currentLine"
-                :currentWord="currentWordIndex"
-                :currentSyllable="playbackState.currentSyllable?.syllableIndex"
-              />
-            </div>
-            
-            <!-- Timing Assignment Controls -->
-            <div class="col-12">
-              <div class="card">
-                <div class="card-header">
-                  <h5 class="mb-0">⏱️ Timing Assignment</h5>
-                </div>
-                <div class="card-body">
-                  <div class="d-flex justify-content-between align-items-center mb-3">
-                    <button 
-                      class="btn"
-                      :class="isTimingMode ? 'btn-warning' : 'btn-outline-secondary'"
-                      @click="toggleTimingMode"
-                    >
-                      <i class="bi bi-crosshair"></i>
-                      {{ isTimingMode ? 'Exit Timing Mode' : 'Enter Timing Mode' }}
-                    </button>
-                    <button 
-                      class="btn btn-success"
-                      @click="assignTiming"
-                      :disabled="!isTimingMode"
-                    >
-                      <i class="bi bi-check-circle"></i> Assign Timing
-                    </button>
-                  </div>
-                  
-                  <!-- Progress Stats -->
-                  <div class="row text-center">
-                    <div class="col-4">
-                      <div class="stat-item">
-                        <div class="stat-number">{{ timingStats.timedLines }}/{{ timingStats.totalLines }}</div>
-                        <div class="stat-label text-muted">Lines</div>
-                      </div>
-                    </div>
-                    <div class="col-4">
-                      <div class="stat-item">
-                        <div class="stat-number">{{ timingStats.timedWords }}/{{ timingStats.totalWords }}</div>
-                        <div class="stat-label text-muted">Words</div>
-                      </div>
-                    </div>
-                    <div class="col-4">
-                      <div class="stat-item">
-                        <div class="stat-number">{{ timingStats.timedSyllables }}/{{ timingStats.totalSyllables }}</div>
-                        <div class="stat-label text-muted">Syllables</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+          
+          <!-- Empty State -->
+          <div v-else class="text-center py-5">
+            <i class="bi bi-music-note-list display-1 text-muted mb-3"></i>
+            <h5 class="text-muted">No projects yet</h5>
+            <p class="text-muted">Create your first karaoke project to get started</p>
+            <button class="btn btn-primary btn-lg" @click="showCreateProject = true">
+              <i class="bi bi-plus-circle me-2"></i>Create Your First Project
+            </button>
           </div>
-        </div>
-      </div>
-
-      <!-- Waveform View -->
-      <div class="row mt-4">
-        <div class="col-12">
-          <WaveformViewer 
-            :audioFile="currentProject.audioFile"
-            :lyrics="currentProject.lyrics"
-            :currentTime="playbackState.currentTime"
-            :waveformData="waveformData"
-            :playbackState="playbackState"
-            :isTimingMode="isTimingMode"
-            @seek="seekAudio"
-            @lyrics-position="updateLyricsPosition"
-            @play-pause="togglePlayPause"
-            @skip-backward="skipBackward"
-            @skip-forward="skipForward"
-          />
         </div>
       </div>
     </div>
+  </div>
 
-    <!-- Welcome Screen -->
-    <div v-else class="welcome-screen text-center py-5">
-      <div class="card mx-auto" style="max-width: 600px;">
-        <div class="card-body p-5">
-          <h3>🎼 Ready to Compose?</h3>
-          <p class="lead">Create your first karaoke project or open an existing one to start syncing lyrics with audio.</p>
-          <div class="d-grid gap-2 d-md-flex justify-content-md-center">
-            <button class="btn btn-primary btn-lg" @click="showCreateProject = true">
-              Create New Project
-            </button>
-            <button class="btn btn-outline-secondary btn-lg" @click="showProjectList = true">
-              Open Project
-            </button>
-          </div>
+  <!-- Developer Toolbar -->
+  <div class="developer-toolbar">
+    <div class="container">
+      <!-- Toolbar Header (always visible) -->
+      <div class="toolbar-header" @click="toggleDevToolbar">
+        <div class="toolbar-label">
+          <i class="bi bi-code-slash me-1"></i>
+          <small class="text-muted">Developer Tools</small>
+        </div>
+        <div class="toolbar-toggle">
+          <i class="bi bi-chevron-down" :class="{ 'rotate-180': !showDevToolbar }"></i>
+        </div>
+      </div>
+      
+      <!-- Toolbar Content (collapsible) -->
+      <div v-if="showDevToolbar" class="toolbar-content">
+        <div class="toolbar-buttons">
+          <router-link to="/test-timing" class="btn btn-outline-primary btn-sm me-2">
+            <i class="bi bi-play-circle me-1"></i>
+            Test Word Timing Editor
+          </router-link>
+          <button class="btn btn-outline-secondary btn-sm me-2" @click="showStorageInfo = true">
+            <i class="bi bi-database me-1"></i>
+            Storage Info
+          </button>
+          <button class="btn btn-outline-info btn-sm" @click="fixStorageBadges">
+            <i class="bi bi-wrench me-1"></i>
+            Fix Badges
+          </button>
         </div>
       </div>
     </div>
@@ -461,31 +301,23 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import type { KaraokeProject, LyricLine, PlaybackState, WaveformData } from '@/types/karaoke'
-import { audioService } from '@/services/audioService'
+import { useRouter } from 'vue-router'
+import type { KaraokeProject } from '@/types/karaoke'
 import { audioStorageService } from '@/services/audioStorageService'
-import { parseLyricsText, assignWordTiming, getCurrentPosition, getTimingStats } from '@/utils/lyricsParser'
-import LyricsEditor from '@/components/LyricsEditor.vue'
-import LyricsPreview from '@/components/LyricsPreview.vue'
-
-import WaveformViewer from '@/components/WaveformViewer.vue'
+import { parseLyricsText } from '@/utils/lyricsParser'
 
 // Reactive state
+const router = useRouter()
 const showCreateProject = ref(false)
-const showProjectList = ref(false)
 const showStorageInfo = ref(false)
-const showHotkeyModal = ref(false)
-const currentProject = ref<KaraokeProject | null>(null)
 const projects = ref<KaraokeProject[]>([])
-const currentLine = ref(0)
-const isTimingMode = ref(false)
-const waveformData = ref<WaveformData | null>(null)
+
+// Developer toolbar
+const showDevToolbar = ref(true)
+
 // Storage and IndexedDB testing
 const indexedDBTestResult = ref<string>('')
 const storageInfo = ref<{ method: string; sizeMB: number; count: number; quotaUsedMB: number; quotaLimitMB: number } | null>(null)
-
-// Global hotkeys cleanup
-let cleanupGlobalHotkeys: (() => void) | null = null
 
 // New project form
 const newProject = ref({
@@ -496,36 +328,11 @@ const newProject = ref({
   audioFile: null as File | null
 })
 
-// Playback state
-const playbackState = ref<PlaybackState>({
-  isPlaying: false,
-  currentTime: 0,
-  duration: 0,
-  volume: 1,
-  playbackRate: 1,
-  isLoaded: false
-})
-
 // Computed properties
 const canCreateProject = computed(() => {
   return newProject.value.name && 
          newProject.value.artist && 
          newProject.value.audioFile
-})
-
-const timingStats = computed(() => {
-  if (!currentProject.value) {
-    return {
-      totalLines: 0,
-      timedLines: 0,
-      totalWords: 0,
-      timedWords: 0,
-      totalSyllables: 0,
-      timedSyllables: 0,
-      completionPercent: 0
-    }
-  }
-  return getTimingStats(currentProject.value.lyrics)
 })
 
 const hotkeyHelpText = computed(() => {
@@ -538,17 +345,11 @@ const closeCreateProject = () => {
   resetNewProject()
 }
 
-const closeProjectList = () => {
-  showProjectList.value = false
-}
-
 const closeStorageInfo = () => {
   showStorageInfo.value = false
 }
 
-const closeHotkeyModal = () => {
-  showHotkeyModal.value = false
-}
+
 
 const openStorageInfo = () => {
   storageInfo.value = audioStorageService.getStorageInfo()
@@ -607,10 +408,7 @@ const getStorageBadgeText = (storageType: string) => {
   }
 }
 
-// Show hotkey help in a proper modal dialog
-const showHotkeyHelp = () => {
-  showHotkeyModal.value = true
-}
+
 
 const resetNewProject = () => {
   newProject.value = {
@@ -643,7 +441,7 @@ const createProject = async () => {
   }
 
   // Parse lyrics with syllable support
-  const lyrics: LyricLine[] = parseLyricsText(newProject.value.lyricsText)
+  const lyrics = parseLyricsText(newProject.value.lyricsText)
   
   const projectId = `project-${Date.now()}`
   
@@ -670,15 +468,14 @@ const createProject = async () => {
   }
 
   projects.value.push(project)
-  currentProject.value = project
   
   try {
-    // Load audio file
-    await loadProjectAudio(project)
-    
     saveProjectsToStorage()
     closeCreateProject()
     console.log('Project created successfully:', project.name)
+    
+    // Navigate to the timing editor
+    router.push(`/timing/${projectId}`)
   } catch (error) {
     console.error('Error creating project:', error)
     alert('Error creating project: ' + error)
@@ -686,293 +483,22 @@ const createProject = async () => {
 }
 
 const openProject = async (project: KaraokeProject) => {
-  currentProject.value = project
-  await loadProjectAudio(project)
-  closeProjectList()
+  // Navigate to the timing editor
+  router.push(`/timing/${project.id}`)
 }
 
-const loadProjectAudio = async (project: KaraokeProject) => {
-  if (!project.audioFile) {
-    console.error('No audio file in project')
-    return
-  }
-
-  console.log('🔄 Loading project audio:', {
-    projectName: project.name,
-    audioFileName: project.audioFile.name,
-    hasFile: !!project.audioFile.file,
-    hasStoredData: !!project.audioFile.storedData,
-    storageType: project.audioFile.storedData?.storageType,
-    duration: project.audioFile.duration
-  })
-
-  try {
-    let audioFile = project.audioFile
-
-    // If we have stored data but no file object, try to retrieve it
-    if (!audioFile.file && audioFile.storedData) {
-      console.log('Retrieving stored audio file...')
-      const retrievedFile = await audioStorageService.retrieveAudioFile(audioFile.storedData)
+const deleteProject = async (project: KaraokeProject) => {
+  if (confirm(`Are you sure you want to delete "${project.name}"? This action cannot be undone.`)) {
+    // Remove from projects array
+    const index = projects.value.findIndex(p => p.id === project.id)
+    if (index > -1) {
+      projects.value.splice(index, 1)
       
-      if (retrievedFile) {
-        // IMPORTANT: Preserve the original storedData and other properties
-        audioFile = {
-          ...audioFile, // Keep original properties including storedData
-          ...retrievedFile // Add the retrieved file and url
-        }
-        // Update the project with the enhanced audio file
-        project.audioFile = audioFile
-        console.log('✅ Audio file retrieved successfully with preserved storage metadata:', {
-          name: audioFile.name,
-          hasFile: !!audioFile.file,
-          hasStoredData: !!audioFile.storedData,
-          storageType: audioFile.storedData?.storageType
-        })
-      } else {
-        console.error('Failed to retrieve audio file')
-        alert('Could not load the audio file for this project. Please re-select the audio file.')
-        return
-      }
-    }
-
-    const success = await audioService.loadAudioFile(audioFile)
-    if (success) {
-      const state = audioService.getPlaybackState()
-      playbackState.value = { ...state }
+      // Save updated projects to storage
+      saveProjectsToStorage()
       
-      // Store the detected duration in the project for future use
-      if (!project.audioFile.duration || project.audioFile.duration !== state.duration) {
-        console.log('💾 Storing detected audio duration:', state.duration / 1000, 'seconds')
-        project.audioFile.duration = state.duration
-        project.updatedAt = new Date()
-        saveProjectsToStorage() // Save the updated duration
-      }
-      
-      // Generate waveform data if needed
-      if (!waveformData.value) {
-        const peaks = await audioService.generateWaveformData(1000)
-        if (peaks) {
-          waveformData.value = {
-            peaks,
-            sampleRate: 44100,
-            duration: state.duration,
-            channels: 1
-          }
-        }
-      }
-      console.log('Audio loaded successfully')
-    } else {
-      console.error('Failed to load audio into player')
-      alert('Failed to load audio file. Please check the file and try again.')
+      console.log(`Project "${project.name}" deleted successfully`)
     }
-  } catch (error) {
-    console.error('Error loading project audio:', error)
-    alert('Error loading audio file: ' + error)
-  }
-}
-
-const closeProject = () => {
-  currentProject.value = null
-  currentLine.value = 0
-  isTimingMode.value = false
-}
-
-const saveProject = () => {
-  if (!currentProject.value) return
-  
-  currentProject.value.updatedAt = new Date()
-  saveProjectsToStorage()
-  // TODO: Show save confirmation
-}
-
-const selectLine = (lineIndex: number) => {
-  currentLine.value = lineIndex
-}
-
-const updateLyrics = (lyrics: LyricLine[]) => {
-  if (currentProject.value) {
-    currentProject.value.lyrics = lyrics
-  }
-}
-
-const togglePlayPause = async () => {
-  if (playbackState.value.isPlaying) {
-    audioService.pause()
-  } else {
-    await audioService.play()
-  }
-}
-
-const seekAudio = (time: number) => {
-  audioService.seek(time)
-}
-
-const skipBackward = () => {
-  const newTime = Math.max(0, playbackState.value.currentTime - 10000) // 10 seconds in ms
-  audioService.seek(newTime)
-}
-
-const skipForward = () => {
-  const duration = currentProject.value?.audioFile?.duration || 0
-  if (duration > 0) {
-    const newTime = Math.min(duration - 100, playbackState.value.currentTime + 10000) // 10 seconds in ms, stay 100ms from end
-    audioService.seek(newTime)
-  }
-}
-
-// Short skip functions for 1-second precision
-const skipBackwardShort = () => {
-  const newTime = Math.max(0, playbackState.value.currentTime - 1000) // 1 second in ms
-  audioService.seek(newTime)
-}
-
-const skipForwardShort = () => {
-  const duration = currentProject.value?.audioFile?.duration || 0
-  if (duration > 0) {
-    const newTime = Math.min(duration - 100, playbackState.value.currentTime + 1000) // 1 second in ms, stay 100ms from end
-    audioService.seek(newTime)
-  }
-}
-
-// Home/End navigation functions
-const seekToStart = () => {
-  audioService.seek(0)
-}
-
-const seekToEnd = () => {
-  const duration = currentProject.value?.audioFile?.duration || 0
-  if (duration > 0) {
-    // Seek to 1 second before the end to avoid edge cases
-    const newTime = Math.max(0, duration - 1000)
-    audioService.seek(newTime)
-  }
-}
-
-const toggleTimingMode = () => {
-  isTimingMode.value = !isTimingMode.value
-}
-
-// Smart duration calculation helper
-const calculateSmartDuration = (currentLineIndex: number, currentWordIndex: number): number => {
-  if (!currentProject.value) return 500
-  
-  const lyrics = currentProject.value.lyrics
-  const currentLine = lyrics[currentLineIndex]
-  if (!currentLine) return 500
-  
-  let nextTiming: number | undefined
-  
-  // Try to find next word timing
-  if (currentWordIndex < currentLine.words.length - 1) {
-    // Next word in same line
-    const nextWord = currentLine.words[currentWordIndex + 1]
-    nextTiming = nextWord.startTime
-  } else if (currentLineIndex < lyrics.length - 1) {
-    // First word of next line
-    const nextLine = lyrics[currentLineIndex + 1]
-    if (nextLine.words.length > 0) {
-      nextTiming = nextLine.words[0].startTime
-    }
-  }
-  
-  if (nextTiming) {
-    const currentTime = playbackState.value.currentTime
-    const timeToNext = (nextTiming / 1000) - currentTime // Convert to seconds
-    
-    // Determine if this is a phrase/verse break (longer gap)
-    const isLongBreak = timeToNext > 3 // More than 3 seconds = phrase break
-    
-    if (isLongBreak) {
-      // 50% of time to next for phrase/verse breaks
-      return Math.max(300, timeToNext * 0.5 * 1000) // Min 300ms, max 50% in milliseconds
-    } else {
-      // 80-85% of time to next for normal word spacing
-      return Math.max(200, timeToNext * 0.825 * 1000) // Min 200ms, 82.5% average in milliseconds
-    }
-  }
-  
-  // Fallback durations based on word length
-  const currentWord = currentLine.words[currentWordIndex]
-  if (currentWord) {
-    const wordLength = currentWord.word.length
-    return Math.max(200, wordLength * 80) // ~80ms per character, min 200ms
-  }
-  
-  return 500 // Default fallback
-}
-
-const assignTiming = () => {
-  if (!currentProject.value || !isTimingMode.value) return
-  
-  const lineIndex = currentLine.value
-  const wordIndex = currentWordIndex.value
-  const currentTime = playbackState.value.currentTime
-  
-  if (lineIndex < currentProject.value.lyrics.length) {
-    // Calculate smart duration
-    const smartDuration = calculateSmartDuration(lineIndex, wordIndex)
-    
-    // Assign timing to current word using spacebar with smart duration
-    currentProject.value.lyrics = assignWordTiming(
-      currentProject.value.lyrics,
-      lineIndex,
-      wordIndex,
-      currentTime,
-      smartDuration
-    )
-
-    // Possible TMI for the console
-    console.log('⏱️ Smart timing assigned:', {
-      word: currentProject.value.lyrics[lineIndex].words[wordIndex].word,
-      startTime: currentTime,
-      duration: smartDuration,
-      calculation: smartDuration > 400 ? 'phrase-break' : 'normal-spacing'
-    })
-    
-    // Move to next word/line
-    moveToNextWord()
-  }
-}
-
-// New word navigation
-const currentWordIndex = ref(0)
-
-const moveToNextWord = () => {
-  if (!currentProject.value) return
-  
-  const currentLyricLine = currentProject.value.lyrics[currentLine.value]
-  if (!currentLyricLine) return
-  
-  if (currentWordIndex.value < currentLyricLine.words.length - 1) {
-    // Move to next word in same line
-    currentWordIndex.value++
-  } else if (currentLine.value < currentProject.value.lyrics.length - 1) {
-    // Move to first word of next line
-    currentLine.value++
-    currentWordIndex.value = 0
-  }
-}
-
-const moveToPreviousWord = () => {
-  if (!currentProject.value) return
-  
-  if (currentWordIndex.value > 0) {
-    // Move to previous word in same line
-    currentWordIndex.value--
-  } else if (currentLine.value > 0) {
-    // Move to last word of previous line
-    currentLine.value--
-    const prevLine = currentProject.value.lyrics[currentLine.value]
-    currentWordIndex.value = Math.max(0, prevLine.words.length - 1)
-  }
-}
-
-const updateLyricsPosition = (lineIndex: number, time: number) => {
-  if (!currentProject.value) return
-  
-  const lyric = currentProject.value.lyrics[lineIndex]
-  if (lyric) {
-    lyric.startTime = time
   }
 }
 
@@ -1001,6 +527,16 @@ const loadProjectsFromStorage = () => {
         }
       }))
       console.log(`Loaded ${projects.value.length} projects from storage`)
+      
+      // Debug storage badge issue
+      projects.value.forEach((project, index) => {
+        console.log(`🔍 Project ${index + 1}: "${project.name}"`)
+        console.log('   audioFile:', project.audioFile)
+        console.log('   storedData:', project.audioFile?.storedData)
+        console.log('   storageType:', project.audioFile?.storedData?.storageType)
+        console.log('   Badge will show:', getStorageBadgeText(project.audioFile?.storedData?.storageType || 'unknown'))
+        console.log('---')
+      })
     } catch (error) {
       console.error('Error loading projects:', error)
     }
@@ -1035,192 +571,72 @@ const saveProjectsToStorage = () => {
   }
 }
 
+const fixStorageBadges = () => {
+  let fixedCount = 0
+  
+  projects.value.forEach(project => {
+    if (project.audioFile && !project.audioFile.storedData) {
+      // Try to infer storage type from available data
+      let inferredStorageType = 'reference' // Default fallback
+      
+      // Check if there's base64 data in localStorage
+      const lastModified = project.audioFile.file?.lastModified || 0
+      const audioKey = `audio_${project.id}_${project.audioFile.name}_${lastModified}`
+      if (localStorage.getItem(`audio_${audioKey}`)) {
+        inferredStorageType = 'base64'
+      }
+      
+      // Create minimal storedData
+      project.audioFile.storedData = {
+        name: project.audioFile.name,
+        size: 0,
+        type: 'audio/mpeg',
+        lastModified: Date.now(),
+        storageType: inferredStorageType as 'base64' | 'indexeddb' | 'reference'
+      }
+      
+      fixedCount++
+      console.log(`🔧 Fixed storage badge for project: ${project.name} -> ${inferredStorageType}`)
+    }
+  })
+  
+  if (fixedCount > 0) {
+    saveProjectsToStorage()
+    alert(`Fixed storage badges for ${fixedCount} project(s). Refresh the page to see the changes.`)
+  } else {
+    alert('All projects already have proper storage data.')
+  }
+}
+
 const clearAllProjects = () => {
   if (confirm('Are you sure you want to delete ALL saved projects? This cannot be undone.')) {
     localStorage.removeItem('karaokeProjects')
     projects.value = []
-    currentProject.value = null
-    currentLine.value = 0
-    isTimingMode.value = false
-    
-    // Stop any playing audio
-    audioService.pause()
     
     console.log('All projects cleared from localStorage')
     alert('All projects have been cleared. You can now start fresh!')
   }
 }
 
-// Setup audio service listeners
-const setupAudioListeners = () => {
-  audioService.onTimeUpdate((time) => {
-    playbackState.value.currentTime = time
-    
-    // Update current position based on timing
-    if (currentProject.value) {
-      const position = getCurrentPosition(currentProject.value.lyrics, time)
-      currentLine.value = position.lineIndex
-      currentWordIndex.value = position.wordIndex
-      
-      playbackState.value.currentWord = {
-        lineIndex: position.lineIndex,
-        wordIndex: position.wordIndex
-      }
-      
-      playbackState.value.currentSyllable = {
-        lineIndex: position.lineIndex,
-        wordIndex: position.wordIndex,
-        syllableIndex: position.syllableIndex
-      }
-    }
-  })
-  
-  audioService.onPlaybackStateChange((state) => {
-    playbackState.value = { ...state }
-  })
+const toggleDevToolbar = () => {
+  showDevToolbar.value = !showDevToolbar.value
 }
 
-// Lifecycle
-// Global hotkey system
-const setupGlobalHotkeys = () => {
-  const handleKeyDown = (event: KeyboardEvent) => {
-    // Ignore if user is typing in an input field
-    if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
-      return
+// Global hotkey handler for ESC key
+const handleKeyDown = (event: KeyboardEvent) => {
+  if (event.code === 'Escape') {
+    if (showCreateProject.value) {
+      event.preventDefault()
+      closeCreateProject()
+    } else if (showStorageInfo.value) {
+      event.preventDefault()
+      closeStorageInfo()
     }
-    
-    switch (event.code) {
-      case 'Space':
-        event.preventDefault() // Prevent page scroll
-        if (isTimingMode.value) {
-          // Spacebar for timing assignment (keydown based)
-          assignTiming()
-        } else {
-          // Spacebar for play/pause
-          togglePlayPause()
-        }
-        break
-        
-      // Numpad Enter for play/pause
-      case 'NumpadEnter':
-      case 'Enter':
-        if (!event.ctrlKey && !event.metaKey) {
-          event.preventDefault()
-          togglePlayPause()
-        }
-        break
-        
-      // Numpad 0 and . for timing
-      case 'Numpad0':
-      case 'NumpadDecimal':
-        event.preventDefault()
-        if (isTimingMode.value) {
-          assignTiming()
-        }
-        break
-        
-      // Numpad +/- for 1 second forward/backward
-      case 'NumpadAdd':
-        event.preventDefault()
-        skipForwardShort() // 1 second
-        break
-        
-      case 'NumpadSubtract':
-        event.preventDefault()
-        skipBackwardShort() // 1 second
-        break
-        
-      case 'KeyT':
-        if (event.altKey) {
-          event.preventDefault()
-          toggleTimingMode()
-        }
-        break
-        
-      case 'KeyP':
-        if (event.ctrlKey || event.metaKey) {
-          event.preventDefault()
-          togglePlayPause()
-        }
-        break
-        
-      case 'KeyL':
-        if (event.ctrlKey || event.metaKey) {
-          event.preventDefault()
-          skipBackward() // 10 seconds
-        }
-        break
-        
-      case 'KeyR':
-        if (event.ctrlKey || event.metaKey) {
-          event.preventDefault()
-          skipForward() // 10 seconds
-        }
-        break
-        
-      // Home/End navigation keys
-      case 'Home':
-        event.preventDefault()
-        seekToStart()
-        break
-        
-      case 'End':
-        event.preventDefault()
-        seekToEnd()
-        break
-        
-      // Keep existing arrow keys as backup
-      case 'ArrowLeft':
-        if (event.ctrlKey || event.metaKey) {
-          event.preventDefault()
-          skipBackward()
-        }
-        break
-        
-      case 'ArrowRight':
-        if (event.ctrlKey || event.metaKey) {
-          event.preventDefault()
-          skipForward()
-        }
-        break
-        
-      case 'Escape':
-        if (showHotkeyModal.value) {
-          event.preventDefault()
-          closeHotkeyModal()
-        } else if (showProjectList.value) {
-          event.preventDefault()
-          closeProjectList()
-        } else if (showCreateProject.value) {
-          event.preventDefault()
-          closeCreateProject()
-        } else if (showStorageInfo.value) {
-          event.preventDefault()
-          closeStorageInfo()
-        }
-        break
-    }
-  }
-  
-  window.addEventListener('keydown', handleKeyDown)
-  
-  // Return cleanup function
-  return () => {
-    window.removeEventListener('keydown', handleKeyDown)
   }
 }
 
 onMounted(async () => {
   loadProjectsFromStorage()
-  setupAudioListeners()
-  
-  // Setup global hotkeys
-  const cleanupHotkeys = setupGlobalHotkeys()
-  
-  // Store cleanup function for onUnmounted  
-  cleanupGlobalHotkeys = cleanupHotkeys
-  
-  // Help button uses simple click handler - no complex tooltip initialization needed
   
   // Wait a moment for IndexedDB to initialize
   await new Promise(resolve => setTimeout(resolve, 100))
@@ -1246,15 +662,14 @@ onMounted(async () => {
   } else {
     console.log('📦 Using fallback storage method:', info.method)
   }
+  
+  // Setup ESC key handler for closing modals
+  window.addEventListener('keydown', handleKeyDown)
 })
 
 onUnmounted(() => {
-  audioService.dispose()
-  
-  // Cleanup global hotkeys
-  if (cleanupGlobalHotkeys) {
-    cleanupGlobalHotkeys()
-  }
+  // Cleanup ESC key handler
+  window.removeEventListener('keydown', handleKeyDown)
 })
 </script>
 
@@ -1280,17 +695,123 @@ onUnmounted(() => {
   border-radius: 0.5rem;
 }
 
-.welcome-screen {
+.projects-screen {
   min-height: 60vh;
+}
+
+.project-item {
+  border-left: 3px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.project-item:hover {
+  border-left-color: #0d6efd;
+  transform: translateX(2px);
+}
+
+.project-content-btn {
+  padding: 1rem;
+  height: auto;
+  white-space: normal;
+  text-align: left !important;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  flex: 1;
+}
+
+.project-content-btn:hover {
+  background-color: #f8f9fa;
+  border-color: #0d6efd;
+  color: #212529 !important;
+}
+
+.project-content-btn:hover .text-muted {
+  color: #6c757d !important;
+}
+
+.project-content-btn:hover .text-primary {
+  color: #0d6efd !important;
+}
+
+.delete-btn {
+  width: 60px;
+  max-width: 60px;
+  flex: 0 0 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+}
+
+.project-item .btn-group {
+  transition: all 0.2s ease;
+}
+
+/* Ensure button group buttons connect properly */
+.btn-group > .btn:not(:last-child) {
+  border-right: none;
+}
+
+.btn-group > .btn:not(:first-child) {
+  border-left: none;
+}
+
+/* Developer Toolbar */
+.developer-toolbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #f8f9fa;
+  border-top: 2px solid #007bff;
+  box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+  z-index: 1000;
+}
+
+.toolbar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.2s;
+}
+
+.toolbar-header:hover {
+  background-color: rgba(0,0,0,0.02);
+}
+
+.toolbar-label {
   display: flex;
   align-items: center;
 }
 
-.sync-editor {
-  min-height: 70vh;
+.toolbar-toggle {
+  color: #6c757d;
+  transition: transform 0.3s ease;
 }
 
-.list-group-item:hover {
-  cursor: pointer;
+.toolbar-toggle .rotate-180 {
+  transform: rotate(180deg);
+}
+
+.toolbar-content {
+  padding-bottom: 10px;
+  border-top: 1px solid #dee2e6;
+  padding-top: 10px;
+}
+
+.toolbar-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Add some padding to the main content so it doesn't get hidden behind the toolbar */
+.compose-view {
+  padding-bottom: 60px;
 }
 </style>

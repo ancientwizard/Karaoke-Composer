@@ -27,15 +27,33 @@ export class AudioService {
 
   private async initializeAudioContext() {
     try {
-      this.audioContext = new AudioContext()
-      this.analyser = this.audioContext.createAnalyser()
-      this.gainNode = this.audioContext.createGain()
-      
-      this.analyser.fftSize = 2048
-      this.analyser.connect(this.audioContext.destination)
-      this.gainNode.connect(this.analyser)
-      
-      this.isInitialized = true
+      // Check if we need to recreate context
+      if (this.audioContext && this.audioContext.state === 'closed') {
+        this.audioContext = null
+        this.analyser = null
+        this.gainNode = null
+        this.source = null
+        this.isInitialized = false
+      }
+
+      if (!this.audioContext || this.audioContext.state === 'closed') {
+        this.audioContext = new AudioContext()
+        this.analyser = this.audioContext.createAnalyser()
+        this.gainNode = this.audioContext.createGain()
+        
+        this.analyser.fftSize = 2048
+        this.analyser.connect(this.audioContext.destination)
+        this.gainNode.connect(this.analyser)
+        
+        this.isInitialized = true
+        console.log('Audio context initialized successfully')
+      }
+
+      // Resume context if suspended
+      if (this.audioContext.state === 'suspended') {
+        await this.audioContext.resume()
+        console.log('Audio context resumed')
+      }
     } catch (error) {
       console.error('Failed to initialize audio context:', error)
     }
@@ -43,6 +61,9 @@ export class AudioService {
 
   async loadAudioFile(audioFile: AudioFile): Promise<boolean> {
     try {
+      // Ensure audio context is properly initialized
+      await this.initializeAudioContext()
+
       // Create or update HTML5 audio element
       if (this.audio) {
         this.audio.pause()
@@ -66,11 +87,17 @@ export class AudioService {
 
       // Connect to Web Audio API if initialized
       if (this.isInitialized && this.audioContext && this.gainNode) {
-        if (this.source) {
-          this.source.disconnect()
+        try {
+          if (this.source) {
+            this.source.disconnect()
+          }
+          this.source = this.audioContext.createMediaElementSource(this.audio)
+          this.source.connect(this.gainNode)
+          console.log('Audio source connected to Web Audio API')
+        } catch (contextError) {
+          console.warn('Web Audio API connection failed, falling back to basic audio:', contextError)
+          // Continue without Web Audio API features
         }
-        this.source = this.audioContext.createMediaElementSource(this.audio)
-        this.source.connect(this.gainNode)
       }
 
       // Wait for audio to be ready
@@ -146,14 +173,22 @@ export class AudioService {
     if (!this.audio || !this.playbackState.isLoaded) return
 
     try {
+      // Ensure audio context is properly initialized
+      await this.initializeAudioContext()
+      
       // Resume AudioContext if suspended (required by some browsers)
       if (this.audioContext && this.audioContext.state === 'suspended') {
         await this.audioContext.resume()
+        console.log('Audio context resumed for playback')
       }
       
       await this.audio.play()
+      this.playbackState.isPlaying = true
+      this.updatePlaybackState()
+      console.log('Audio playback started successfully')
     } catch (error) {
       console.error('Failed to play audio:', error)
+      throw error
     }
   }
 
