@@ -1,7 +1,7 @@
 <!--
 WORD TIMING EDITOR COMPONENT - Design & Behavior Notes
 
-VISION: 
+VISION:
 - Single unified timeline component (like a train track with word cars)
 - Horizontal 1px black line with word rectangles sitting on top (kabob-case style)
 - Positioned above waveform viewer for synchronized time viewing
@@ -42,35 +42,23 @@ MUSICAL ASSUMPTIONS:
       <div class="timeline-baseline"></div>
 
       <!-- Word boxes positioned as train cars on the track -->
-      <div
-        v-for="word in visibleWords"
-        :key="word.id"
-        class="word-car"
+      <div v-for="word in visibleWords" :key="word.id" class="word-car"
         :class="{ selected: selectedWordId === word.id, dragging: isDragging && draggedWordId === word.id }"
-        :style="getWordCarStyle(word)"
-        @mousedown="handleWordMouseDown(word, $event)"
-      >
+        :style="getWordCarStyle(word)" @mousedown="handleWordMouseDown(word, $event)">
         <!-- Word text -->
         <div class="word-text">{{ word.text }}</div>
 
         <!-- Hot spots for interaction -->
-        <div class="hotspot hotspot-move" title="Drag to move word" @mousedown.stop="startDrag('move', word, $event)"></div>
-        <div
-          class="hotspot hotspot-resize-end"
-          title="Drag to adjust end time"
-          @mousedown.stop="startDrag('resize', word, $event)"
-        ></div>
+        <div class="hotspot hotspot-move" title="Drag to move word" @mousedown.stop="startDrag('move', word, $event)">
+        </div>
+        <div class="hotspot hotspot-resize-end" title="Drag to adjust end time"
+          @mousedown.stop="startDrag('resize', word, $event)"></div>
 
         <!-- Syllable dividers for multi-syllable words -->
-        <div
-          v-if="word.syllables && word.syllables.length > 1"
-          v-for="(syllable, index) in word.syllables.slice(0, -1)"
-          :key="`syllable-${index}`"
-          class="hotspot hotspot-syllable-divider"
-          :style="getSyllableDividerStyle(word, index)"
-          :title="`Adjust syllable ${index + 1}/${index + 2} boundary`"
-          @mousedown.stop="startDrag('syllable', word, $event, index)"
-        ></div>
+        <div v-if="word.syllables && word.syllables.length > 1" v-for="(syllable, index) in word.syllables.slice(0, -1)"
+          :key="`syllable-${index}`" class="hotspot hotspot-syllable-divider"
+          :style="getSyllableDividerStyle(word, index)" :title="`Adjust syllable ${index + 1}/${index + 2} boundary`"
+          @mousedown.stop="startDrag('syllable', word, $event, index)"></div>
       </div>
     </div>
 
@@ -79,7 +67,8 @@ MUSICAL ASSUMPTIONS:
       <h4>Word Timing Editor Debug</h4>
       <p>Timeline Duration: {{ duration.toFixed(2) }}s</p>
       <p>
-        View Window: {{ props.viewStart.toFixed(2) }}s - {{ effectiveViewEnd.toFixed(2) }}s ({{ viewDuration.toFixed(2) }}s span)
+        View Window: {{ props.viewStart.toFixed(2) }}s - {{ effectiveViewEnd.toFixed(2) }}s ({{ viewDuration.toFixed(2)
+        }}s span)
       </p>
       <p>Pixels/Second: {{ pixelsPerSecond.toFixed(1) }}</p>
       <p>Track Width: {{ trackWidth }}px</p>
@@ -91,17 +80,14 @@ MUSICAL ASSUMPTIONS:
         <strong>Selected Word Details:</strong>
         <div class="word-timing-summary">
           <p v-if="visibleWords.find(w => w.id === selectedWordId)" class="timing-info">
-            Word: "{{ visibleWords.find(w => w.id === selectedWordId)?.text }}" | Start:
-            {{ visibleWords.find(w => w.id === selectedWordId)?.startTime.toFixed(3) }}s | Duration:
-            {{ getWordDuration(visibleWords.find(w => w.id === selectedWordId)!).toFixed(3) }}s
+            Word: "{{visibleWords.find(w => w.id === selectedWordId)?.text}}" | Start:
+            {{visibleWords.find(w => w.id === selectedWordId)?.startTime.toFixed(3)}}s | Duration:
+            {{getWordDuration(visibleWords.find(w => w.id === selectedWordId)!).toFixed(3)}}s
           </p>
           <div v-if="visibleWords.find(w => w.id === selectedWordId)?.syllables" class="syllable-durations">
             <strong>Syllable Durations:</strong>
-            <div
-              v-for="(syllable, index) in visibleWords.find(w => w.id === selectedWordId)?.syllables"
-              :key="index"
-              class="syllable-info"
-            >
+            <div v-for="(syllable, index) in visibleWords.find(w => w.id === selectedWordId)?.syllables" :key="index"
+              class="syllable-info">
               "{{ syllable.text }}": {{ getSyllableDuration(syllable).toFixed(3) }}s ({{
                 (
                   (getSyllableDuration(syllable) / getWordDuration(visibleWords.find(w => w.id === selectedWordId)!)) *
@@ -185,7 +171,12 @@ const pixelsPerSecond = computed(() => trackWidth.value / viewDuration.value)
 // Visible words - more generous filtering to prevent disappearing
 const visibleWords = computed(() => {
   const buffer = 0.1 // Small buffer to keep words visible at edges
-  return props.words.filter(word => word.endTime >= props.viewStart - buffer && word.startTime <= effectiveViewEnd.value + buffer)
+  return props.words.filter(word => {
+    // Exclude words that haven't been assigned timing yet (both startTime and endTime are 0)
+    if (word.startTime === 0 && word.endTime === 0) return false
+
+    return word.endTime >= props.viewStart - buffer && word.startTime <= effectiveViewEnd.value + buffer
+  })
 })
 
 // Convert time to pixels with proper bounds checking
@@ -222,7 +213,9 @@ const getWordCarStyle = (word: Word) => {
 
 // Get CSS style for syllable divider positioning with bounds checking
 const getSyllableDividerStyle = (word: Word, syllableIndex: number) => {
-  if (!word.syllables || syllableIndex >= word.syllables.length - 1) return { display: 'none' }
+  if (!word.syllables || syllableIndex >= word.syllables.length - 1) return {
+    display: 'none'
+  }
 
   const wordStartPixels = timeToPixels(word.startTime)
   const syllableEndPixels = timeToPixels(word.syllables[syllableIndex].endTime)
@@ -277,9 +270,11 @@ const startDrag = (type: 'move' | 'resize' | 'syllable', word: Word, event: Mous
   // Set drag start time based on operation type
   if (type === 'move') {
     dragStartTime.value = word.startTime
-  } else if (type === 'resize') {
+  }
+  else if (type === 'resize') {
     dragStartTime.value = word.endTime
-  } else if (type === 'syllable' && typeof syllableIndex === 'number' && word.syllables) {
+  }
+  else if (type === 'syllable' && typeof syllableIndex === 'number' && word.syllables) {
     dragStartTime.value = word.syllables[syllableIndex].endTime
     dragSyllableIndex.value = syllableIndex
   }
@@ -312,7 +307,9 @@ const handleMouseMove = (event: MouseEvent) => {
   if (wordIndex === -1) return
 
   const updatedWords = [...props.words]
-  const word = { ...updatedWords[wordIndex] }
+  const word = {
+    ...updatedWords[wordIndex]
+  }
 
   // Get neighboring words for collision detection
   const previousWord = wordIndex > 0 ? props.words[wordIndex - 1] : null
@@ -360,7 +357,8 @@ const handleMouseMove = (event: MouseEvent) => {
         return result
       })
     }
-  } else if (dragType.value === 'resize') {
+  }
+  else if (dragType.value === 'resize') {
     // Resize duration - drag the end time directly
     let newEndTime = Math.max(word.startTime + 0.1, dragStartTime.value + deltaTime)
     let newDuration = newEndTime - word.startTime
@@ -387,7 +385,8 @@ const handleMouseMove = (event: MouseEvent) => {
     if (word.syllables && word.syllables.length > 1) {
       word.syllables = distributeSyllableTiming(word, newDuration, word.syllables.length)
     }
-  } else if (dragType.value === 'syllable') {
+  }
+  else if (dragType.value === 'syllable') {
     // Adjust syllable boundary
     if (word.syllables && dragSyllableIndex.value < word.syllables.length - 1) {
       const newBoundaryTime = Math.max(
@@ -427,7 +426,9 @@ const distributeSyllableTiming = (word: Word, totalDuration: number, syllableCou
   if (!word.syllables || syllableCount <= 1) return word.syllables || []
 
   // Create timing pattern: first syllables get progressively less time, last gets more
-  const weights = Array.from({ length: syllableCount }, (_, i) => {
+  const weights = Array.from({
+    length: syllableCount
+  }, (_, i) => {
     if (i === syllableCount - 1) return 2.0 // Last syllable gets double weight
     return 0.8 + i * 0.1 // Earlier syllables get less, but increase slightly
   })
