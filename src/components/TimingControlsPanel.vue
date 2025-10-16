@@ -12,7 +12,7 @@
           Press Space during playback to assign word timings
         </template>
         <template v-else>
-          Word boxes can be edited manually when timing mode is off
+          Word boxes can be edited manually in any Mode
         </template>
       </div>
     </div>

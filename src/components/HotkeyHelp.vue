@@ -25,14 +25,14 @@
           <kbd>Home</kbd><kbd>End</kbd><span>Start/End</span>
         </div>
         <div class="hotkey-item">
-          <kbd>Esc</kbd><span>Exit mode</span>
+          <kbd>Esc</kbd><span>Exit "Add Timing" mode</span>
         </div>
       </div>
       <div class="timing-steps">
         <strong>Workflow:</strong>
         <ol class="small-steps">
           <li>Start timing mode</li>
-          <li>Press Space to play & assign word starts</li>
+          <li>Press Space to play, then Space during playback to assign timings</li>
           <li>Edit word boxes manually</li>
           <li>Adjust syllable timings</li>
         </ol>
@@ -65,12 +65,13 @@
   padding: 0.5rem;
   border-radius: 0.25rem;
   margin-top: 0.5rem;
-  font-size: 1.2rem;
+  font-size: 1.1rem;
 }
 
 .small-steps {
   margin: 0.25rem 0 0 1rem;
   padding-left: 0;
   line-height: 1.3;
+  font-size: 0.9rem;
 }
 </style>

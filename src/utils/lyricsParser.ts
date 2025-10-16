@@ -1,5 +1,5 @@
 // Utility functions for parsing lyrics with syllable markers
-import type { LyricLine, WordTiming, SyllableTiming } from '@/types/karaoke'
+import type { LyricLine, WordTiming, SyllableTiming, LyricsMetadata } from '@/types/karaoke'
 
 /**
  * Parse a line of text with syllable markers (/) into structured word/syllable data
@@ -47,7 +47,8 @@ export function lyricLineToText(lyricLine: LyricLine): string {
     .map(word => {
       if (word.syllables.length <= 1) {
         return word.word
-      } else {
+      }
+      else {
         return word.syllables.map(syl => syl.syllable).join('/')
       }
     })
@@ -167,24 +168,91 @@ export function assignWordTiming(
     word.endTime = startTime + estimatedWordDuration
     word.duration = estimatedWordDuration
 
-    // Distribute timing across syllables if multiple
-    if (word.syllables.length > 1) {
-      const syllableDuration = estimatedWordDuration / word.syllables.length
+    // DON'T assign syllable timing yet - defer until we know actual word duration
+    // This will be calculated later when the next word gets its timing
+    // For now, just clear any existing syllable timing
+    word.syllables.forEach((syllable) => {
+      syllable.startTime = undefined
+      syllable.endTime = undefined
+      syllable.duration = undefined
+    })
 
-      word.syllables.forEach((syllable, index) => {
-        syllable.startTime = startTime + index * syllableDuration
-        syllable.endTime = startTime + (index + 1) * syllableDuration
-        syllable.duration = syllableDuration
-      })
-    } else if (word.syllables.length === 1) {
-      // Single syllable gets full word timing
-      word.syllables[0].startTime = startTime
-      word.syllables[0].endTime = startTime + estimatedWordDuration
-      word.syllables[0].duration = estimatedWordDuration
+    // Now recalculate syllable timing for the PREVIOUS word if it exists
+    // because now we know the actual duration for the previous word
+    if (wordIndex > 0) {
+      const prevWord = line.words[wordIndex - 1]
+      if (prevWord.startTime !== undefined) {
+        const actualPrevDuration = startTime - prevWord.startTime
+        distributeSyllableTiming(prevWord, prevWord.startTime, actualPrevDuration)
+      }
+    }
+    else if (lineIndex > 0) {
+      // Check previous line's last word
+      const prevLine = updatedLyrics[lineIndex - 1]
+      if (prevLine && prevLine.words.length > 0) {
+        const lastWordOfPrevLine = prevLine.words[prevLine.words.length - 1]
+        if (lastWordOfPrevLine.startTime !== undefined) {
+          const actualPrevDuration = startTime - lastWordOfPrevLine.startTime
+          distributeSyllableTiming(lastWordOfPrevLine, lastWordOfPrevLine.startTime, actualPrevDuration)
+        }
+      }
     }
 
     // Update line timing
     updateLineTiming(line)
+  }
+
+  return updatedLyrics
+}
+
+/**
+ * Distribute syllable timing within a word based on actual duration
+ */
+function distributeSyllableTiming(word: WordTiming, wordStartTime: number, actualDuration: number) {
+  if (word.syllables.length <= 1) {
+    // Single syllable gets full word timing
+    if (word.syllables[0]) {
+      word.syllables[0].startTime = wordStartTime
+      word.syllables[0].endTime = wordStartTime + actualDuration
+      word.syllables[0].duration = actualDuration
+    }
+  }
+  else {
+    // Multiple syllables - distribute evenly for now
+    // TODO: Could be enhanced with syllable-length-based weighting
+    const syllableDuration = actualDuration / word.syllables.length
+
+    word.syllables.forEach((syllable, index) => {
+      syllable.startTime = wordStartTime + index * syllableDuration
+      syllable.endTime = wordStartTime + (index + 1) * syllableDuration
+      syllable.duration = syllableDuration
+    })
+  }
+
+  // Update word timing to match actual duration
+  word.endTime = wordStartTime + actualDuration
+  word.duration = actualDuration
+}
+
+/**
+ * Finalize syllable timing for words that don't have a next word to define their end time
+ * This should be called for the last word in a line/song or when timing is complete
+ */
+export function finalizePendingSyllableTiming(
+  lyrics: LyricLine[],
+  lineIndex: number,
+  wordIndex: number,
+  estimatedDuration: number = 500
+): LyricLine[] {
+  const updatedLyrics = [...lyrics]
+  const line = updatedLyrics[lineIndex]
+
+  if (line && line.words[wordIndex]) {
+    const word = line.words[wordIndex]
+    if (word.startTime !== undefined && word.syllables.some(s => s.startTime === undefined)) {
+      // This word has no syllable timing yet, finalize it with estimated duration
+      distributeSyllableTiming(word, word.startTime, estimatedDuration)
+    }
   }
 
   return updatedLyrics
@@ -301,4 +369,168 @@ export function getTimingStats(lyrics: LyricLine[]): {
     timedSyllables,
     completionPercent,
   }
+}
+
+/**
+ * Check if a line contains metadata ([@TITLE:], [@AUTHOR:], [@CAPTION:])
+ */
+export function isMetadataLine(text: string): boolean {
+  return /^\[@(TITLE|AUTHOR|CAPTION):.+\]/.test(text.trim())
+}
+
+/**
+ * Parse metadata from a line
+ */
+export function parseMetadataLine(text: string): {
+  type: 'title' | 'author' | 'caption'
+  value: string
+} | null {
+  const trimmed = text.trim()
+
+  const titleMatch = trimmed.match(/^\[@TITLE:(.+)\]/)
+  if (titleMatch) {
+    return {
+      type: 'title',
+      value: titleMatch[1].trim()
+    }
+  }
+
+  const authorMatch = trimmed.match(/^\[@AUTHOR:(.+)\]/)
+  if (authorMatch) {
+    return {
+      type: 'author',
+      value: authorMatch[1].trim()
+    }
+  }
+
+  const captionMatch = trimmed.match(/^\[@CAPTION:(.+)\]/)
+  if (captionMatch) {
+    return {
+      type: 'caption',
+      value: captionMatch[1].trim()
+    }
+  }
+
+  return null
+}
+
+/**
+ * Parse lyrics text with metadata support
+ */
+export function parseLyricsWithMetadata(lyricsText: string): {
+  lyrics: LyricLine[]
+  metadata: LyricsMetadata
+} {
+  if (!lyricsText || typeof lyricsText !== 'string') {
+    return {
+      lyrics: [],
+      metadata: {}
+    }
+  }
+
+  const lines = lyricsText.split('\n').map(line => line.trim()).filter(line => line.length > 0)
+  const lyrics: LyricLine[] = []
+  const metadata: LyricsMetadata = {}
+
+  let lyricsLineNumber = 1
+
+  // Process each line
+  lines.forEach((line, originalIndex) => {
+    const metadataInfo = parseMetadataLine(line)
+
+    if (metadataInfo) {
+      // Handle metadata lines
+      const metadataLine: LyricLine = {
+        id: `metadata-${originalIndex}`,
+        lineNumber: lyricsLineNumber,
+        text: line,
+        words: [],
+        type: metadataInfo.type,
+        metadata: {
+          [metadataInfo.type]: metadataInfo.value
+        }
+      }
+
+      // Store in metadata object for easy access
+      if (metadataInfo.type === 'title') {
+        metadata.title = metadataInfo.value
+      }
+      else if (metadataInfo.type === 'author') {
+        metadata.author = metadataInfo.value
+      }
+      else if (metadataInfo.type === 'caption') {
+        if (!metadata.captions) metadata.captions = []
+        metadata.captions.push(metadataInfo.value)
+      }
+
+      lyrics.push(metadataLine)
+      lyricsLineNumber++
+    }
+    else {
+      // Handle regular lyrics lines
+      const lyricLine = parseLyricsLine(line, lyricsLineNumber, `line-${lyricsLineNumber}`)
+      lyricLine.type = 'lyrics'
+      lyrics.push(lyricLine)
+      lyricsLineNumber++
+    }
+  })
+
+  // Move title to first position if it exists but isn't first
+  const titleLineIndex = lyrics.findIndex(line => line.type === 'title')
+  if (titleLineIndex > 0) {
+    const titleLine = lyrics.splice(titleLineIndex, 1)[0]
+    lyrics.unshift(titleLine)
+    // Renumber all lines
+    lyrics.forEach((line, index) => {
+      line.lineNumber = index + 1
+    })
+  }
+
+  return {
+    lyrics,
+    metadata
+  }
+}
+
+/**
+ * Clears timing data from a line and all subsequent lines to prevent inconsistencies
+ * This ensures that timing data remains sequential and doesn't have gaps
+ */
+export function clearTimingFromLine(lyrics: LyricLine[], fromLineIndex: number): LyricLine[] {
+  const result = [...lyrics]
+
+  // Clear timing from the specified line and all subsequent lines
+  for (let lineIndex = fromLineIndex; lineIndex < result.length; lineIndex++) {
+    const line = result[lineIndex]
+
+    // Skip metadata lines - they don't have timing
+    if (line.type && line.type !== 'lyrics') {
+      continue
+    }
+
+    // Clear line-level timing
+    line.startTime = undefined
+    line.endTime = undefined
+    line.duration = undefined
+
+    // Clear word-level timing for all words in this line
+    if (line.words) {
+      line.words.forEach(word => {
+        word.startTime = undefined
+        word.endTime = undefined
+        word.duration = undefined
+
+        // Clear syllable-level timing for all syllables in this word
+        if (word.syllables) {
+          word.syllables.forEach(syllable => {
+            syllable.startTime = undefined
+            syllable.endTime = undefined
+            syllable.duration = undefined
+          })
+        }
+      })
+    }
+  }
+
+  return result
 }

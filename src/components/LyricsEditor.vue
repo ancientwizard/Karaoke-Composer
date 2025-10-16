@@ -15,17 +15,12 @@
       </div>
       <div class="card-body p-0">
         <div class="lyrics-container" ref="lyricsContainer">
-          <div
-            v-for="(lyric, index) in lyrics"
-            :key="lyric.id"
-            class="lyric-line"
-            :class="{
-              active: index === currentLine,
-              'has-timing': lyric.startTime !== undefined,
-              'timing-mode': isTimingMode,
-            }"
-            @click="selectLine(index)"
-          >
+          <div v-for="(lyric, index) in lyrics" :key="lyric.id" class="lyric-line" :class="{
+            active: index === currentLine,
+            'has-timing': lyric.startTime !== undefined,
+            'timing-mode': isTimingMode,
+            'metadata-line': isMetadataLyricLine(lyric),
+          }" @click="selectLine(index)">
             <!-- Line Number -->
             <div class="line-number">
               {{ lyric.lineNumber }}
@@ -36,40 +31,36 @@
               <small v-if="lyric.startTime !== undefined" class="text-success">
                 {{ formatTime(lyric.startTime) }}
               </small>
+              <small v-else-if="isMetadataLyricLine(lyric)" class="text-info">
+                META
+              </small>
               <small v-else class="text-muted">--:--</small>
             </div>
 
             <!-- Lyrics Text -->
             <div class="lyric-text-container">
-              <input
-                v-if="editingLine === index"
-                type="text"
-                class="form-control form-control-sm"
-                v-model="lyric.text"
-                @blur="finishEditing"
-                @keyup.enter="finishEditing"
-                @keyup.esc="cancelEditing"
-                ref="editInput"
-                placeholder="Use / to separate syllables: Hel/lo world a/maz/ing"
-              />
-              <div v-else class="lyric-text" @dblclick="startEditing(index)" :class="{ empty: !lyric.text.trim() }">
-                <!-- Show words with syllable breakdown -->
-                <div v-if="lyric.words.length > 0" class="words-display">
-                  <span
-                    v-for="(word, wordIndex) in lyric.words"
-                    :key="wordIndex"
-                    class="word-item"
-                    :class="{
-                      'current-word': index === currentLine && wordIndex === currentWord,
-                      'timed-word': word.startTime !== undefined,
-                    }"
-                  >
-                    <span
-                      v-for="(syllable, sylIndex) in word.syllables"
-                      :key="sylIndex"
-                      class="syllable-item"
-                      :class="{ 'timed-syllable': syllable.startTime !== undefined }"
-                    >
+              <input v-if="editingLine === index && !isMetadataLyricLine(lyric)" type="text"
+                class="form-control form-control-sm" v-model="lyric.text" @blur="finishEditing"
+                @keyup.enter="finishEditing" @keyup.esc="cancelEditing" ref="editInput"
+                placeholder="Use / to separate syllables: Hel/lo world a/maz/ing" />
+              <input v-else-if="editingLine === index && isMetadataLyricLine(lyric)" type="text"
+                class="form-control form-control-sm" v-model="lyric.text" @blur="finishEditing"
+                @keyup.enter="finishEditing" @keyup.esc="cancelEditing" ref="editInput"
+                placeholder="[@TITLE:], [@AUTHOR:], or [@CAPTION:]" />
+              <div v-else class="lyric-text" @dblclick="startEditing(index)"
+                :class="{ empty: !lyric.text.trim(), 'metadata-text': isMetadataLyricLine(lyric) }">
+                <!-- Show metadata lines as-is -->
+                <div v-if="isMetadataLyricLine(lyric)" class="metadata-display">
+                  <i class="bi bi-tag me-1"></i>{{ lyric.text }}
+                </div>
+                <!-- Show words with syllable breakdown for lyrics -->
+                <div v-else-if="lyric.words.length > 0" class="words-display">
+                  <span v-for="(word, wordIndex) in lyric.words" :key="wordIndex" class="word-item" :class="{
+                    'current-word': index === currentLine && wordIndex === currentWord,
+                    'timed-word': word.startTime !== undefined,
+                  }">
+                    <span v-for="(syllable, sylIndex) in word.syllables" :key="sylIndex" class="syllable-item"
+                      :class="{ 'timed-syllable': syllable.startTime !== undefined }">
                       {{ syllable.syllable }}
                     </span>
                   </span>
@@ -80,15 +71,12 @@
 
             <!-- Line Actions -->
             <div class="line-actions">
-              <button v-if="!isTimingMode" class="btn btn-sm btn-outline-danger" @click="deleteLine(index)" title="Delete line">
+              <button v-if="!isTimingMode" class="btn btn-sm btn-outline-danger" @click="deleteLine(index)"
+                title="Delete line">
                 <i class="bi bi-trash3"></i>
               </button>
-              <button
-                v-if="isTimingMode && lyric.startTime !== undefined"
-                class="btn btn-sm btn-outline-warning"
-                @click="clearTiming(index)"
-                title="Clear timing"
-              >
+              <button v-if="isTimingMode && lyric.startTime !== undefined && !isMetadataLyricLine(lyric)"
+                class="btn btn-sm btn-outline-warning" @click="clearTiming(index)" title="Clear timing">
                 <i class="bi bi-clock-history"></i>
               </button>
             </div>
@@ -103,10 +91,12 @@
       <div class="card-footer">
         <div class="row align-items-center">
           <div class="col-sm-6">
-            <small class="text-muted"> {{ lyrics.length }} lines • {{ completedTimings }}/{{ lyrics.length }} timed </small>
+            <small class="text-muted"> {{ lyrics.length }} lines • {{ completedTimings }}/{{ lyrics.length }} timed
+            </small>
           </div>
           <div class="col-sm-6 text-end">
-            <small class="text-muted" v-if="isTimingMode"> Press <kbd>Space</kbd> to assign timing to current line </small>
+            <small class="text-muted" v-if="isTimingMode"> Press <kbd>Space</kbd> to assign timing to current line
+            </small>
             <small class="text-muted" v-else> Double-click to edit lyrics </small>
           </div>
         </div>
@@ -118,7 +108,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, watch } from 'vue'
 import type { LyricLine } from '@/types/karaoke'
-import { parseLyricsLine, lyricLineToText, getTimingStats } from '@/utils/lyricsParser'
+import { parseLyricsLine, clearTimingFromLine } from '@/utils/lyricsParser'
 
 // Props
 interface Props {
@@ -145,6 +135,11 @@ const editInput = ref<HTMLInputElement[]>()
 const completedTimings = computed(() => {
   return props.lyrics.filter(lyric => lyric.startTime !== undefined).length
 })
+
+// Helper function to check if a lyric line is metadata
+const isMetadataLyricLine = (lyric: LyricLine): boolean => {
+  return lyric.type !== undefined && lyric.type !== 'lyrics'
+}
 
 // Methods
 const selectLine = (index: number) => {
@@ -209,14 +204,16 @@ const cancelEditing = () => {
 }
 
 const clearTiming = (index: number) => {
-  const updatedLyrics = [...props.lyrics]
-  updatedLyrics[index] = {
-    ...updatedLyrics[index],
-    startTime: undefined,
-    endTime: undefined,
-    duration: undefined,
+  // Confirm the action since it clears timing from this line and all subsequent lines
+  const lineCount = props.lyrics.length - index
+  const message = lineCount === 1
+    ? 'Clear timing for this line?'
+    : `Clear timing for this line and ${lineCount - 1} lines after it?\n\nThis prevents timing inconsistencies by clearing all subsequent timing.`
+
+  if (confirm(message)) {
+    const updatedLyrics = clearTimingFromLine(props.lyrics, index)
+    emit('lyrics-update', updatedLyrics)
   }
-  emit('lyrics-update', updatedLyrics)
 }
 
 // Edit mode removed - double-click now works directly
@@ -259,12 +256,14 @@ const handleKeydown = (event: KeyboardEvent) => {
     if (event.code === 'Space') {
       event.preventDefault()
       // This will be handled by the parent component
-    } else if (event.code === 'ArrowUp') {
+    }
+    else if (event.code === 'ArrowUp') {
       event.preventDefault()
       if (props.currentLine > 0) {
         emit('line-select', props.currentLine - 1)
       }
-    } else if (event.code === 'ArrowDown') {
+    }
+    else if (event.code === 'ArrowDown') {
       event.preventDefault()
       if (props.currentLine < props.lyrics.length - 1) {
         emit('line-select', props.currentLine + 1)
@@ -281,14 +280,14 @@ if (typeof window !== 'undefined') {
 
 <style scoped>
 .lyrics-container {
-  max-height: 500px;
+  height: 400px;
   overflow-y: auto;
 }
 
 .lyric-line {
   display: flex;
   align-items: center;
-  padding: 0.5rem;
+  padding: 0.15rem;
   border-bottom: 1px solid #f0f0f0;
   transition: all 0.2s ease;
   cursor: pointer;
@@ -422,5 +421,26 @@ kbd {
 
 .lyrics-container::-webkit-scrollbar-thumb:hover {
   background: #a8a8a8;
+}
+
+/* Metadata line styling */
+.lyric-line.metadata-line {
+  background-color: #f8f9fa;
+  border-left: 3px solid #6c757d;
+  opacity: 0.8;
+}
+
+.lyric-line.metadata-line:hover {
+  opacity: 1;
+}
+
+.metadata-display {
+  color: #6c757d;
+  font-style: italic;
+  font-size: 0.9em;
+}
+
+.metadata-text {
+  color: #6c757d !important;
 }
 </style>

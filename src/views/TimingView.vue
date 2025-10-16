@@ -27,7 +27,8 @@
             <!-- Help & Controls Body -->
             <div class="card-body">
               <!-- Timing Controls -->
-              <TimingControlsPanel :is-timing-mode="isTimingMode" @toggle-timing-mode="toggleTimingMode" />
+              <TimingControlsPanel :is-timing-mode="isTimingMode" @toggle-timing-mode="toggleTimingMode"
+                @clear-timing="clearCurrentLineTiming" />
 
               <!-- Progress Stats -->
               <ProgressStats :timing-stats="timingStats" />
@@ -43,18 +44,27 @@
 
         <!-- Right Main Content Column -->
         <div class="main-content-column">
-          <!-- Lyrics Editor and Preview Row -->
+          <!-- Lyrics Editor and Preview Row - Side by Side -->
           <div class="row mb-3">
-            <!-- Lyrics Editor - Full Width for Better Line Display -->
-            <div class="col-12 mb-3">
+            <!-- Lyrics Editor - Left Half -->
+            <div class="col-6">
               <LyricsEditor :lyrics="project.lyrics" :currentLine="currentLine" :currentWord="currentWordIndex"
                 :isTimingMode="isTimingMode" @line-select="selectLine" @lyrics-update="updateLyrics" />
             </div>
-            <!-- Lyrics Preview -->
-            <div class="col-12 mb-3">
+            <!-- Lyrics Preview - Right Half -->
+            <div class="col-6">
               <LyricsPreview :lyrics="project.lyrics" :currentTime="playbackState.currentTime"
                 :currentLine="currentLine" :currentWord="currentWordIndex"
-                :currentSyllable="playbackState.currentSyllable?.syllableIndex" />
+                :currentSyllable="isTimingMode ? 0 : playbackState.currentSyllable?.syllableIndex" />
+            </div>
+            <!-- Debug info when in timing mode -->
+            <div v-if="isTimingMode" class="col-12 mt-2">
+              <small class="text-muted">
+                🎯 Timing Mode: Line {{ currentLine }}, Word {{ currentWordIndex }}
+                <span v-if="project.lyrics[currentLine]?.words[currentWordIndex]">
+                  ({{ project.lyrics[currentLine].words[currentWordIndex].word }})
+                </span>
+              </small>
             </div>
           </div>
 
@@ -136,7 +146,7 @@
                 <ul class="list-unstyled mb-4">
                   <li class="mb-2"><kbd>Spacebar</kbd> - Assign timing (in Timing Mode)</li>
                   <li class="mb-2"><kbd>Numpad 0</kbd> or <kbd>.</kbd> - Assign timing</li>
-                  <li class="mb-2"><kbd>Alt+T</kbd> - Toggle Timing Mode</li>
+                  <li class="mb-2"><kbd>T</kbd> or <kbd>Insert</kbd> - Toggle Timing Mode</li>
                 </ul>
 
                 <h6 class="text-info">📝 Editing</h6>
@@ -153,7 +163,7 @@
               <ul class="mb-0 mt-2">
                 <li>Use <kbd>Home</kbd>/<kbd>End</kbd> for instant navigation to start/end</li>
                 <li>Use the numpad for fastest timing assignment workflow</li>
-                <li>Toggle Timing Mode (<kbd>Alt+T</kbd>) to focus on timing vs playback</li>
+                <li>Toggle Timing Mode (<kbd>T</kbd> or <kbd>Insert</kbd>) to focus on timing vs playback</li>
                 <li>Double-click lyrics for quick inline editing</li>
                 <li>Use 1-second skips for precise timing adjustments</li>
               </ul>
@@ -174,7 +184,7 @@ import { useRoute, useRouter } from 'vue-router'
 import type { KaraokeProject, LyricLine, PlaybackState, WaveformData } from '@/types/karaoke'
 import { audioService } from '@/services/audioService'
 import { audioStorageService } from '@/services/audioStorageService'
-import { assignWordTiming, getCurrentPosition, getTimingStats } from '@/utils/lyricsParser'
+import { assignWordTiming, getCurrentPosition, getTimingStats, finalizePendingSyllableTiming, clearTimingFromLine } from '@/utils/lyricsParser'
 import LyricsEditor from '@/components/LyricsEditor.vue'
 import LyricsPreview from '@/components/LyricsPreview.vue'
 import WaveformViewer from '@/components/WaveformViewer.vue'
@@ -275,8 +285,80 @@ const closeHotkeyModal = () => {
   showHotkeyModal.value = false
 }
 
+// Helper function to check if a line is a metadata line
+const isMetadataLine = (line: LyricLine): boolean => {
+  return line.type !== undefined && line.type !== 'lyrics'
+}
+
+// Helper function to find the next lyric line (skip metadata)
+const findNextLyricLine = (startIndex: number): number => {
+  if (!project.value) return startIndex
+
+  for (let i = startIndex; i < project.value.lyrics.length; i++) {
+    const line = project.value.lyrics[i]
+    if (!isMetadataLine(line) && line.words && line.words.length > 0) {
+      return i
+    }
+  }
+  return startIndex // Return original if no lyric line found
+}
+
+// Helper function to find the previous lyric line (skip metadata)
+const findPrevLyricLine = (startIndex: number): number => {
+  if (!project.value) return startIndex
+
+  for (let i = startIndex; i >= 0; i--) {
+    const line = project.value.lyrics[i]
+    if (!isMetadataLine(line) && line.words && line.words.length > 0) {
+      return i
+    }
+  }
+  return startIndex // Return original if no lyric line found
+}
+
+// Helper function to finalize syllables when we reach the end of a line or song
+const finalizeCurrentWordSyllables = () => {
+  if (!project.value) return
+
+  const lineIndex = currentLine.value
+  const wordIndex = currentWordIndex.value
+
+  if (lineIndex >= 0 && lineIndex < project.value.lyrics.length) {
+    const line = project.value.lyrics[lineIndex]
+    if (line && line.words && wordIndex >= 0 && wordIndex < line.words.length) {
+      const word = line.words[wordIndex]
+      // Only finalize if the word has timing assigned and syllables that need timing
+      if (word.startTime !== undefined && word.syllables && word.syllables.length > 0) {
+        // Check if syllables need timing (have undefined or 0 timing)
+        const needsTiming = word.syllables.some(s => s.startTime === undefined || s.endTime === undefined)
+        if (needsTiming) {
+          project.value.lyrics = finalizePendingSyllableTiming(project.value.lyrics, lineIndex, wordIndex)
+          console.log('🔄 Finalized syllables for current word:', word.word)
+        }
+      }
+    }
+  }
+}
+
 const selectLine = (lineIndex: number) => {
-  currentLine.value = lineIndex
+  // If selecting a metadata line, find the nearest lyric line
+  if (project.value && lineIndex < project.value.lyrics.length) {
+    const selectedLine = project.value.lyrics[lineIndex]
+    if (isMetadataLine(selectedLine)) {
+      // Try to find the next lyric line first, then previous
+      let nextLyricIndex = findNextLyricLine(lineIndex + 1)
+      if (nextLyricIndex === lineIndex + 1 && nextLyricIndex >= project.value.lyrics.length) {
+        nextLyricIndex = findPrevLyricLine(lineIndex - 1)
+      }
+      currentLine.value = nextLyricIndex
+    }
+    else {
+      currentLine.value = lineIndex
+    }
+  }
+  else {
+    currentLine.value = lineIndex
+  }
 }
 
 const updateLyrics = (lyrics: LyricLine[]) => {
@@ -335,12 +417,16 @@ const skipForwardShort = () => {
 
 const seekToStart = () => {
   audioService.seek(0)
+  // Reset to first lyric line when seeking to start
+  currentLine.value = findNextLyricLine(0)
+  currentWordIndex.value = 0
 }
 
 const seekToEnd = () => {
   const duration = project.value?.audioFile?.duration || 0
   if (duration > 0) {
-    const newTime = Math.max(0, duration - 1000)
+    // Seek to actual end, minus just 10ms to avoid potential audio edge issues
+    const newTime = Math.max(0, duration - 10)
     audioService.seek(newTime)
   }
 }
@@ -362,6 +448,22 @@ const ensureAudioReady = async () => {
   }
 }
 
+// Clear timing for current line and all subsequent lines
+const clearCurrentLineTiming = () => {
+  if (!project.value) return
+
+  const lineIndex = currentLine.value
+  const lineCount = project.value.lyrics.length - lineIndex
+  const message = lineCount === 1
+    ? 'Clear timing for the current line?'
+    : `Clear timing for the current line and ${lineCount - 1} lines after it?\n\nThis prevents timing inconsistencies by clearing all subsequent timing.`
+
+  if (confirm(message)) {
+    project.value.lyrics = clearTimingFromLine(project.value.lyrics, lineIndex)
+    console.log(`🗑️ Cleared timing from line ${lineIndex} onwards (${lineCount} lines affected)`)
+  }
+}
+
 // Smart duration calculation helper
 const calculateSmartDuration = (currentLineIndex: number, currentWordIndex: number): number => {
   if (!project.value) return 500
@@ -378,11 +480,16 @@ const calculateSmartDuration = (currentLineIndex: number, currentWordIndex: numb
     const nextWord = currentLine.words[currentWordIndex + 1]
     nextTiming = nextWord.startTime
   }
-  else if (currentLineIndex < lyrics.length - 1) {
-    // First word of next line
-    const nextLine = lyrics[currentLineIndex + 1]
-    if (nextLine.words.length > 0) {
-      nextTiming = nextLine.words[0].startTime
+  else {
+    // Find the next lyric line (skip metadata)
+    let nextLineIndex = currentLineIndex + 1
+    while (nextLineIndex < lyrics.length) {
+      const nextLine = lyrics[nextLineIndex]
+      if (!isMetadataLine(nextLine) && nextLine.words.length > 0) {
+        nextTiming = nextLine.words[0].startTime
+        break
+      }
+      nextLineIndex++
     }
   }
 
@@ -414,29 +521,55 @@ const calculateSmartDuration = (currentLineIndex: number, currentWordIndex: numb
 }
 
 const assignTiming = () => {
-  if (!project.value || !isTimingMode.value) return
+  console.log('🎯 assignTiming called', {
+    hasProject: !!project.value,
+    isTimingMode: isTimingMode.value,
+    isPlaying: playbackState.value.isPlaying,
+    currentLine: currentLine.value,
+    currentWord: currentWordIndex.value,
+    currentTime: playbackState.value.currentTime
+  })
+
+  if (!project.value || !isTimingMode.value) {
+    console.log('❌ assignTiming aborted: missing project or not in timing mode')
+    return
+  }
+
+  if (!playbackState.value.isPlaying) {
+    console.log('❌ assignTiming aborted: audio not playing')
+    return
+  }
 
   const lineIndex = currentLine.value
   const wordIndex = currentWordIndex.value
   const currentTime = playbackState.value.currentTime
 
-  if (lineIndex < project.value.lyrics.length) {
-    // Calculate smart duration
-    const smartDuration = calculateSmartDuration(lineIndex, wordIndex)
-
-    // Assign timing to current word using spacebar with smart duration
-    project.value.lyrics = assignWordTiming(project.value.lyrics, lineIndex, wordIndex, currentTime, smartDuration)
-
-    console.log('⏱️ Smart timing assigned:', {
-      word: project.value.lyrics[lineIndex].words[wordIndex].word,
-      startTime: currentTime,
-      duration: smartDuration,
-      calculation: smartDuration > 400 ? 'phrase-break' : 'normal-spacing',
-    })
-
-    // Move to next word/line
-    moveToNextWord()
+  if (lineIndex >= project.value.lyrics.length) {
+    console.log('❌ assignTiming aborted: invalid line index')
+    return
   }
+
+  const targetLine = project.value.lyrics[lineIndex]
+  if (!targetLine || !targetLine.words || wordIndex >= targetLine.words.length) {
+    console.log('❌ assignTiming aborted: invalid word index')
+    return
+  }
+
+  // Calculate smart duration
+  const smartDuration = calculateSmartDuration(lineIndex, wordIndex)
+
+  // Assign timing to current word using spacebar with smart duration
+  project.value.lyrics = assignWordTiming(project.value.lyrics, lineIndex, wordIndex, currentTime, smartDuration)
+
+  console.log('✅ Smart timing assigned:', {
+    word: project.value.lyrics[lineIndex].words[wordIndex].word,
+    startTime: currentTime,
+    duration: smartDuration,
+    calculation: smartDuration > 400 ? 'phrase-break' : 'normal-spacing',
+  })
+
+  // Move to next word/line
+  moveToNextWord()
 }
 
 const moveToNextWord = () => {
@@ -445,14 +578,42 @@ const moveToNextWord = () => {
   const currentLyricLine = project.value.lyrics[currentLine.value]
   if (!currentLyricLine) return
 
+  // Store current position before moving
+  const prevLineIndex = currentLine.value
+  const prevWordIndex = currentWordIndex.value
+
   if (currentWordIndex.value < currentLyricLine.words.length - 1) {
     // Move to next word in same line
     currentWordIndex.value++
   }
-  else if (currentLine.value < project.value.lyrics.length - 1) {
-    // Move to first word of next line
-    currentLine.value++
-    currentWordIndex.value = 0
+  else {
+    // Find the next line that has words (skip metadata lines)
+    let nextLineIndex = currentLine.value + 1
+    while (nextLineIndex < project.value.lyrics.length) {
+      const nextLine = project.value.lyrics[nextLineIndex]
+      // Skip metadata lines (they have no words for timing)
+      if (nextLine.words && nextLine.words.length > 0) {
+        currentLine.value = nextLineIndex
+        currentWordIndex.value = 0
+        break
+      }
+      nextLineIndex++
+    }
+  }
+
+  // Now that we know the next word position, finalize syllable timing for the previous word
+  const actuallyMoved = (currentLine.value !== prevLineIndex || currentWordIndex.value !== prevWordIndex)
+  if (actuallyMoved && project.value) {
+    // We moved to a new position, so finalize the previous word's syllables
+    project.value.lyrics = finalizePendingSyllableTiming(project.value.lyrics, prevLineIndex, prevWordIndex)
+  }
+  else if (!actuallyMoved && project.value) {
+    // We didn't move (reached the end), so finalize the current word's syllables
+    const currentWord = project.value.lyrics[prevLineIndex]?.words?.[prevWordIndex]
+    if (currentWord && currentWord.startTime !== undefined && currentWord.syllables && currentWord.syllables.length > 0) {
+      project.value.lyrics = finalizePendingSyllableTiming(project.value.lyrics, prevLineIndex, prevWordIndex)
+      console.log('🏁 Finalized syllables for final word:', currentWord.word)
+    }
   }
 }
 
@@ -520,6 +681,10 @@ const loadProject = async (projectId: string) => {
       router.push('/compose')
       return
     }
+
+    // Initialize currentLine to the first lyric line (skip metadata lines)
+    currentLine.value = findNextLyricLine(0)
+    currentWordIndex.value = 0
 
     loading.value = false
   }
@@ -667,14 +832,47 @@ const saveProjectsToStorage = () => {
 
 // Setup audio service listeners
 const setupAudioListeners = () => {
+  let lastTime = 0
+
   audioService.onTimeUpdate(time => {
     playbackState.value.currentTime = time
 
-    // Update current position based on timing
-    if (project.value) {
+    // Detect reset to beginning (time jumped from high to low)
+    if (lastTime > 5000 && time < 1000) {
+      // Audio was reset to beginning, reset lyrics position too
+      currentLine.value = findNextLyricLine(0)
+      currentWordIndex.value = 0
+      console.log('🔄 Audio reset detected, resetting to first lyric line')
+    }
+    lastTime = time
+
+    // Update current position based on timing - but NOT when in timing mode
+    // In timing mode, we want manual word-by-word control, not automatic syllable tracking
+    if (project.value && playbackState.value.isPlaying && !isTimingMode.value) {
       const position = getCurrentPosition(project.value.lyrics, time)
-      currentLine.value = position.lineIndex
-      currentWordIndex.value = position.wordIndex
+
+      // Only update if the position returned is actually a lyric line (not metadata)
+      const targetLine = project.value.lyrics[position.lineIndex]
+      if (targetLine && !isMetadataLine(targetLine)) {
+        currentLine.value = position.lineIndex
+        currentWordIndex.value = position.wordIndex
+      }
+
+      playbackState.value.currentWord = {
+        lineIndex: position.lineIndex,
+        wordIndex: position.wordIndex,
+      }
+
+      playbackState.value.currentSyllable = {
+        lineIndex: position.lineIndex,
+        wordIndex: position.wordIndex,
+        syllableIndex: position.syllableIndex,
+      }
+    }
+    else if (project.value && playbackState.value.isPlaying && isTimingMode.value) {
+      // In timing mode, only update the playback state for preview purposes
+      // but don't interfere with manual currentLine/currentWord navigation
+      const position = getCurrentPosition(project.value.lyrics, time)
 
       playbackState.value.currentWord = {
         lineIndex: position.lineIndex,
@@ -708,7 +906,14 @@ const setupGlobalHotkeys = () => {
       case 'Space':
         event.preventDefault()
         if (isTimingMode.value) {
-          assignTiming()
+          if (playbackState.value.isPlaying) {
+            // Only assign timing when audio is actually playing
+            assignTiming()
+          }
+          else {
+            // Start playback if not playing
+            togglePlayPause()
+          }
         }
         else {
           togglePlayPause()
@@ -742,10 +947,13 @@ const setupGlobalHotkeys = () => {
         break
 
       case 'KeyT':
-        if (event.altKey) {
-          event.preventDefault()
-          toggleTimingMode()
-        }
+        event.preventDefault()
+        toggleTimingMode()
+        break
+
+      case 'Insert':
+        event.preventDefault()
+        toggleTimingMode()
         break
 
       case 'KeyP':
@@ -794,9 +1002,15 @@ const setupGlobalHotkeys = () => {
         break
 
       case 'Escape':
+        event.preventDefault()
         if (showHotkeyModal.value) {
-          event.preventDefault()
           closeHotkeyModal()
+        }
+        else if (isTimingMode.value) {
+          // Finalize any pending syllables before exiting timing mode
+          finalizeCurrentWordSyllables()
+          // Exit timing mode
+          isTimingMode.value = false
         }
         break
     }

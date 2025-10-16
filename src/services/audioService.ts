@@ -54,7 +54,8 @@ export class AudioService {
         await this.audioContext.resume()
         console.log('Audio context resumed')
       }
-    } catch (error) {
+    }
+    catch (error) {
       console.error('Failed to initialize audio context:', error)
     }
   }
@@ -79,9 +80,11 @@ export class AudioService {
       if (audioFile.file) {
         const url = URL.createObjectURL(audioFile.file)
         this.audio.src = url
-      } else if (audioFile.url) {
+      }
+      else if (audioFile.url) {
         this.audio.src = audioFile.url
-      } else {
+      }
+      else {
         throw new Error('No audio file or URL provided')
       }
 
@@ -94,7 +97,8 @@ export class AudioService {
           this.source = this.audioContext.createMediaElementSource(this.audio)
           this.source.connect(this.gainNode)
           console.log('Audio source connected to Web Audio API')
-        } catch (contextError) {
+        }
+        catch (contextError) {
           console.warn('Web Audio API connection failed, falling back to basic audio:', contextError)
           // Continue without Web Audio API features
         }
@@ -127,7 +131,8 @@ export class AudioService {
       this.updatePlaybackState()
 
       return true
-    } catch (error) {
+    }
+    catch (error) {
       console.error('Failed to load audio file:', error)
       this.playbackState.isLoaded = false
       this.updatePlaybackState()
@@ -186,7 +191,8 @@ export class AudioService {
       this.playbackState.isPlaying = true
       this.updatePlaybackState()
       console.log('Audio playback started successfully')
-    } catch (error) {
+    }
+    catch (error) {
       console.error('Failed to play audio:', error)
       throw error
     }
@@ -208,6 +214,15 @@ export class AudioService {
   seek(timeMs: number): void {
     if (this.audio && this.playbackState.isLoaded) {
       this.audio.currentTime = timeMs / 1000 // Convert to seconds
+
+      // Immediately update playback state to sync waveform red line
+      this.playbackState.currentTime = timeMs
+      this.updatePlaybackState()
+
+      // Trigger time update callback for immediate UI sync
+      if (this.timeUpdateCallback) {
+        this.timeUpdateCallback(timeMs)
+      }
     }
   }
 
@@ -234,7 +249,9 @@ export class AudioService {
   }
 
   getPlaybackState(): PlaybackState {
-    return { ...this.playbackState }
+    return {
+      ...this.playbackState
+    }
   }
 
   onTimeUpdate(callback: (time: number) => void): void {
@@ -247,7 +264,9 @@ export class AudioService {
 
   private updatePlaybackState(): void {
     if (this.playbackStateCallback) {
-      this.playbackStateCallback({ ...this.playbackState })
+      this.playbackStateCallback({
+        ...this.playbackState
+      })
     }
   }
 
@@ -296,7 +315,8 @@ export class AudioService {
       }
 
       return peaks
-    } catch (error) {
+    }
+    catch (error) {
       console.error('Failed to generate waveform data:', error)
       return null
     }
@@ -330,7 +350,8 @@ export class AudioService {
 
       console.log('🎵 Duration detected via Web Audio API:', audioBuffer.duration, 'seconds')
       return durationMs
-    } catch (error) {
+    }
+    catch (error) {
       console.error('❌ Failed to detect audio duration:', error)
 
       // Fallback: return a default duration and warn user
@@ -342,10 +363,12 @@ export class AudioService {
   private async fileToArrayBuffer(audioFile: AudioFile): Promise<ArrayBuffer> {
     if (audioFile.file) {
       return await audioFile.file.arrayBuffer()
-    } else if (audioFile.url) {
+    }
+    else if (audioFile.url) {
       const response = await fetch(audioFile.url)
       return await response.arrayBuffer()
-    } else {
+    }
+    else {
       throw new Error('No audio file or URL available')
     }
   }

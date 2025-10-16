@@ -12,25 +12,13 @@
             <form @submit.prevent="createProject">
               <div class="mb-3">
                 <label for="projectName" class="form-label">Song Title *</label>
-                <input
-                  type="text"
-                  class="form-control"
-                  id="projectName"
-                  v-model="newProject.name"
-                  required
-                  placeholder="Enter song title"
-                />
+                <input type="text" class="form-control" id="projectName" v-model="newProject.name" required
+                  placeholder="Enter song title" />
               </div>
               <div class="mb-3">
                 <label for="projectArtist" class="form-label">Artist *</label>
-                <input
-                  type="text"
-                  class="form-control"
-                  id="projectArtist"
-                  v-model="newProject.artist"
-                  required
-                  placeholder="Enter artist name"
-                />
+                <input type="text" class="form-control" id="projectArtist" v-model="newProject.artist" required
+                  placeholder="Enter artist name" />
               </div>
               <div class="mb-3">
                 <label for="projectGenre" class="form-label">Genre</label>
@@ -48,17 +36,13 @@
               </div>
               <div class="mb-3">
                 <label for="audioFile" class="form-label">Audio File (MP3, WAV) *</label>
-                <input type="file" class="form-control" id="audioFile" accept="audio/*" @change="handleAudioFile" required />
+                <input type="file" class="form-control" id="audioFile" accept="audio/*" @change="handleAudioFile"
+                  required />
               </div>
               <div class="mb-3">
                 <label for="lyrics" class="form-label">Lyrics</label>
-                <textarea
-                  class="form-control"
-                  id="lyrics"
-                  rows="8"
-                  v-model="newProject.lyricsText"
-                  placeholder="Paste your lyrics here (one line per verse/chorus line)..."
-                ></textarea>
+                <textarea class="form-control" id="lyrics" rows="8" v-model="newProject.lyricsText"
+                  placeholder="Paste your lyrics here (one line per verse/chorus line)..."></textarea>
                 <div class="form-text">Each line will become a timing point for synchronization</div>
               </div>
             </form>
@@ -122,10 +106,8 @@
                     </div>
 
                     <!-- Quota warning -->
-                    <div
-                      v-if="storageInfo.quotaUsedMB > storageInfo.quotaLimitMB * 0.8"
-                      class="alert alert-warning mt-2 mb-0 p-2"
-                    >
+                    <div v-if="storageInfo.quotaUsedMB > storageInfo.quotaLimitMB * 0.8"
+                      class="alert alert-warning mt-2 mb-0 p-2">
                       <small><i class="bi bi-exclamation-triangle"></i> Storage nearly full!</small>
                     </div>
                   </div>
@@ -156,8 +138,7 @@
                 <li><strong>Reference:</strong> Fallback method - you'll need to re-select files when loading</li>
               </ul>
               <div class="mt-2 p-2 bg-light rounded">
-                <small><strong>💡 IndexedDB is a built-in browser feature:</strong></small
-                ><br />
+                <small><strong>💡 IndexedDB is a built-in browser feature:</strong></small><br />
                 <small>• No setup required - works automatically</small><br />
                 <small>• Available in all modern browsers (Chrome, Firefox, Safari, Edge)</small><br />
                 <small>• Perfect for your 4-5MB audio files - no quota issues!</small><br />
@@ -202,10 +183,8 @@
             <div class="list-group">
               <div v-for="project in projects" :key="project.id" class="list-group-item p-0 project-item">
                 <div class="btn-group w-100" role="group">
-                  <button
-                    class="btn btn-outline-secondary text-start flex-grow-1 project-content-btn"
-                    @click="openProject(project)"
-                  >
+                  <button class="btn btn-outline-secondary text-start flex-grow-1 project-content-btn"
+                    @click="openProject(project)">
                     <div class="fw-bold d-flex align-items-center">
                       <i class="bi bi-music-note-beamed me-2 text-primary"></i>
                       {{ project.name }}
@@ -218,15 +197,14 @@
                     <div class="text-muted small" v-if="project.audioFile">
                       <i class="bi bi-file-music me-1"></i>
                       {{ project.audioFile.name }}
-                      <span
-                        class="badge ms-2"
-                        :class="getStorageBadgeClass(project.audioFile.storedData?.storageType || 'unknown')"
-                      >
+                      <span class="badge ms-2"
+                        :class="getStorageBadgeClass(project.audioFile.storedData?.storageType || 'unknown')">
                         {{ getStorageBadgeText(project.audioFile.storedData?.storageType || 'unknown') }}
                       </span>
                     </div>
                   </button>
-                  <button class="btn btn-warning delete-btn" @click.stop="deleteProject(project)" title="Delete project">
+                  <button class="btn btn-warning delete-btn" @click.stop="deleteProject(project)"
+                    title="Delete project">
                     <i class="bi bi-trash3"></i>
                   </button>
                 </div>
@@ -284,11 +262,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type { KaraokeProject } from '@/types/karaoke'
 import { audioStorageService } from '@/services/audioStorageService'
-import { parseLyricsText } from '@/utils/lyricsParser'
+import { parseLyricsWithMetadata } from '@/utils/lyricsParser'
 
 // Reactive state
 const router = useRouter()
@@ -319,6 +297,23 @@ const canCreateProject = computed(() => {
 
 const hotkeyHelpText = computed(() => {
   return 'Click for complete hotkey reference guide'
+})
+
+// Watch for lyrics changes to auto-populate title and artist from metadata
+watch(() => newProject.value.lyricsText, (newLyrics) => {
+  if (!newLyrics) return
+
+  const { metadata } = parseLyricsWithMetadata(newLyrics)
+
+  // Auto-populate title if found in metadata and user hasn't entered one yet
+  if (metadata.title && !newProject.value.name.trim()) {
+    newProject.value.name = metadata.title
+  }
+
+  // Auto-populate artist if found in metadata and user hasn't entered one yet
+  if (metadata.author && !newProject.value.artist.trim()) {
+    newProject.value.artist = metadata.author
+  }
 })
 
 // Methods
@@ -356,14 +351,16 @@ const testIndexedDB = async () => {
 
   if (result.available) {
     message += '✅ IndexedDB is supported by your browser\n'
-  } else {
+  }
+  else {
     message += '❌ IndexedDB is NOT supported by your browser\n'
   }
 
   if (result.canStore) {
     message += '✅ Can store files in IndexedDB\n'
     message += '🎵 Your 4-5MB audio files will work perfectly!'
-  } else {
+  }
+  else {
     message += '❌ Cannot store files in IndexedDB\n'
     if (result.error) {
       message += `Error: ${result.error}\n`
@@ -430,8 +427,8 @@ const createProject = async () => {
     return
   }
 
-  // Parse lyrics with syllable support
-  const lyrics = parseLyricsText(newProject.value.lyricsText)
+  // Parse lyrics with metadata and syllable support
+  const { lyrics } = parseLyricsWithMetadata(newProject.value.lyricsText)
 
   const projectId = `project-${Date.now()}`
 
@@ -466,7 +463,8 @@ const createProject = async () => {
 
     // Navigate to the timing editor
     router.push(`/timing/${projectId}`)
-  } catch (error) {
+  }
+  catch (error) {
     console.error('Error creating project:', error)
     alert('Error creating project: ' + error)
   }
@@ -527,7 +525,8 @@ const loadProjectsFromStorage = () => {
         console.log('   Badge will show:', getStorageBadgeText(project.audioFile?.storedData?.storageType || 'unknown'))
         console.log('---')
       })
-    } catch (error) {
+    }
+    catch (error) {
       console.error('Error loading projects:', error)
     }
   }
@@ -556,7 +555,8 @@ const saveProjectsToStorage = () => {
         duration: project.audioFile.duration,
       })
     })
-  } catch (error) {
+  }
+  catch (error) {
     console.error('Error saving projects:', error)
   }
 }
@@ -593,7 +593,8 @@ const fixStorageBadges = () => {
   if (fixedCount > 0) {
     saveProjectsToStorage()
     alert(`Fixed storage badges for ${fixedCount} project(s). Refresh the page to see the changes.`)
-  } else {
+  }
+  else {
     alert('All projects already have proper storage data.')
   }
 }
@@ -618,7 +619,8 @@ const handleKeyDown = (event: KeyboardEvent) => {
     if (showCreateProject.value) {
       event.preventDefault()
       closeCreateProject()
-    } else if (showStorageInfo.value) {
+    }
+    else if (showStorageInfo.value) {
       event.preventDefault()
       closeStorageInfo()
     }
@@ -638,7 +640,8 @@ onMounted(async () => {
   // Check IndexedDB availability
   if (window.indexedDB) {
     console.log('✅ IndexedDB is available in this browser')
-  } else {
+  }
+  else {
     console.warn('❌ IndexedDB is NOT available in this browser')
   }
 
@@ -649,7 +652,8 @@ onMounted(async () => {
   // Log storage method being used
   if (info.method === 'indexeddb') {
     console.log('🗄️ Using IndexedDB - perfect for 4-5MB files!')
-  } else {
+  }
+  else {
     console.log('📦 Using fallback storage method:', info.method)
   }
 
@@ -739,11 +743,11 @@ onUnmounted(() => {
 }
 
 /* Ensure button group buttons connect properly */
-.btn-group > .btn:not(:last-child) {
+.btn-group>.btn:not(:last-child) {
   border-right: none;
 }
 
-.btn-group > .btn:not(:first-child) {
+.btn-group>.btn:not(:first-child) {
   border-left: none;
 }
 

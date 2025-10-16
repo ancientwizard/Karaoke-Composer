@@ -23,6 +23,18 @@ export interface LyricLine {
   startTime?: number // line start time
   endTime?: number // line end time
   duration?: number // calculated duration
+  type?: 'lyrics' | 'title' | 'author' | 'caption' // line type for metadata
+  metadata?: {
+    title?: string
+    author?: string
+    caption?: string
+  }
+}
+
+export interface LyricsMetadata {
+  title?: string
+  author?: string
+  captions?: string[] // List of captions found in order
 }
 
 export interface TimingData {
