@@ -9,9 +9,7 @@ module.exports = {
     '@vue/eslint-config-typescript',
     '@vue/eslint-config-prettier/skip-formatting',
   ],
-  parserOptions: {
-    ecmaVersion: 'latest',
-  },
+  parserOptions: { ecmaVersion: 'latest' },
   env: {
     node: true,
     'vue/setup-compiler-macros': true,
@@ -20,17 +18,15 @@ module.exports = {
     'vue/multi-word-component-names': 'warn',
     'brace-style': [
       'error',
-      'allman',
-      {
-        allowSingleLine: true,
-      },
+      '1tbs', // K&R / "one true brace style" - opening braces on same line
+      { allowSingleLine: true },
     ],
     'object-curly-newline': [
       'error',
       {
         ObjectExpression: {
           multiline: true,
-          minProperties: 1,
+          minProperties: 2, // More reasonable threshold
         },
         ObjectPattern: {
           multiline: true,

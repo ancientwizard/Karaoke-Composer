@@ -19,8 +19,10 @@
             <p class="mb-0 text-muted">Testing drag & drop word timing with "November" lyrics</p>
           </div>
           <div class="col-auto">
-            <button class="btn btn-primary btn-sm me-2" @click="resetTiming"><i class="bi bi-arrow-clockwise"></i> Reset</button>
-            <button class="btn btn-info btn-sm" @click="showDebugInfo = !showDebugInfo"><i class="bi bi-bug"></i> Debug</button>
+            <button class="btn btn-primary btn-sm me-2" @click="resetTiming"><i class="bi bi-arrow-clockwise"></i>
+              Reset</button>
+            <button class="btn btn-info btn-sm" @click="showDebugInfo = !showDebugInfo"><i class="bi bi-bug"></i>
+              Debug</button>
           </div>
         </div>
       </div>
@@ -29,7 +31,8 @@
     <!-- Main Content -->
     <!-- Slide-in Help Panel -->
     <div class="help-panel-container">
-      <div class="help-panel" :class="{ visible: showHelp }" @mouseenter="showHelp = true" @mouseleave="showHelp = false">
+      <div class="help-panel" :class="{ visible: showHelp }" @mouseenter="showHelp = true"
+        @mouseleave="showHelp = false">
         <div class="help-tab">
           <i class="bi bi-question-circle"></i>
           <span>Help</span>
@@ -52,15 +55,9 @@
       <!-- Word Timing Editor -->
       <div class="timing-editor-section mb-4">
         <h4>Word Timing Editor</h4>
-        <WordTimingEditor
-          :words="words"
-          :duration="duration"
-          :view-start="viewStart"
-          :view-end="viewEnd"
-          :show-debug="showDebug"
-          @update:words="handleWordsUpdate"
-          @select-word="handleWordSelect"
-        />
+        <WordTimingEditor :words="words" :duration="duration" :view-start="viewStart" :view-end="viewEnd"
+          :show-debug="showDebug" :show-background="true" :show-border="true" @update:words="handleWordsUpdate"
+          @select-word="handleWordSelect" />
       </div>
 
       <!-- Controls -->
@@ -70,26 +67,12 @@
             <label class="form-label">View Window (seconds)</label>
             <div class="row">
               <div class="col">
-                <input
-                  v-model.number="viewStartInput"
-                  type="number"
-                  class="form-control form-control-sm"
-                  min="0"
-                  :max="duration"
-                  step="0.5"
-                  placeholder="Start"
-                />
+                <input v-model.number="viewStartInput" type="number" class="form-control form-control-sm" min="0"
+                  :max="duration" step="0.5" placeholder="Start" />
               </div>
               <div class="col">
-                <input
-                  v-model.number="viewDurationInput"
-                  type="number"
-                  class="form-control form-control-sm"
-                  min="0.1"
-                  :max="duration - viewStart"
-                  step="0.5"
-                  placeholder="Duration"
-                />
+                <input v-model.number="viewDurationInput" type="number" class="form-control form-control-sm" min="0.1"
+                  :max="duration - viewStart" step="0.5" placeholder="Duration" />
               </div>
             </div>
           </div>
@@ -121,13 +104,8 @@
         <h5>Current Lyrics with Timing</h5>
         <div class="lyrics-display p-3 border rounded bg-light">
           <div v-for="(line, lineIndex) in lyricsLines" :key="lineIndex" class="lyrics-line mb-2">
-            <span
-              v-for="word in line"
-              :key="word.id"
-              class="lyrics-word me-1"
-              :class="{ 'selected-word': selectedWordId === word.id }"
-              @click="handleWordSelected(word.id)"
-            >
+            <span v-for="word in line" :key="word.id" class="lyrics-word me-1"
+              :class="{ 'selected-word': selectedWordId === word.id }" @click="handleWordSelected(word.id)">
               {{ word.text }}
               <small class="text-muted">({{ word.startTime.toFixed(1) }}s)</small>
             </span>
@@ -143,9 +121,9 @@
             <h6>Words in View ({{ visibleWords.length }})</h6>
             <div class="debug-box">
               <div v-for="word in visibleWords" :key="word.id" class="debug-word mb-1">
-                <strong>{{ word.text }}</strong
-                >: {{ word.startTime.toFixed(2) }}s - {{ word.endTime.toFixed(2) }}s
-                <span v-if="word.syllables.length > 1" class="text-muted"> ({{ word.syllables.length }} syllables) </span>
+                <strong>{{ word.text }}</strong>: {{ word.startTime.toFixed(2) }}s - {{ word.endTime.toFixed(2) }}s
+                <span v-if="word.syllables.length > 1" class="text-muted"> ({{ word.syllables.length }} syllables)
+                </span>
               </div>
             </div>
           </div>

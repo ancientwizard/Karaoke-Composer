@@ -1,98 +1,94 @@
 <template>
   <div class="waveform-viewer">
     <div class="card">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <h5 class="mb-0">🌊 Audio Waveform & Controls</h5>
-        <div class="d-flex align-items-center">
-          <div class="mode-indicator me-3" v-if="isTimingMode !== undefined">
-            <span class="badge" :class="isTimingMode ? 'bg-warning' : 'bg-secondary'">
-              {{ isTimingMode ? 'Timing Mode' : 'Playback Mode' }}
-            </span>
-          </div>
-          <div class="loading-spinner me-2" v-if="isLoading">
-            <div class="spinner-border spinner-border-sm" role="status">
-              <span class="visually-hidden">Loading...</span>
+      <div class="card-header">
+        <!-- Top row: Title and mode indicator -->
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h5 class="mb-0">🌊 Audio Waveform & Controls</h5>
+          <div class="d-flex align-items-center">
+            <div class="mode-indicator me-3" v-if="isTimingMode !== undefined">
+              <span class="badge" :class="isTimingMode ? 'bg-warning' : 'bg-secondary'">
+                {{ isTimingMode ? 'Timing Mode' : 'Playback Mode' }}
+              </span>
+            </div>
+            <div class="loading-spinner me-2" v-if="isLoading">
+              <div class="spinner-border spinner-border-sm" role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- Integrated Timing Controls -->
-      <div class="card-body border-bottom" v-if="playbackState">
-        <div class="timing-controls-section">
+        <!-- Controls row -->
+        <div class="controls-row d-flex justify-content-between align-items-center flex-wrap gap-2">
           <!-- Audio Player Controls -->
-          <div class="player-controls d-flex justify-content-center align-items-center gap-2 mb-3">
+          <div class="player-controls d-flex align-items-center gap-2">
             <button class="btn btn-outline-secondary btn-sm" @click="emit('skip-backward')" title="Skip backward 10s">
               <i class="bi bi-skip-backward"></i>
             </button>
-
-            <button class="btn btn-primary" @click="emit('play-pause')" :disabled="!audioFile?.file">
+            <button class="btn btn-primary btn-sm" @click="emit('play-pause')" :disabled="!audioFile?.file">
               <i :class="playbackState.isPlaying ? 'bi bi-pause-fill' : 'bi bi-play-fill'"></i>
             </button>
-
             <button class="btn btn-outline-secondary btn-sm" @click="emit('skip-forward')" title="Skip forward 10s">
               <i class="bi bi-skip-forward"></i>
             </button>
           </div>
 
-          <!-- Progress Bar -->
-          <div class="progress-container mb-2">
-            <div class="progress" style="height: 8px; cursor: pointer" @click="seekToClick">
-              <div class="progress-bar" :style="{ width: progressPercent + '%' }" role="progressbar"></div>
+          <!-- View Mode Controls -->
+          <div class="view-controls d-flex align-items-center gap-2">
+            <!-- View Mode Toggle -->
+            <div class="btn-group" role="group">
+              <button class="btn btn-sm" :class="viewMode === 'window' ? 'btn-primary' : 'btn-outline-primary'"
+                @click="setViewMode('window')" title="Sliding window view">
+                <i class="bi bi-window"></i> Window
+              </button>
+              <button class="btn btn-sm" :class="viewMode === 'full' ? 'btn-primary' : 'btn-outline-primary'"
+                @click="setViewMode('full')" title="Full song view">
+                <i class="bi bi-arrows-fullscreen"></i> Full
+              </button>
             </div>
-            <div class="time-display d-flex justify-content-between mt-1">
-              <small class="text-muted">{{ formatTime(currentTime) }}</small>
-              <small class="text-muted">{{ formatTime(audioFile?.duration || 0) }}</small>
+
+            <!-- Zoom Controls (only for full view) -->
+            <div v-if="viewMode === 'full'" class="zoom-controls d-flex align-items-center">
+              <button class="btn btn-sm btn-outline-secondary" @click="zoomOut" :disabled="zoomLevel <= 1"
+                title="Zoom out">
+                <i class="bi bi-zoom-out"></i>
+              </button>
+              <span class="zoom-level mx-2">{{ Math.round(zoomLevel * 100) }}%</span>
+              <button class="btn btn-sm btn-outline-secondary" @click="zoomIn" :disabled="zoomLevel >= 5"
+                title="Zoom in">
+                <i class="bi bi-zoom-in"></i>
+              </button>
             </div>
+
+            <!-- Window Controls (only for window view) -->
+            <div v-if="viewMode === 'window'" class="window-controls d-flex align-items-center gap-2">
+              <select class="form-select form-select-sm" v-model="windowDuration" @change="onWindowDurationChange">
+                <option :value="10000">10s</option>
+                <option :value="15000">15s</option>
+                <option :value="25000">25s</option>
+              </select>
+              <button class="btn btn-sm" :class="autoScroll ? 'btn-success' : 'btn-outline-success'"
+                @click="toggleAutoScroll" title="Auto-scroll with playback">
+                <i class="bi bi-skip-end"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Progress Bar -->
+        <div class="progress-container mt-2" v-if="playbackState">
+          <div class="progress" style="height: 6px; cursor: pointer" @click="seekToClick">
+            <div class="progress-bar" :style="{ width: progressPercent + '%' }" role="progressbar"></div>
+          </div>
+          <div class="time-display d-flex justify-content-between mt-1">
+            <small class="text-muted">{{ formatTime(currentTime) }}</small>
+            <small class="text-muted">{{ formatTime(audioFile?.duration || 0) }}</small>
           </div>
         </div>
       </div>
 
-      <!-- Waveform Controls -->
-      <div class="card-body border-bottom py-2">
-        <div class="waveform-controls">
-          <!-- View Mode Toggle -->
-          <div class="btn-group me-2" role="group">
-            <button class="btn btn-sm" :class="viewMode === 'window' ? 'btn-primary' : 'btn-outline-primary'"
-              @click="setViewMode('window')" title="Sliding window view">
-              <i class="bi bi-window"></i> Window
-            </button>
-            <button class="btn btn-sm" :class="viewMode === 'full' ? 'btn-primary' : 'btn-outline-primary'"
-              @click="setViewMode('full')" title="Full song view">
-              <i class="bi bi-arrows-fullscreen"></i> Full
-            </button>
-          </div>
 
-          <!-- Zoom Controls (only for full view) -->
-          <div v-if="viewMode === 'full'" class="zoom-controls me-2">
-            <button class="btn btn-sm btn-outline-secondary me-1" @click="zoomOut" :disabled="zoomLevel <= 1"
-              title="Zoom out">
-              <i class="bi bi-zoom-out"></i>
-            </button>
-            <span class="zoom-level">{{ Math.round(zoomLevel * 100) }}%</span>
-            <button class="btn btn-sm btn-outline-secondary ms-1" @click="zoomIn" :disabled="zoomLevel >= 5"
-              title="Zoom in">
-              <i class="bi bi-zoom-in"></i>
-            </button>
-          </div>
-
-          <!-- Window Duration Control (only for window view) -->
-          <div v-if="viewMode === 'window'" class="window-controls me-2">
-            <select class="form-select form-select-sm" v-model="windowDuration" @change="onWindowDurationChange">
-              <option :value="10000">10s</option>
-              <option :value="15000">15s</option>
-              <option :value="25000">25s</option>
-            </select>
-          </div>
-
-          <!-- Auto-scroll toggle -->
-          <button v-if="viewMode === 'window'" class="btn btn-sm"
-            :class="autoScroll ? 'btn-success' : 'btn-outline-success'" @click="toggleAutoScroll"
-            title="Auto-scroll with playback">
-            <i class="bi bi-skip-end"></i>
-          </button>
-        </div>
-      </div>
       <div class="card-body p-0">
         <div class="waveform-container" ref="waveformContainer">
           <!-- Loading State -->
@@ -109,33 +105,41 @@
             </div>
           </div>
 
-          <!-- Waveform Canvas -->
-          <div v-else class="waveform-canvas-container" @mousedown="startSelection" @mousemove="updateSelection"
-            @mouseup="endSelection">
-            <canvas ref="waveformCanvas" class="waveform-canvas" :width="canvasWidth" :height="canvasHeight"
-              @click="seekToPosition"></canvas>
+          <!-- Audio File Content -->
+          <div v-else>
+            <!-- Content slot above waveform -->
+            <slot name="above-waveform"></slot>
 
-            <!-- Playback position handled by canvas drawing -->
+            <!-- Waveform Canvas -->
+            <div class="waveform-canvas-container" @mousedown="startSelection" @mousemove="updateSelection"
+              @mouseup="endSelection">
+              <canvas ref="waveformCanvas" class="waveform-canvas" :width="canvasWidth" :height="canvasHeight"
+                @click="seekToPosition"></canvas>
 
-            <!-- Lyrics Markers -->
-            <div v-for="(lyric, index) in positionedLyrics" :key="lyric.id" class="lyric-marker" :class="{
-              active: index === currentLineIndex,
-              selected: selectedMarkers.includes(index),
-            }" :style="{ left: lyric.position + 'px' }" @click="selectLyricMarker(index, $event)"
-              @mousedown="startDragMarker(index, $event)" :title="`Line ${lyric.lineNumber}: ${lyric.text}`">
-              <div class="marker-line"></div>
-              <div class="marker-label">{{ lyric.lineNumber }}</div>
-            </div>
+              <!-- Playback position handled by canvas drawing -->
 
-            <!-- Selection Area -->
-            <div v-if="selectionStart !== null && selectionEnd !== null" class="selection-area" :style="selectionStyle">
-            </div>
+              <!-- Lyrics Markers -->
+              <div v-for="(lyric, index) in positionedLyrics" :key="lyric.id" class="lyric-marker" :class="{
+                active: index === currentLineIndex,
+                selected: selectedMarkers.includes(index),
+              }" :style="{ left: lyric.position + 'px' }" @click="selectLyricMarker(index, $event)"
+                @mousedown="startDragMarker(index, $event)" :title="`Line ${lyric.lineNumber}: ${lyric.text}`">
+                <div class="marker-line"></div>
+                <div class="marker-label">{{ lyric.lineNumber }}</div>
+              </div>
 
-            <!-- Time Scale -->
-            <div class="time-scale">
-              <div v-for="mark in timeMarks" :key="mark.time" class="time-mark" :style="{ left: mark.position + 'px' }">
-                <div class="time-mark-line"></div>
-                <div class="time-mark-label">{{ mark.label }}</div>
+              <!-- Selection Area -->
+              <div v-if="selectionStart !== null && selectionEnd !== null" class="selection-area"
+                :style="selectionStyle">
+              </div>
+
+              <!-- Time Scale -->
+              <div class="time-scale">
+                <div v-for="mark in timeMarks" :key="mark.time" class="time-mark"
+                  :style="{ left: mark.position + 'px' }">
+                  <div class="time-mark-line"></div>
+                  <div class="time-mark-label">{{ mark.label }}</div>
+                </div>
               </div>
             </div>
           </div>
@@ -143,14 +147,22 @@
       </div>
       <div class="card-footer">
         <div class="row align-items-center">
-          <div class="col-sm-6">
+          <div class="col-sm-4">
             <small class="text-muted">
-              <span v-if="audioFile?.duration"> Duration: {{ formatTime(audioFile.duration) }} </span>
+              <span v-if="audioFile?.duration">Duration: {{ formatTime(audioFile.duration) }}</span>
               <span v-if="selectedDuration"> • Selection: {{ formatTime(selectedDuration) }}</span>
             </small>
           </div>
-          <div class="col-sm-6 text-end">
-            <small class="text-muted"> {{ lyrics.length }} lyrics • {{ timedLyricsCount }} positioned </small>
+          <div class="col-sm-4 text-center">
+            <small class="text-muted">
+              {{ lyrics.length }} lyrics • {{ timedLyricsCount }} positioned
+            </small>
+          </div>
+          <div class="col-sm-4 text-end">
+            <small class="text-muted">
+              <span v-if="viewMode === 'window'">Window: {{ formatTime(windowDuration) }}</span>
+              <span v-if="viewMode === 'full'">Zoom: {{ Math.round(zoomLevel * 100) }}%</span>
+            </small>
           </div>
         </div>
       </div>
@@ -186,6 +198,7 @@ const emit = defineEmits<{
   'play-pause': []
   'skip-backward': []
   'skip-forward': []
+  'view-window-change': [viewStart: number, viewEnd: number, viewMode: 'full' | 'window']
 }>()
 
 // Reactive state
@@ -280,8 +293,7 @@ const timeMarks = computed(() => {
         }
       }
     }
-  }
-  else {
+  } else {
     // Full mode: show marks for the entire duration
     const duration = props.audioFile.duration
     const interval = duration > 60000 ? 10000 : 5000 // 10s or 5s intervals
@@ -328,12 +340,10 @@ const selectLyricMarker = (index: number, event: MouseEvent) => {
     const markerIndex = selectedMarkers.value.indexOf(index)
     if (markerIndex >= 0) {
       selectedMarkers.value.splice(markerIndex, 1)
-    }
-    else {
+    } else {
       selectedMarkers.value.push(index)
     }
-  }
-  else {
+  } else {
     // Single select
     selectedMarkers.value = [index]
   }
@@ -431,15 +441,30 @@ const setViewMode = (mode: 'full' | 'window') => {
     updateWindowPosition()
   }
   drawWaveform()
+  emitViewWindowChange()
 }
 
 const onWindowDurationChange = () => {
   updateWindowPosition()
   drawWaveform()
+  emitViewWindowChange()
 }
 
 const toggleAutoScroll = () => {
   autoScroll.value = !autoScroll.value
+}
+
+// Helper function to emit view window changes
+const emitViewWindowChange = () => {
+  if (viewMode.value === 'window') {
+    const viewStart = windowStart.value / 1000 // Convert to seconds
+    const viewEnd = (windowStart.value + windowDuration.value) / 1000 // Convert to seconds
+    emit('view-window-change', viewStart, viewEnd, 'window')
+  } else {
+    // Full mode - show entire duration
+    const duration = props.audioFile?.duration || 60000 // Default to 60 seconds
+    emit('view-window-change', 0, duration / 1000, 'full')
+  }
 }
 
 const updateWindowPosition = () => {
@@ -450,13 +475,11 @@ const updateWindowPosition = () => {
       if (props.currentTime <= halfWindow) {
         // Before mid-point: keep window at start
         windowStart.value = 0
-      }
-      else {
+      } else {
         // After mid-point: center the window around current time
         windowStart.value = Math.max(0, props.currentTime - halfWindow)
       }
-    }
-    else {
+    } else {
       // When not playing or at start, show from beginning
       windowStart.value = 0
     }
@@ -470,6 +493,9 @@ const updateWindowPosition = () => {
       phase: props.currentTime <= halfWindow ? 'line-moves' : 'wave-scrolls',
     })
   }
+
+  // Emit view window change whenever position updates
+  emitViewWindowChange()
 }
 
 // Timing controls methods
@@ -596,19 +622,16 @@ const drawWaveform = async () => {
         if (props.currentTime <= halfWindow) {
           // STATE 1: Before mid-point - red line moves from left (0% to 50%)
           timeX = (props.currentTime / windowDuration.value) * width
-        }
-        else if (props.currentTime >= endThreshold) {
+        } else if (props.currentTime >= endThreshold) {
           // STATE 3: Near end of song - red line tracks to the right
           const remainingTime = totalDuration - props.currentTime
           const remainingWindow = windowDuration.value
           timeX = width - (remainingTime / remainingWindow) * width
-        }
-        else {
+        } else {
           // STATE 2: Middle section - red line stays centered, waveform scrolls
           timeX = width / 2
         }
-      }
-      else {
+      } else {
         timeX = (props.currentTime / totalDuration) * width * zoomLevel.value
       }
 
@@ -674,11 +697,9 @@ const generateWaveformData = async () => {
     nextTick(() => {
       drawWaveform()
     })
-  }
-  catch (error) {
+  } catch (error) {
     console.error('Error generating waveform:', error)
-  }
-  finally {
+  } finally {
     isLoading.value = false
   }
 }
@@ -704,9 +725,7 @@ watch(
       generateWaveformData()
     }
   },
-  {
-    immediate: true
-  }
+  { immediate: true }
 )
 
 watch(
@@ -748,12 +767,10 @@ watch(
         if (newTime <= halfWindow) {
           // STATE 1: Before mid-point - keep window at start, red line moves from left
           windowStart.value = 0
-        }
-        else if (newTime >= endThreshold) {
+        } else if (newTime >= endThreshold) {
           // STATE 3: Near end of song - keep window at end, red line tracks to right
           windowStart.value = Math.max(0, props.audioFile.duration - windowDuration.value)
-        }
-        else {
+        } else {
           // STATE 2: Middle section - center current time, red line stays at 50%
           windowStart.value = Math.max(0, Math.min(newTime - halfWindow, props.audioFile.duration - windowDuration.value))
         }
@@ -769,6 +786,9 @@ watch(
           windowStart: windowStart.value,
           behavior
         })
+
+        // Emit view window change after updating window position
+        emitViewWindowChange()
       }
     }
 
@@ -784,12 +804,14 @@ onMounted(() => {
   window.addEventListener('resize', updateCanvasSize)
 
   // Values are already set in ref initialization - 15 seconds window mode with auto-scroll
+  // Emit initial view window state
+  emitViewWindowChange()
 })
 </script>
 
 <style scoped>
 .waveform-container {
-  min-height: 200px;
+  min-height: 220px;
   position: relative;
   background: #f8f9fa;
   overflow-x: auto;
@@ -797,13 +819,15 @@ onMounted(() => {
 
 .loading-state,
 .no-audio-state {
-  height: 200px;
+  height: 220px;
 }
 
 .waveform-canvas-container {
+  margin-top: 0.5em;
   position: relative;
   padding: 20px 10px 5px;
-  min-height: 200px;
+  /* Remove min-height to let content determine size naturally */
+  /* Total content: 20px + 120px (canvas) + 15px (time-scale) + 5px = 160px */
 }
 
 .waveform-canvas {
@@ -818,7 +842,8 @@ onMounted(() => {
 .lyric-marker {
   position: absolute;
   top: 15px;
-  bottom: 35px;
+  /* Calculate height to stop at canvas baseline: container top padding (20px) + canvas baseline (119px) - marker top (15px) = 124px */
+  height: 124px;
   cursor: pointer;
   z-index: 5;
 }
@@ -910,18 +935,32 @@ onMounted(() => {
   text-align: center;
 }
 
-.waveform-controls {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.5rem;
+.controls-row {
   min-height: 38px;
-  /* Ensure consistent height */
 }
 
-.waveform-controls>* {
+.controls-row>* {
   flex-shrink: 0;
-  /* Prevent controls from shrinking */
+}
+
+.player-controls .btn {
+  min-width: 36px;
+}
+
+.view-controls {
+  flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+  .controls-row {
+    flex-direction: column;
+    gap: 0.75rem !important;
+  }
+
+  .view-controls {
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 /* Scrollbar styling */

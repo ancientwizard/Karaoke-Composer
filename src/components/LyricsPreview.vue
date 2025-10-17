@@ -33,19 +33,19 @@
         <div v-else class="lyrics-display" ref="lyricsDisplay">
           <!-- Karaoke Mode - Professional karaoke format display -->
           <div v-if="isKaraokeMode" class="karaoke-display">
-            <!-- Fixed Positions for Title and Author -->
+            <!-- Clean 3-slot display: Title → Artist → Caption (smart slot assignment) -->
             <div class="karaoke-position position-1">
-              <div v-if="songTitle && !currentCaption" class="display-title">{{ songTitle }}</div>
-              <div v-else-if="currentCaption" class="display-caption">{{ currentCaption }}</div>
+              <div v-if="slot1Content.type === 'title'" class="display-title">{{ slot1Content.text }}</div>
+              <div v-else-if="slot1Content.type === 'caption'" class="display-caption">{{ slot1Content.text }}</div>
             </div>
 
             <div class="karaoke-position position-2">
-              <div v-if="songAuthor && !currentCaption" class="display-author">{{ songAuthor }}</div>
-              <div v-else-if="currentCaption && songTitle" class="display-caption">{{ currentCaption }}</div>
+              <div v-if="slot2Content.type === 'author'" class="display-author">{{ slot2Content.text }}</div>
+              <div v-else-if="slot2Content.type === 'caption'" class="display-caption">{{ slot2Content.text }}</div>
             </div>
 
             <div class="karaoke-position position-3">
-              <div v-if="currentCaption && songTitle && songAuthor" class="display-caption">{{ currentCaption }}</div>
+              <div v-if="slot3Content.type === 'caption'" class="display-caption">{{ slot3Content.text }}</div>
             </div>
 
             <!-- Current Line - What we're singing now -->
@@ -72,7 +72,7 @@
 
             <!-- Future Lines - What's coming up (small and diminished) -->
             <div class="future-lines">
-              <div v-for="(lyric, index) in futureLyricLines" :key="`future-${lyric.id}`" class="future-line">
+              <div v-for="lyric in futureLyricLines" :key="`future-${lyric.id}`" class="future-line">
                 {{ getCleanText(lyric) }}
               </div>
             </div>
@@ -85,7 +85,7 @@
               'has-timing': lyric.startTime !== undefined,
               past: lyric.startTime !== undefined && lyric.startTime < currentTime,
               future: lyric.startTime !== undefined && lyric.startTime > currentTime,
-              playing: isLinePlaying(lyric, index),
+              playing: isLinePlaying(lyric),
             }">
               <div class="line-content">
                 <span class="line-number">{{ lyric.lineNumber }}</span>
@@ -96,7 +96,7 @@
               </div>
 
               <!-- Progress bar for current playing line -->
-              <div v-if="isLinePlaying(lyric, index) && lyric.duration" class="line-progress">
+              <div v-if="isLinePlaying(lyric) && lyric.duration" class="line-progress">
                 <div class="progress-bar" :style="{ width: getLineProgress(lyric) + '%' }"></div>
               </div>
             </div>
@@ -203,8 +203,7 @@ const currentCaption = computed(() => {
     // Show caption if we're at or past its position in the lyrics
     if (captionLineIndex <= props.currentLine) {
       activeCaption = captionLine.metadata?.caption || captionLine.text.replace(/^\[@CAPTION:\s*/, '').replace(/\]$/, '')
-    }
-    else {
+    } else {
       break // We've reached future captions
     }
   }
@@ -212,12 +211,67 @@ const currentCaption = computed(() => {
   return activeCaption
 })
 
+// Simple three-slot system: Title always there OR not, Author always there OR not, Caption comes and goes
+const slot1Content = computed(() => {
+  // Slot 1 priority: Title first, then caption if no title
+  if (songTitle.value) {
+    return {
+      type: 'title',
+      text: songTitle.value
+    }
+  }
+  if (currentCaption.value) {
+    return {
+      type: 'caption',
+      text: currentCaption.value
+    }
+  }
+  return {
+    type: 'empty',
+    text: ''
+  }
+})
+
+const slot2Content = computed(() => {
+  // Slot 2 priority: Author first, then caption if no author AND slot 1 is occupied by title
+  if (songAuthor.value) {
+    return {
+      type: 'author',
+      text: songAuthor.value
+    }
+  }
+  if (currentCaption.value && slot1Content.value.type === 'title') {
+    return {
+      type: 'caption',
+      text: currentCaption.value
+    }
+  }
+  return {
+    type: 'empty',
+    text: ''
+  }
+})
+
+const slot3Content = computed(() => {
+  // Slot 3 only used for caption if both slot 1 and 2 are occupied by title and author
+  if (currentCaption.value && slot1Content.value.type === 'title' && slot2Content.value.type === 'author') {
+    return {
+      type: 'caption',
+      text: currentCaption.value
+    }
+  }
+  return {
+    type: 'empty',
+    text: ''
+  }
+})
+
 // Compute display lines for karaoke mode - only future lyrics
 const futureLyricLines = computed(() => {
   const futureLines = props.lyrics.slice(props.currentLine + 1)
   // Filter to only lyric lines (not metadata)
   const lyricsOnly = futureLines.filter(line => !line.type || line.type === 'lyrics')
-  return lyricsOnly.slice(0, 2) // Show next 2 lyric lines only
+  return lyricsOnly.slice(0, 1) // Show next 1 lyric lines only
 })
 
 // Methods
@@ -229,7 +283,7 @@ const setFontSize = (size: 'small' | 'medium' | 'large') => {
   fontSize.value = size
 }
 
-const isLinePlaying = (lyric: LyricLine, index: number): boolean => {
+const isLinePlaying = (lyric: LyricLine): boolean => {
   if (lyric.startTime === undefined) return false
 
   const startTime = lyric.startTime
@@ -368,8 +422,8 @@ watch(
 }
 
 .current-line-display {
-  padding: 1.5rem 1rem;
-  border: 2px solid #444;
+  padding: 0.7rem 0.7rem;
+  border: 1px solid #444;
   border-radius: 1rem;
   background: rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(10px);
@@ -384,7 +438,7 @@ watch(
 }
 
 .current-line-display .line-text {
-  font-size: 1.5em;
+  font-size: 1.3em;
   font-weight: bold;
   display: block;
   margin-bottom: 0.5rem;
@@ -626,11 +680,13 @@ watch(
 
 /* Fixed positions for title/author/captions */
 .karaoke-position {
-  min-height: 1.5rem;
+  x-vicb-border: 1px solid #2196f3;
+  min-height: 1.2rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 0.2rem;
+  margin: 0rem;
+  padding: 0px;
 }
 
 .position-1 {

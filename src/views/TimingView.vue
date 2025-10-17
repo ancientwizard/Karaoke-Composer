@@ -68,20 +68,21 @@
             </div>
           </div>
 
-          <!-- Waveform View - Full Width -->
+          <!-- Waveform View with Word Timing Editor - Full Width -->
           <div class="row mb-3">
             <div class="col-12">
               <WaveformViewer :audioFile="project.audioFile" :lyrics="project.lyrics"
                 :currentTime="playbackState.currentTime" :waveformData="waveformData" :playbackState="playbackState"
                 :isTimingMode="isTimingMode" @seek="seekAudio" @lyrics-position="updateLyricsPosition"
-                @play-pause="togglePlayPause" @skip-backward="skipBackward" @skip-forward="skipForward" />
-            </div>
-          </div>
+                @play-pause="togglePlayPause" @skip-backward="skipBackward" @skip-forward="skipForward"
+                @view-window-change="handleViewWindowChange">
 
-          <!-- Word Timing Editor -->
-          <div class="row">
-            <div class="col-12">
-              <WordTimingEditor :words="timingEditorWords" :duration="audioDuration" :view-start="0" :view-end="10" />
+                <!-- Word Timing Editor in slot above waveform -->
+                <template #above-waveform>
+                  <WordTimingEditor :words="timingEditorWords" :duration="audioDuration" :view-start="viewWindowStart"
+                    :view-end="viewWindowEnd" :show-debug="true" />
+                </template>
+              </WaveformViewer>
             </div>
           </div>
         </div>
@@ -208,6 +209,11 @@ const currentWordIndex = ref(0)
 const isTimingMode = ref(false)
 const waveformData = ref<WaveformData | null>(null)
 
+// View window state (synchronized with WaveformViewer)
+const viewWindowStart = ref(0) // in seconds
+const viewWindowEnd = ref(60) // in seconds, default to 60s
+const viewWindowMode = ref<'full' | 'window'>('window')
+
 // Viewport tracking
 const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1024)
 const viewportHeight = ref(typeof window !== 'undefined' ? window.innerHeight : 768)
@@ -253,24 +259,53 @@ const currentBreakpoint = computed(() => {
 
 // Computed properties for WordTimingEditor
 const timingEditorWords = computed(() => {
-  if (!project.value?.lyrics) return []
+  if (!project.value?.lyrics) {
+    console.log('🔍 timingEditorWords: No project or lyrics')
+    return []
+  }
 
   const words: { id: string; text: string; startTime: number; endTime: number; syllables?: any[] }[] = []
 
   project.value.lyrics.forEach((line, lineIndex) => {
+    console.log(`🔍 Processing line ${lineIndex}:`, {
+      text: line.text,
+      type: line.type,
+      isMetadata: isMetadataLine(line),
+      hasWords: !!line.words,
+      wordCount: line.words?.length || 0
+    })
+
+    // Skip metadata lines - only process lyrics lines
+    if (isMetadataLine(line)) {
+      return
+    }
+
+    // Only process lines that have words array
+    if (!line.words || !Array.isArray(line.words)) {
+      return
+    }
+
     line.words.forEach((word, wordIndex) => {
       words.push({
         id: `line-${lineIndex}-word-${wordIndex}`,
         text: word.word,
-        startTime: word.startTime || 0,
-        endTime: word.endTime || word.startTime || 0,
+        startTime: (word.startTime || 0) / 1000, // Convert milliseconds to seconds
+        endTime: (word.endTime || word.startTime || 0) / 1000, // Convert milliseconds to seconds
         syllables: word.syllables?.map((syllable, syllableIndex) => ({
           text: syllable.syllable,
-          startTime: syllable.startTime || 0,
-          endTime: syllable.endTime || syllable.startTime || 0,
+          startTime: (syllable.startTime || 0) / 1000, // Convert milliseconds to seconds
+          endTime: (syllable.endTime || syllable.startTime || 0) / 1000, // Convert milliseconds to seconds
         })),
       })
     })
+  })
+
+  console.log('🔍 timingEditorWords result:', {
+    totalLyricsLines: project.value.lyrics.length,
+    wordsGenerated: words.length,
+    firstFewWords: words.slice(0, 5).map(w => ({
+      id: w.id, text: w.text, startTime: w.startTime, endTime: w.endTime
+    }))
   })
 
   return words
@@ -283,6 +318,16 @@ const audioDuration = computed(() => {
 // Methods
 const closeHotkeyModal = () => {
   showHotkeyModal.value = false
+}
+
+// Handler for view window changes from WaveformViewer
+const handleViewWindowChange = (viewStart: number, viewEnd: number, mode: 'full' | 'window') => {
+  viewWindowStart.value = viewStart
+  viewWindowEnd.value = viewEnd
+  viewWindowMode.value = mode
+  console.log('🔄 View window synchronized:', {
+    viewStart, viewEnd, mode
+  })
 }
 
 // Helper function to check if a line is a metadata line
@@ -351,12 +396,10 @@ const selectLine = (lineIndex: number) => {
         nextLyricIndex = findPrevLyricLine(lineIndex - 1)
       }
       currentLine.value = nextLyricIndex
-    }
-    else {
+    } else {
       currentLine.value = lineIndex
     }
-  }
-  else {
+  } else {
     currentLine.value = lineIndex
   }
 }
@@ -372,14 +415,12 @@ const togglePlayPause = async () => {
     if (playbackState.value.isPlaying) {
       audioService.pause()
       console.log('Audio paused')
-    }
-    else {
+    } else {
       console.log('Attempting to play audio...')
       await audioService.play()
       console.log('Audio play initiated')
     }
-  }
-  catch (error) {
+  } catch (error) {
     console.error('Failed to toggle play/pause:', error)
     alert('Failed to play audio. The audio context may need to be restarted. Try clicking the play button again.')
   }
@@ -442,8 +483,7 @@ const ensureAudioReady = async () => {
     await audioService.play()
     audioService.pause()
     console.log('Audio context verified as ready')
-  }
-  catch (error) {
+  } catch (error) {
     console.warn('Audio context may need user interaction:', error)
   }
 }
@@ -479,8 +519,7 @@ const calculateSmartDuration = (currentLineIndex: number, currentWordIndex: numb
     // Next word in same line
     const nextWord = currentLine.words[currentWordIndex + 1]
     nextTiming = nextWord.startTime
-  }
-  else {
+  } else {
     // Find the next lyric line (skip metadata)
     let nextLineIndex = currentLineIndex + 1
     while (nextLineIndex < lyrics.length) {
@@ -503,8 +542,7 @@ const calculateSmartDuration = (currentLineIndex: number, currentWordIndex: numb
     if (isLongBreak) {
       // 50% of time to next for phrase/verse breaks
       return Math.max(300, timeToNext * 0.5 * 1000) // Min 300ms, max 50% in milliseconds
-    }
-    else {
+    } else {
       // 80-85% of time to next for normal word spacing
       return Math.max(200, timeToNext * 0.825 * 1000) // Min 200ms, 82.5% average in milliseconds
     }
@@ -585,8 +623,7 @@ const moveToNextWord = () => {
   if (currentWordIndex.value < currentLyricLine.words.length - 1) {
     // Move to next word in same line
     currentWordIndex.value++
-  }
-  else {
+  } else {
     // Find the next line that has words (skip metadata lines)
     let nextLineIndex = currentLine.value + 1
     while (nextLineIndex < project.value.lyrics.length) {
@@ -606,8 +643,7 @@ const moveToNextWord = () => {
   if (actuallyMoved && project.value) {
     // We moved to a new position, so finalize the previous word's syllables
     project.value.lyrics = finalizePendingSyllableTiming(project.value.lyrics, prevLineIndex, prevWordIndex)
-  }
-  else if (!actuallyMoved && project.value) {
+  } else if (!actuallyMoved && project.value) {
     // We didn't move (reached the end), so finalize the current word's syllables
     const currentWord = project.value.lyrics[prevLineIndex]?.words?.[prevWordIndex]
     if (currentWord && currentWord.startTime !== undefined && currentWord.syllables && currentWord.syllables.length > 0) {
@@ -687,8 +723,7 @@ const loadProject = async (projectId: string) => {
     currentWordIndex.value = 0
 
     loading.value = false
-  }
-  catch (error) {
+  } catch (error) {
     console.error('Error loading project:', error)
     alert(`⚠️ Error loading project: ${error}. Redirecting to the compose page.`)
     router.push('/compose')
@@ -725,8 +760,7 @@ const loadProjectAudio = async (proj: KaraokeProject): Promise<boolean> => {
         }
         proj.audioFile = audioFile
         console.log('✅ Audio file retrieved successfully')
-      }
-      else {
+      } else {
         console.error('Failed to retrieve audio file')
         return false
       }
@@ -743,9 +777,7 @@ const loadProjectAudio = async (proj: KaraokeProject): Promise<boolean> => {
 
         if (success) {
           const state = audioService.getPlaybackState()
-          playbackState.value = {
-            ...state
-          }
+          playbackState.value = { ...state }
 
           // Store the detected duration in the project for future use
           if (!proj.audioFile.duration || proj.audioFile.duration !== state.duration) {
@@ -769,16 +801,14 @@ const loadProjectAudio = async (proj: KaraokeProject): Promise<boolean> => {
           }
           console.log('✅ Audio loaded successfully')
           break
-        }
-        else {
+        } else {
           retries--
           if (retries > 0) {
             console.warn(`Audio loading failed, retrying... (${retries} attempts left)`)
             await new Promise(resolve => setTimeout(resolve, 1000)) // Wait 1 second
           }
         }
-      }
-      catch (loadError) {
+      } catch (loadError) {
         console.error('Audio loading attempt failed:', loadError)
         retries--
         if (retries > 0) {
@@ -793,8 +823,7 @@ const loadProjectAudio = async (proj: KaraokeProject): Promise<boolean> => {
     }
 
     return true
-  }
-  catch (error) {
+  } catch (error) {
     console.error('Error loading project audio:', error)
     return false
   }
@@ -824,8 +853,7 @@ const saveProjectsToStorage = () => {
       localStorage.setItem('karaokeProjects', JSON.stringify(projects))
       console.log('💾 Project saved to storage')
     }
-  }
-  catch (error) {
+  } catch (error) {
     console.error('Error saving project:', error)
   }
 }
@@ -868,8 +896,7 @@ const setupAudioListeners = () => {
         wordIndex: position.wordIndex,
         syllableIndex: position.syllableIndex,
       }
-    }
-    else if (project.value && playbackState.value.isPlaying && isTimingMode.value) {
+    } else if (project.value && playbackState.value.isPlaying && isTimingMode.value) {
       // In timing mode, only update the playback state for preview purposes
       // but don't interfere with manual currentLine/currentWord navigation
       const position = getCurrentPosition(project.value.lyrics, time)
@@ -888,9 +915,7 @@ const setupAudioListeners = () => {
   })
 
   audioService.onPlaybackStateChange(state => {
-    playbackState.value = {
-      ...state
-    }
+    playbackState.value = { ...state }
   })
 }
 
@@ -909,13 +934,11 @@ const setupGlobalHotkeys = () => {
           if (playbackState.value.isPlaying) {
             // Only assign timing when audio is actually playing
             assignTiming()
-          }
-          else {
+          } else {
             // Start playback if not playing
             togglePlayPause()
           }
-        }
-        else {
+        } else {
           togglePlayPause()
         }
         break
@@ -1005,8 +1028,7 @@ const setupGlobalHotkeys = () => {
         event.preventDefault()
         if (showHotkeyModal.value) {
           closeHotkeyModal()
-        }
-        else if (isTimingMode.value) {
+        } else if (isTimingMode.value) {
           // Finalize any pending syllables before exiting timing mode
           finalizeCurrentWordSyllables()
           // Exit timing mode
@@ -1028,8 +1050,7 @@ onMounted(async () => {
   const projectId = route.params.projectId as string
   if (projectId) {
     await loadProject(projectId)
-  }
-  else {
+  } else {
     loading.value = false
   }
 

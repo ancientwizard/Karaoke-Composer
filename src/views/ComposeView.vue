@@ -273,6 +273,7 @@ const router = useRouter()
 const showCreateProject = ref(false)
 const showStorageInfo = ref(false)
 const projects = ref<KaraokeProject[]>([])
+const isMounted = ref(true)
 
 // Developer toolbar
 const showDevToolbar = ref(true)
@@ -351,16 +352,14 @@ const testIndexedDB = async () => {
 
   if (result.available) {
     message += '✅ IndexedDB is supported by your browser\n'
-  }
-  else {
+  } else {
     message += '❌ IndexedDB is NOT supported by your browser\n'
   }
 
   if (result.canStore) {
     message += '✅ Can store files in IndexedDB\n'
     message += '🎵 Your 4-5MB audio files will work perfectly!'
-  }
-  else {
+  } else {
     message += '❌ Cannot store files in IndexedDB\n'
     if (result.error) {
       message += `Error: ${result.error}\n`
@@ -461,18 +460,21 @@ const createProject = async () => {
     closeCreateProject()
     console.log('Project created successfully:', project.name)
 
-    // Navigate to the timing editor
-    router.push(`/timing/${projectId}`)
-  }
-  catch (error) {
+    // Navigate to the timing editor only if component is still mounted
+    if (isMounted.value) {
+      router.push(`/timing/${projectId}`)
+    }
+  } catch (error) {
     console.error('Error creating project:', error)
     alert('Error creating project: ' + error)
   }
 }
 
 const openProject = async (project: KaraokeProject) => {
-  // Navigate to the timing editor
-  router.push(`/timing/${project.id}`)
+  // Navigate to the timing editor only if component is still mounted
+  if (isMounted.value) {
+    router.push(`/timing/${project.id}`)
+  }
 }
 
 const deleteProject = async (project: KaraokeProject) => {
@@ -525,8 +527,7 @@ const loadProjectsFromStorage = () => {
         console.log('   Badge will show:', getStorageBadgeText(project.audioFile?.storedData?.storageType || 'unknown'))
         console.log('---')
       })
-    }
-    catch (error) {
+    } catch (error) {
       console.error('Error loading projects:', error)
     }
   }
@@ -555,8 +556,7 @@ const saveProjectsToStorage = () => {
         duration: project.audioFile.duration,
       })
     })
-  }
-  catch (error) {
+  } catch (error) {
     console.error('Error saving projects:', error)
   }
 }
@@ -593,8 +593,7 @@ const fixStorageBadges = () => {
   if (fixedCount > 0) {
     saveProjectsToStorage()
     alert(`Fixed storage badges for ${fixedCount} project(s). Refresh the page to see the changes.`)
-  }
-  else {
+  } else {
     alert('All projects already have proper storage data.')
   }
 }
@@ -619,8 +618,7 @@ const handleKeyDown = (event: KeyboardEvent) => {
     if (showCreateProject.value) {
       event.preventDefault()
       closeCreateProject()
-    }
-    else if (showStorageInfo.value) {
+    } else if (showStorageInfo.value) {
       event.preventDefault()
       closeStorageInfo()
     }
@@ -640,8 +638,7 @@ onMounted(async () => {
   // Check IndexedDB availability
   if (window.indexedDB) {
     console.log('✅ IndexedDB is available in this browser')
-  }
-  else {
+  } else {
     console.warn('❌ IndexedDB is NOT available in this browser')
   }
 
@@ -652,8 +649,7 @@ onMounted(async () => {
   // Log storage method being used
   if (info.method === 'indexeddb') {
     console.log('🗄️ Using IndexedDB - perfect for 4-5MB files!')
-  }
-  else {
+  } else {
     console.log('📦 Using fallback storage method:', info.method)
   }
 
@@ -662,6 +658,9 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  // Mark component as unmounted to prevent router navigation
+  isMounted.value = false
+
   // Cleanup ESC key handler
   window.removeEventListener('keydown', handleKeyDown)
 })

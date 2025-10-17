@@ -37,14 +37,19 @@ MUSICAL ASSUMPTIONS:
 <template>
   <div class="word-timing-editor">
     <!-- Main timeline track with horizontal reference line -->
-    <div class="timeline-track" ref="timelineTrack">
+    <div class="timeline-track" :class="{
+      'with-background': showBackground,
+      'with-border': showBorder
+    }" ref="timelineTrack">
       <!-- 1px black horizontal line (the "track" for word "train cars") -->
       <div class="timeline-baseline"></div>
 
       <!-- Word boxes positioned as train cars on the track -->
-      <div v-for="word in visibleWords" :key="word.id" class="word-car"
-        :class="{ selected: selectedWordId === word.id, dragging: isDragging && draggedWordId === word.id }"
-        :style="getWordCarStyle(word)" @mousedown="handleWordMouseDown(word, $event)">
+      <div v-for="word in visibleWords" :key="word.id" class="word-car" :class="{
+        selected: selectedWordId === word.id,
+        dragging: isDragging && draggedWordId === word.id,
+        untimed: word.startTime === 0 && word.endTime === 0
+      }" :style="getWordCarStyle(word)" @mousedown="handleWordMouseDown(word, $event)">
         <!-- Word text -->
         <div class="word-text">{{ word.text }}</div>
 
@@ -113,7 +118,7 @@ MUSICAL ASSUMPTIONS:
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 
 interface Syllable {
   text: string
@@ -137,12 +142,24 @@ interface Props {
   viewStart?: number
   viewEnd?: number
   showDebug?: boolean
+  showBackground?: boolean
+  showBorder?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   viewStart: 0,
   viewEnd: undefined,
   showDebug: false,
+  showBackground: false,
+  showBorder: false,
+})
+
+console.log('🔧 WordTimingEditor props received:', {
+  wordsCount: (props as any).words?.length,
+  duration: (props as any).duration,
+  viewStart: (props as any).viewStart,
+  viewEnd: (props as any).viewEnd,
+  showDebug: (props as any).showDebug
 })
 
 const emit = defineEmits<{
@@ -171,12 +188,47 @@ const pixelsPerSecond = computed(() => trackWidth.value / viewDuration.value)
 // Visible words - more generous filtering to prevent disappearing
 const visibleWords = computed(() => {
   const buffer = 0.1 // Small buffer to keep words visible at edges
-  return props.words.filter(word => {
-    // Exclude words that haven't been assigned timing yet (both startTime and endTime are 0)
-    if (word.startTime === 0 && word.endTime === 0) return false
 
-    return word.endTime >= props.viewStart - buffer && word.startTime <= effectiveViewEnd.value + buffer
+  console.log('👁️ Calculating visibleWords:', {
+    totalWords: props.words.length,
+    viewStart: props.viewStart,
+    viewEnd: effectiveViewEnd.value,
+    duration: props.duration,
+    firstFewWords: props.words.slice(0, 3).map(w => ({
+      text: w.text,
+      startTime: w.startTime,
+      endTime: w.endTime,
+      isUntimed: w.startTime === 0 && w.endTime === 0
+    }))
   })
+
+  const filtered = props.words.filter(word => {
+    // Skip words with no timing (startTime and endTime both 0) - they clutter the interface
+    const isUntimed = word.startTime === 0 && word.endTime === 0
+    if (isUntimed) {
+      console.log('👁️ Skipping untimed word:', word.text)
+      return false // Hide untimed words
+    }
+
+    // For words with timing, check if they're in the visible time range
+    const inRange = word.endTime >= props.viewStart - buffer && word.startTime <= effectiveViewEnd.value + buffer
+    console.log('👁️ Word range check:', {
+      text: word.text,
+      startTime: word.startTime,
+      endTime: word.endTime,
+      inRange,
+      viewStart: props.viewStart,
+      viewEnd: effectiveViewEnd.value
+    })
+    return inRange
+  })
+
+  console.log('👁️ Visible words result:', {
+    visible: filtered.length,
+    words: filtered.map(w => w.text)
+  })
+
+  return filtered
 })
 
 // Convert time to pixels with proper bounds checking
@@ -192,6 +244,21 @@ const pixelsToTime = (pixels: number): number => {
 
 // Get CSS style for word car positioning with bounds checking
 const getWordCarStyle = (word: Word) => {
+  // Special handling for untimed words (both startTime and endTime are 0)
+  if (word.startTime === 0 && word.endTime === 0) {
+    // Position untimed words sequentially at the beginning
+    const untimedWords = props.words.filter(w => w.startTime === 0 && w.endTime === 0)
+    const wordIndex = untimedWords.findIndex(w => w.id === word.id)
+    const wordWidth = Math.max(word.text.length * 8 + 20, 60) // Width based on text length, minimum 60px
+    const leftPosition = wordIndex * (wordWidth + 5) // 5px gap between untimed words
+
+    return {
+      left: `${leftPosition}px`,
+      width: `${wordWidth}px`,
+    }
+  }
+
+  // Normal handling for timed words
   const startPixels = timeToPixels(word.startTime)
   const endPixels = timeToPixels(word.endTime)
   const width = endPixels - startPixels
@@ -213,9 +280,7 @@ const getWordCarStyle = (word: Word) => {
 
 // Get CSS style for syllable divider positioning with bounds checking
 const getSyllableDividerStyle = (word: Word, syllableIndex: number) => {
-  if (!word.syllables || syllableIndex >= word.syllables.length - 1) return {
-    display: 'none'
-  }
+  if (!word.syllables || syllableIndex >= word.syllables.length - 1) return { display: 'none' }
 
   const wordStartPixels = timeToPixels(word.startTime)
   const syllableEndPixels = timeToPixels(word.syllables[syllableIndex].endTime)
@@ -270,11 +335,9 @@ const startDrag = (type: 'move' | 'resize' | 'syllable', word: Word, event: Mous
   // Set drag start time based on operation type
   if (type === 'move') {
     dragStartTime.value = word.startTime
-  }
-  else if (type === 'resize') {
+  } else if (type === 'resize') {
     dragStartTime.value = word.endTime
-  }
-  else if (type === 'syllable' && typeof syllableIndex === 'number' && word.syllables) {
+  } else if (type === 'syllable' && typeof syllableIndex === 'number' && word.syllables) {
     dragStartTime.value = word.syllables[syllableIndex].endTime
     dragSyllableIndex.value = syllableIndex
   }
@@ -307,9 +370,7 @@ const handleMouseMove = (event: MouseEvent) => {
   if (wordIndex === -1) return
 
   const updatedWords = [...props.words]
-  const word = {
-    ...updatedWords[wordIndex]
-  }
+  const word = { ...updatedWords[wordIndex] }
 
   // Get neighboring words for collision detection
   const previousWord = wordIndex > 0 ? props.words[wordIndex - 1] : null
@@ -357,8 +418,7 @@ const handleMouseMove = (event: MouseEvent) => {
         return result
       })
     }
-  }
-  else if (dragType.value === 'resize') {
+  } else if (dragType.value === 'resize') {
     // Resize duration - drag the end time directly
     let newEndTime = Math.max(word.startTime + 0.1, dragStartTime.value + deltaTime)
     let newDuration = newEndTime - word.startTime
@@ -385,8 +445,7 @@ const handleMouseMove = (event: MouseEvent) => {
     if (word.syllables && word.syllables.length > 1) {
       word.syllables = distributeSyllableTiming(word, newDuration, word.syllables.length)
     }
-  }
-  else if (dragType.value === 'syllable') {
+  } else if (dragType.value === 'syllable') {
     // Adjust syllable boundary
     if (word.syllables && dragSyllableIndex.value < word.syllables.length - 1) {
       const newBoundaryTime = Math.max(
@@ -426,9 +485,7 @@ const distributeSyllableTiming = (word: Word, totalDuration: number, syllableCou
   if (!word.syllables || syllableCount <= 1) return word.syllables || []
 
   // Create timing pattern: first syllables get progressively less time, last gets more
-  const weights = Array.from({
-    length: syllableCount
-  }, (_, i) => {
+  const weights = Array.from({ length: syllableCount }, (_, i) => {
     if (i === syllableCount - 1) return 2.0 // Last syllable gets double weight
     return 0.8 + i * 0.1 // Earlier syllables get less, but increase slightly
   })
@@ -454,20 +511,56 @@ const distributeSyllableTiming = (word: Word, totalDuration: number, syllableCou
 }
 
 // Setup timeline width on mount
-onMounted(() => {
-  if (timelineTrack.value) {
-    const updateTrackWidth = () => {
-      trackWidth.value = timelineTrack.value?.clientWidth || 800
+onMounted(async () => {
+  await nextTick() // Wait for DOM to be fully rendered
+
+  const updateTrackWidth = () => {
+    if (timelineTrack.value) {
+      const newWidth = timelineTrack.value.clientWidth
+      if (newWidth > 0) {
+        trackWidth.value = newWidth
+        console.log('📏 Track width updated:', newWidth)
+      }
     }
-
-    updateTrackWidth()
-    window.addEventListener('resize', updateTrackWidth)
-
-    onUnmounted(() => {
-      window.removeEventListener('resize', updateTrackWidth)
-    })
   }
+
+  updateTrackWidth()
+
+  // Also update after another tick in case the parent container is still sizing
+  setTimeout(updateTrackWidth, 100)
+
+  window.addEventListener('resize', updateTrackWidth)
+
+  onUnmounted(() => {
+    window.removeEventListener('resize', updateTrackWidth)
+  })
 })
+
+// Watch for changes that might affect layout
+watch([() => props.viewStart, () => props.viewEnd, () => props.duration], (newValues, oldValues) => {
+  console.log('🔄 WordTimingEditor props changed:', {
+    viewStart: {
+      old: oldValues?.[0], new: newValues[0]
+    },
+    viewEnd: {
+      old: oldValues?.[1], new: newValues[1]
+    },
+    duration: {
+      old: oldValues?.[2], new: newValues[2]
+    }
+  })
+
+  // Update track width when view parameters change
+  nextTick(() => {
+    if (timelineTrack.value) {
+      const newWidth = timelineTrack.value.clientWidth
+      if (newWidth > 0 && newWidth !== trackWidth.value) {
+        trackWidth.value = newWidth
+        console.log('📏 Track width updated (via watcher):', newWidth)
+      }
+    }
+  })
+}, { flush: 'post' })
 
 // Cleanup on unmount
 onUnmounted(() => {
@@ -479,17 +572,26 @@ onUnmounted(() => {
 <style scoped>
 .word-timing-editor {
   width: 100%;
-  margin: 20px 0;
+  margin: 5px 0px;
+  padding: 0px 4px
 }
 
 .timeline-track {
   position: relative;
-  height: 60px;
+  height: 40px;
+  overflow: hidden;
+}
+
+/* Optional background styling */
+.timeline-track.with-background {
   background: linear-gradient(to bottom, #fafafa 0%, #f0f0f0 100%);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Optional border styling */
+.timeline-track.with-border {
   border: 1px solid #c4c4c4;
   border-radius: 6px;
-  overflow: hidden;
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 /* The 1px black horizontal line (train track) */
@@ -499,7 +601,7 @@ onUnmounted(() => {
   left: 0;
   right: 0;
   height: 1px;
-  background: #000;
+  background: #bbbbbb;
   z-index: 1;
 }
 
@@ -531,16 +633,30 @@ onUnmounted(() => {
   text-shadow: 0 1px 2px rgba(255, 255, 255, 1);
 }
 
+.word-car.untimed {
+  background: #fff8e1;
+  border: 2px dashed #ff8f00;
+  border-color: #ff8f00;
+  opacity: 0.8;
+}
+
+.word-car.untimed:hover {
+  background: #fff3e0;
+  opacity: 1;
+  border-style: solid;
+}
+
 .word-car.selected {
   background: #fff3e0;
   border-color: #f57c00;
-  box-shadow: 0 0 0 1px rgba(245, 124, 0, 0.3);
+  box-shadow: 0 0 0 2px rgba(245, 124, 0, 0.4);
   z-index: 20;
 }
 
 .word-car.selected .word-text {
-  color: #e65100;
-  text-shadow: 0 1px 2px rgba(255, 255, 255, 1);
+  color: #bf360c;
+  font-weight: 600;
+  text-shadow: none;
 }
 
 .word-car.dragging {
