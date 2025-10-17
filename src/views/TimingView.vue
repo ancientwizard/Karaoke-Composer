@@ -27,8 +27,15 @@
             <!-- Help & Controls Body -->
             <div class="card-body">
               <!-- Timing Controls -->
-              <TimingControlsPanel :is-timing-mode="isTimingMode" @toggle-timing-mode="toggleTimingMode"
-                @clear-timing="clearCurrentLineTiming" />
+              <TimingControlsPanel
+                :is-timing-mode="isTimingMode"
+                :timed-words="timingStats.timedWords"
+                :total-words="timingStats.totalWords"
+                :song-analysis="songAnalysis"
+                @toggle-timing-mode="toggleTimingMode"
+                @clear-timing="clearCurrentLineTiming"
+                @apply-musical-timing="applyMusicalTiming"
+                @reset-syllable-timing="resetSyllableTiming" />
 
               <!-- Progress Stats -->
               <ProgressStats :timing-stats="timingStats" />
@@ -186,6 +193,7 @@ import type { KaraokeProject, LyricLine, PlaybackState, WaveformData } from '@/t
 import { audioService } from '@/services/audioService'
 import { audioStorageService } from '@/services/audioStorageService'
 import { assignWordTiming, getCurrentPosition, getTimingStats, finalizePendingSyllableTiming, clearTimingFromLine } from '@/utils/lyricsParser'
+import { applyMusicalTimingToSong, resetSongSyllableTiming, type SongAnalysis } from '@/models/MusicalTimingModel'
 import LyricsEditor from '@/components/LyricsEditor.vue'
 import LyricsPreview from '@/components/LyricsPreview.vue'
 import WaveformViewer from '@/components/WaveformViewer.vue'
@@ -208,6 +216,9 @@ const currentLine = ref(0)
 const currentWordIndex = ref(0)
 const isTimingMode = ref(false)
 const waveformData = ref<WaveformData | null>(null)
+
+// Musical timing state
+const songAnalysis = ref<SongAnalysis | null>(null)
 
 // View window state (synchronized with WaveformViewer)
 const viewWindowStart = ref(0) // in seconds
@@ -291,7 +302,7 @@ const timingEditorWords = computed(() => {
         text: word.word,
         startTime: (word.startTime || 0) / 1000, // Convert milliseconds to seconds
         endTime: (word.endTime || word.startTime || 0) / 1000, // Convert milliseconds to seconds
-        syllables: word.syllables?.map((syllable, syllableIndex) => ({
+        syllables: word.syllables?.map((syllable) => ({
           text: syllable.syllable,
           startTime: (syllable.startTime || 0) / 1000, // Convert milliseconds to seconds
           endTime: (syllable.endTime || syllable.startTime || 0) / 1000, // Convert milliseconds to seconds
@@ -1042,6 +1053,51 @@ const setupGlobalHotkeys = () => {
 
   return () => {
     window.removeEventListener('keydown', handleKeyDown)
+  }
+}
+
+// Musical Timing Methods
+const applyMusicalTiming = () => {
+  if (!project.value?.lyrics) {
+    console.log('❌ Musical timing: No project or lyrics available')
+    return
+  }
+
+  console.log('🎵 Applying musical timing to song...')
+
+  try {
+    // Apply musical timing to the entire song (modifies lyrics in-place)
+    const analysis = applyMusicalTimingToSong(project.value.lyrics)
+
+    // Update songAnalysis with the returned analysis
+    songAnalysis.value = analysis
+
+    console.log('✅ Musical timing applied successfully', analysis)
+
+  } catch (error) {
+    console.error('❌ Error applying musical timing:', error)
+  }
+}
+
+const resetSyllableTiming = () => {
+  if (!project.value?.lyrics) {
+    console.log('❌ Reset timing: No project or lyrics available')
+    return
+  }
+
+  console.log('🔄 Resetting all syllable timing...')
+
+  try {
+    // Reset all syllable timing in the song
+    resetSongSyllableTiming(project.value.lyrics)
+
+    // Clear song analysis
+    songAnalysis.value = null
+
+    console.log('✅ Syllable timing reset successfully')
+
+  } catch (error) {
+    console.error('❌ Error resetting syllable timing:', error)
   }
 }
 

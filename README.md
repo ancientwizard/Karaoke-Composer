@@ -14,10 +14,27 @@ A modern Vue 3 application for creating amazing karaoke experiences! Built with 
 1. **Install dependencies:**
 
 ```bash
-npm install
-```
+npm instal## 📝 Next Steps
 
-2. **Start development server:**
+1. **Install dependencies** with `npm install`
+2. **Start the dev server** with `npm run dev`
+3. **Run the test suite** with `npm test` to see musical timing in action
+4. **Begin building your karaoke features!**
+
+### Available Advanced Features:
+
+- ✅ **Audio playback integration** - Implemented with timing controls
+- ✅ **Lyrics synchronization** - Real-time syllable-level highlighting
+- ✅ **Musical timing intelligence** - Beat-aware distribution with rest detection
+- ✅ **Advanced timing workflow** - Spacebar timing + musical enhancement
+
+### Suggested Features to Add:
+
+- User scoring system
+- Playlist management
+- Social sharing features
+- Audio effects and pitch control
+- Recording and playback of performancestart development server:**
 
 ```bash
 npm run dev
@@ -37,6 +54,10 @@ npm run dev
 | `npm run test:watch`    | Run tests in watch mode                  |
 | `npm run test:coverage` | Run tests with coverage report           |
 | `npm run test:e2e`      | Open Cypress for e2e testing             |
+| `npm run debug`         | Run TypeScript debug scripts with tsx    |
+| `npm run debug:218ms`   | Debug the 218ms syllable timing issue    |
+| `npm run debug:multiple-words` | Debug multiple word timing behavior |
+| `npm run debug:syllables` | Debug syllable detection in unfinalized words |
 | `npm run lint`          | Lint and fix code with ESLint            |
 | `npm run type-check`    | Check TypeScript types                   |
 
@@ -73,12 +94,27 @@ src/
 
 ## 🎵 Features
 
+### Core Karaoke Features
 - 🎤 **Interactive Karaoke Interface** - User-friendly karaoke experience
 - 🎵 **Song Library** - Browse and search through songs
 - ⭐ **Favorites Management** - Save your favorite songs
 - 📱 **Responsive Design** - Works on all devices
 - 🎨 **Modern UI** - Clean, attractive interface with Bootstrap
 - ⚡ **Fast Performance** - Built with Vite for optimal speed
+
+### Advanced Timing Features
+- ⏱️ **Real-time Word Timing** - Spacebar-driven word timing workflow
+- 🎼 **Musical Intelligence** - Beat-aware syllable distribution with rest detection
+- 🎯 **Accurate Highlighting** - Precise syllable-level karaoke highlighting
+- 🎵 **Musical Patterns** - Uses 8th notes, quarter notes, half notes (not arbitrary spacing)
+- 🧠 **BPM Learning** - Adapts to song patterns for better timing estimates
+- 🔄 **Reset & Refine** - Easy syllable timing reset and reapplication
+
+### Technical Highlights
+- **ES Module Architecture** - Modern JavaScript module system
+- **TypeScript Integration** - Full type safety across the codebase
+- **Comprehensive Testing** - Jest test suite with musical timing validation
+- **Vue 3 Composition API** - Reactive, performant component architecture
 
 ## 🔧 Development
 
@@ -118,19 +154,132 @@ The production build will be output to the `dist/` directory.
 
 ## 🧪 Testing
 
+### Test Suite Overview
+
+This project includes a comprehensive test suite covering:
+
+- **🎵 Musical Timing Engine** - Beat-aware syllable distribution with rest detection
+- **⏱️ Karaoke Timing Engine** - Accurate syllable highlighting and word progression
+- **🔧 Integration Tests** - End-to-end timing functionality
+- **📊 Edge Case Coverage** - Multiple words, syllable detection, and timing accuracy
+
+### Running Tests
+
 ```bash
 # Run all tests
 npm run test
 
-# Run tests in watch mode
+# Run tests in watch mode (for development)
 npm run test:watch
 
 # Generate coverage report
 npm run test:coverage
 
+# Run specific test patterns
+npm test -- --testPathPattern=musicalTiming
+npm test -- --testPathPattern=karaokeEngine
+
 # Run e2e tests
 npm run test:e2e
 ```
+
+### Test Categories
+
+#### Musical Timing Tests (`musicalTimingDemo.test.ts`)
+Tests the beat-aware timing system that addresses "space-filling" issues:
+
+- ✅ **Rest Detection** - Identifies natural pauses from punctuation and timing gaps
+- ✅ **Beat Patterns** - Uses 8th notes, quarter notes, half notes instead of arbitrary divisions
+- ✅ **BPM Learning** - Adapts to user timing patterns for better estimates
+- ✅ **Space Management** - Reserves time for musical breathing/phrasing
+
+#### Core Engine Tests (`karaokeTimingEngine.test.ts`)
+Tests the fundamental timing engine:
+
+- ✅ **Syllable Detection** - Accurate word-to-syllable breakdown
+- ✅ **Current Position** - Real-time highlighting during playback
+- ✅ **Word Progression** - Smooth transitions between words
+- ✅ **Integration** - Vue component integration
+
+#### Specialized Tests
+- `goldHighlightingStability.test.ts` - UI highlighting accuracy
+
+## 🔧 Debug Scripts
+
+For visual debugging and analysis, this project includes dedicated debug scripts that provide detailed console output. These are **separate from tests** to keep test output clean while providing rich debugging information.
+
+### Available Debug Scripts
+
+```bash
+# Debug the 218ms syllable timing boundary issue
+npm run debug:218ms
+
+# Debug multiple word timing behavior
+npm run debug:multiple-words
+
+# Debug syllable detection in current (unfinalized) words
+npm run debug:syllables
+
+# Run any debug script directly with tsx
+npm run debug src/debug/your-debug-file.ts
+```
+
+### Debug Output Example
+
+```
+🔧 DEBUG: Testing the 218ms boundary issue
+[     0ms] WORD_ASSIGNED        L: 0 W: 0 S:-1 Happy
+[     0ms] SYLLABLE_TIMED       L:-1 W:-1 S: 0 Hap (207.4ms)
+[   207ms] SYLLABLE_TIMED       L:-1 W:-1 S: 1 py (592.6ms)
+
+🔧 DEBUG: Happy syllable timing:
+  0: "Hap" -> 0ms to 207.4074074074074ms
+  1: "py" -> 207.4074074074074ms to 800ms
+
+🔧 DEBUG: Position tests:
+  218ms: L0W0S1 (active: true)
+
+🔧 DEBUG: Focus on 218ms:
+218ms position: L0W0S1 (expected: L0W0S1)
+Is this correct? YES
+```
+
+### Creating New Debug Scripts
+
+Debug scripts are located in `src/debug/` and can be simple TypeScript files with console output. They're perfect for:
+
+- **Timing Analysis** - Detailed syllable timing investigations
+- **Edge Case Testing** - Specific scenarios that need visual verification
+- **Development Debugging** - Quick iteration on timing logic
+- **Performance Analysis** - Timing engine behavior analysis
+
+### Test Configuration
+
+The project uses **Jest** with ES Module support and TypeScript:
+
+```javascript
+// jest.config.js highlights
+{
+  preset: "ts-jest/presets/default-esm",
+  testEnvironment: "jsdom",
+  moduleNameMapper: { "^@/(.*)$": "<rootDir>/src/$1" },
+  extensionsToTreatAsEsm: [".ts"]
+}
+```
+
+### Coverage Reports
+
+Generate detailed coverage reports to see test coverage across the codebase:
+
+```bash
+npm run test:coverage
+```
+
+Reports are generated in the `coverage/` directory with:
+- Line coverage
+- Branch coverage
+- Function coverage
+- Statement coverage
 
 ## � Development Guidelines
 

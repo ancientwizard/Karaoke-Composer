@@ -1,5 +1,6 @@
 // Utility functions for parsing lyrics with syllable markers
 import type { LyricLine, WordTiming, SyllableTiming, LyricsMetadata } from '@/types/karaoke'
+import { KaraokeTimingEngine } from '@/models/KaraokeTimingEngine'
 
 /**
  * Parse a line of text with syllable markers (/) into structured word/syllable data
@@ -47,8 +48,7 @@ export function lyricLineToText(lyricLine: LyricLine): string {
     .map(word => {
       if (word.syllables.length <= 1) {
         return word.word
-      }
-      else {
+      } else {
         return word.syllables.map(syl => syl.syllable).join('/')
       }
     })
@@ -70,6 +70,7 @@ export function parseLyricsText(lyricsText: string): LyricLine[] {
 
 /**
  * Find the current word/syllable based on playback time
+ * Uses our improved KaraokeTimingEngine for accurate detection
  */
 export function getCurrentPosition(
   lyrics: LyricLine[],
@@ -82,71 +83,38 @@ export function getCurrentPosition(
   word?: WordTiming
   syllable?: SyllableTiming
 } {
-  for (let lineIndex = 0; lineIndex < lyrics.length; lineIndex++) {
-    const line = lyrics[lineIndex]
+  // Use our improved timing engine for position detection
+  const engine = new KaraokeTimingEngine()
+  engine.loadLyrics(lyrics)
 
-    // Check if we're within this line's timeframe
-    if (line.startTime !== undefined && line.endTime !== undefined) {
-      if (currentTime >= line.startTime && currentTime <= line.endTime) {
-        // Find current word within the line
-        for (let wordIndex = 0; wordIndex < line.words.length; wordIndex++) {
-          const word = line.words[wordIndex]
+  const position = engine.getCurrentPosition(currentTime)
 
-          if (word.startTime !== undefined && word.endTime !== undefined) {
-            if (currentTime >= word.startTime && currentTime <= word.endTime) {
-              // Find current syllable within the word
-              for (let syllableIndex = 0; syllableIndex < word.syllables.length; syllableIndex++) {
-                const syllable = word.syllables[syllableIndex]
+  // Return compatible format with additional line/word/syllable objects
+  const result = {
+    lineIndex: position.lineIndex,
+    wordIndex: position.wordIndex,
+    syllableIndex: position.syllableIndex,
+    line: undefined as LyricLine | undefined,
+    word: undefined as WordTiming | undefined,
+    syllable: undefined as SyllableTiming | undefined
+  }
 
-                if (syllable.startTime !== undefined && syllable.endTime !== undefined) {
-                  if (currentTime >= syllable.startTime && currentTime <= syllable.endTime) {
-                    return {
-                      lineIndex,
-                      wordIndex,
-                      syllableIndex,
-                      line,
-                      word,
-                      syllable,
-                    }
-                  }
-                }
-              }
+  // Add the actual objects if position is valid and active
+  if (position.isActive && position.lineIndex < lyrics.length) {
+    const line = lyrics[position.lineIndex]
+    result.line = line
 
-              // If no syllable timing found, return word timing
-              return {
-                lineIndex,
-                wordIndex,
-                syllableIndex: 0,
-                line,
-                word,
-                syllable: word.syllables[0],
-              }
-            }
-          }
-        }
+    if (position.wordIndex < line.words.length) {
+      const word = line.words[position.wordIndex]
+      result.word = word
 
-        // If no word timing found, return line timing
-        return {
-          lineIndex,
-          wordIndex: 0,
-          syllableIndex: 0,
-          line,
-          word: line.words[0],
-          syllable: line.words[0]?.syllables[0],
-        }
+      if (position.syllableIndex < word.syllables.length) {
+        result.syllable = word.syllables[position.syllableIndex]
       }
     }
   }
 
-  // No timing found, return first position
-  return {
-    lineIndex: 0,
-    wordIndex: 0,
-    syllableIndex: 0,
-    line: lyrics[0],
-    word: lyrics[0]?.words[0],
-    syllable: lyrics[0]?.words[0]?.syllables[0],
-  }
+  return result
 }
 
 /**
@@ -185,8 +153,7 @@ export function assignWordTiming(
         const actualPrevDuration = startTime - prevWord.startTime
         distributeSyllableTiming(prevWord, prevWord.startTime, actualPrevDuration)
       }
-    }
-    else if (lineIndex > 0) {
+    } else if (lineIndex > 0) {
       // Check previous line's last word
       const prevLine = updatedLyrics[lineIndex - 1]
       if (prevLine && prevLine.words.length > 0) {
@@ -216,8 +183,7 @@ function distributeSyllableTiming(word: WordTiming, wordStartTime: number, actua
       word.syllables[0].endTime = wordStartTime + actualDuration
       word.syllables[0].duration = actualDuration
     }
-  }
-  else {
+  } else {
     // Multiple syllables - distribute evenly for now
     // TODO: Could be enhanced with syllable-length-based weighting
     const syllableDuration = actualDuration / word.syllables.length
@@ -446,27 +412,22 @@ export function parseLyricsWithMetadata(lyricsText: string): {
         text: line,
         words: [],
         type: metadataInfo.type,
-        metadata: {
-          [metadataInfo.type]: metadataInfo.value
-        }
+        metadata: { [metadataInfo.type]: metadataInfo.value }
       }
 
       // Store in metadata object for easy access
       if (metadataInfo.type === 'title') {
         metadata.title = metadataInfo.value
-      }
-      else if (metadataInfo.type === 'author') {
+      } else if (metadataInfo.type === 'author') {
         metadata.author = metadataInfo.value
-      }
-      else if (metadataInfo.type === 'caption') {
+      } else if (metadataInfo.type === 'caption') {
         if (!metadata.captions) metadata.captions = []
         metadata.captions.push(metadataInfo.value)
       }
 
       lyrics.push(metadataLine)
       lyricsLineNumber++
-    }
-    else {
+    } else {
       // Handle regular lyrics lines
       const lyricLine = parseLyricsLine(line, lyricsLineNumber, `line-${lyricsLineNumber}`)
       lyricLine.type = 'lyrics'

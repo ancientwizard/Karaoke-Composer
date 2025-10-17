@@ -97,6 +97,58 @@
             </div>
           </div>
 
+          <!-- Musical Timing Controls -->
+          <div class="row mb-3">
+            <div class="col-md-4">
+              <button
+                class="btn btn-outline-success w-100"
+                @click="applyMusicalTiming"
+                :disabled="!hasTimedWords"
+                title="Apply musical intelligence to syllable timing"
+              >
+                <i class="bi bi-music-note"></i>
+                Musical Timing
+              </button>
+            </div>
+            <div class="col-md-4">
+              <button
+                class="btn btn-outline-secondary w-100"
+                @click="resetSyllableTiming"
+                :disabled="!hasTimedWords"
+                title="Reset all syllable timing to start over"
+              >
+                <i class="bi bi-arrow-clockwise"></i>
+                Reset Syllables
+              </button>
+            </div>
+            <div class="col-md-4">
+              <button
+                class="btn btn-outline-info w-100"
+                @click="showTimingAnalysis = !showTimingAnalysis"
+                :disabled="!hasTimedWords"
+                title="Show song timing analysis"
+              >
+                <i class="bi bi-graph-up"></i>
+                Analysis
+              </button>
+            </div>
+          </div>
+
+          <!-- Timing Analysis Panel -->
+          <div v-if="showTimingAnalysis && songAnalysis" class="alert alert-info">
+            <h6><i class="bi bi-graph-up"></i> Song Analysis</h6>
+            <div class="row small">
+              <div class="col-6">
+                <strong>BPM:</strong> {{ songAnalysis.estimatedBPM.toFixed(0) }}<br>
+                <strong>Words:</strong> {{ songAnalysis.totalWords }}
+              </div>
+              <div class="col-6">
+                <strong>Rests:</strong> {{ songAnalysis.detectedRests }}<br>
+                <strong>Quality:</strong> {{ songAnalysis.timingQuality }}
+              </div>
+            </div>
+          </div>
+
           <!-- Timing Mode Instructions -->
           <div v-if="isTimingMode" class="timing-instructions alert alert-warning">
             <div class="d-flex align-items-center mb-2">
@@ -207,6 +259,8 @@ const emit = defineEmits<{
   'clear-timing': []
   'playback-rate': [rate: number]
   volume: [volume: number]
+  'apply-musical-timing': []
+  'reset-syllable-timing': []
 }>()
 
 // Reactive state
@@ -296,6 +350,33 @@ const formatTime = (timeMs: number): string => {
   const minutes = Math.floor(seconds / 60)
   const remainingSeconds = seconds % 60
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
+}
+
+// Musical Timing - reactive state
+const showTimingAnalysis = ref(false)
+const songAnalysis = ref<{
+  estimatedBPM: number
+  totalWords: number
+  detectedRests: number
+  timingQuality: string
+} | null>(null)
+
+// Musical Timing computed properties
+const hasTimedWords = computed(() => {
+  return (props.timedWords || 0) > 0
+})
+
+// Musical Timing methods
+const applyMusicalTiming = () => {
+  emit('apply-musical-timing')
+}
+
+const resetSyllableTiming = () => {
+  emit('reset-syllable-timing')
+}
+
+const updateSongAnalysis = (analysis: any) => {
+  songAnalysis.value = analysis
 }
 
 // Keyboard shortcuts
