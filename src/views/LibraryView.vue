@@ -62,9 +62,15 @@ interface Song {
 const searchQuery = ref('')
 const songs = ref<Song[]>([
   // Sample data - replace with actual API calls
-  { id: 1, title: "Don't Stop Believin'", artist: 'Journey', genre: 'Rock', duration: '4:11' },
-  { id: 2, title: 'Bohemian Rhapsody', artist: 'Queen', genre: 'Rock', duration: '5:55' },
-  { id: 3, title: 'Sweet Caroline', artist: 'Neil Diamond', genre: 'Pop', duration: '3:21' },
+  {
+ id: 1, title: "Don't Stop Believin'", artist: 'Journey', genre: 'Rock', duration: '4:11' 
+},
+  {
+ id: 2, title: 'Bohemian Rhapsody', artist: 'Queen', genre: 'Rock', duration: '5:55' 
+},
+  {
+ id: 3, title: 'Sweet Caroline', artist: 'Neil Diamond', genre: 'Pop', duration: '3:21' 
+},
 ])
 
 // Computed properties

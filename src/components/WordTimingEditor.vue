@@ -60,10 +60,12 @@ MUSICAL ASSUMPTIONS:
           @mousedown.stop="startDrag('resize', word, $event)"></div>
 
         <!-- Syllable dividers for multi-syllable words -->
-        <div v-if="word.syllables && word.syllables.length > 1" v-for="(syllable, index) in word.syllables.slice(0, -1)"
-          :key="`syllable-${index}`" class="hotspot hotspot-syllable-divider"
-          :style="getSyllableDividerStyle(word, index)" :title="`Adjust syllable ${index + 1}/${index + 2} boundary`"
-          @mousedown.stop="startDrag('syllable', word, $event, index)"></div>
+        <template v-if="word.syllables && word.syllables.length > 1">
+          <div v-for="(syllable, index) in word.syllables.slice(0, -1)" :key="`syllable-${index}`"
+            class="hotspot hotspot-syllable-divider" :style="getSyllableDividerStyle(word, index)"
+            :title="`Adjust syllable ${index + 1}/${index + 2} boundary`"
+            @mousedown.stop="startDrag('syllable', word, $event, index)"></div>
+        </template>
       </div>
     </div>
 
@@ -186,9 +188,9 @@ const effectiveViewEnd = computed(() => props.viewEnd || props.duration)
 const viewDuration = computed(() => effectiveViewEnd.value - props.viewStart)
 const pixelsPerSecond = computed(() => trackWidth.value / viewDuration.value)
 
-// Visible words - more generous filtering to prevent disappearing
+// Visible words - Strict to show only word fully within viewport
 const visibleWords = computed(() => {
-  const buffer = 0.1 // Small buffer to keep words visible at edges
+  const buffer = 0.02 // No buffer - words appear/disappear exactly at viewport edges
 
   // console.log('👁️ Calculating visibleWords:', {
   //   totalWords: props.words.length,
@@ -211,16 +213,28 @@ const visibleWords = computed(() => {
       return false // Hide untimed words
     }
 
-    // For words with timing, check if they're in the visible time range
-    const inRange = word.endTime >= props.viewStart - buffer && word.startTime <= effectiveViewEnd.value + buffer
+    // For words with timing, check if they're COMPLETELY within the visible time range
+    // Only show words where BOTH start and end are within the viewport
+    // This prevents visual issues where partial words "stick" at viewport edges
+    const wordStart = word.startTime
+    const wordEnd = word.endTime
+    const viewWindowStart = props.viewStart - buffer
+    const viewWindowEnd = effectiveViewEnd.value + buffer
+
+    // A word is visible only if it's completely contained in the viewport
+    const inRange = wordStart >= viewWindowStart && wordEnd <= viewWindowEnd
+
     // console.log('👁️ Word range check:', {
     //   text: word.text,
-    //   startTime: word.startTime,
-    //   endTime: word.endTime,
+    //   wordStart,
+    //   wordEnd,
+    //   viewWindowStart,
+    //   viewWindowEnd,
     //   inRange,
     //   viewStart: props.viewStart,
     //   viewEnd: effectiveViewEnd.value
     // })
+
     return inRange
   })
 
@@ -480,10 +494,11 @@ const handleMouseMove = (event: MouseEvent) => {
     const resizedWord = setWordDuration(word, newDuration)
     word.endTime = resizedWord.endTime
 
-    // Smart syllable redistribution based on new duration
-    if (word.syllables && word.syllables.length > 1) {
-      word.syllables = distributeSyllableTiming(word, newDuration, word.syllables.length)
-    }
+    // DON'T redistribute syllables - keep them at absolute positions (like test rig)
+    // User has carefully placed s-breaks and they should not move during word resize
+    // if (word.syllables && word.syllables.length > 1) {
+    //   word.syllables = distributeSyllableTiming(word, newDuration, word.syllables.length)
+    // }
   } else if (dragType.value === 'syllable') {
     // Adjust syllable boundary
     if (word.syllables && dragSyllableIndex.value < word.syllables.length - 1) {
@@ -506,7 +521,8 @@ const handleMouseMove = (event: MouseEvent) => {
 
   updatedWords[wordIndex] = validatedWord
 
-  // Validate all words before emitting to catch any other issues
+  // Emit immediately so parent gets syllable changes for s-break drags
+  // Performance is now acceptable with direct syllable updates (no RelativeSyllableTiming recalc)
   const validatedWords = updatedWords.map(validateWordTiming)
   emit('update:words', validatedWords)
 }

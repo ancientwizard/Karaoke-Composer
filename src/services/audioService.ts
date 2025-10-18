@@ -268,12 +268,19 @@ export class AudioService {
       this.stopUpdateTimer()
       this.startUpdateTimer()
     }
-    console.log(`🔄 Fast refresh mode: ${enabled ? 'enabled' : 'disabled'} (${enabled ? '12Hz' : '8Hz'})`)
+    const hz = enabled ? '12Hz' : '8Hz'
+    const interval = enabled ? '~83ms' : '~125ms'
+    console.log(`🔄 Refresh rate: ${hz} (${interval} intervals) - ${enabled ? 'FAST MODE' : 'Normal mode'}`)
   }
 
   // Toggle fast refresh mode for hotkey convenience
   toggleFastMode(): void {
     this.setFastMode(!this.fastMode)
+  }
+
+  // Get current fast mode state
+  getFastMode(): boolean {
+    return this.fastMode
   }
 
   private startUpdateTimer(): void {

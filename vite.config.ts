@@ -7,15 +7,9 @@ import { resolve } from 'path'
 export default defineConfig({
   plugins: [
     vue(),
-    legacy({
-      targets: ['defaults', 'not IE 11'],
-    }),
+    legacy({targets: ['defaults', 'not IE 11'],}),
   ],
-  resolve: {
-    alias: {
-      '@': resolve(__dirname, 'src'),
-    },
-  },
+  resolve: {alias: {'@': resolve(__dirname, 'src'),},},
   server: {
     port: 3000,
     open: true,

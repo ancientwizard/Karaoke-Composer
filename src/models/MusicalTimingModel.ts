@@ -1,11 +1,11 @@
 /**
  * MUSICAL TIMING MODEL - Beat-Aware Syllable Distribution
- * Addresses the user's concern that current timing "takes up all available space"
+ * Addresses the preference to distribute words & syllables musically
  * instead of being musically intelligent about rests and note patterns.
  */
 
-import type { WordTiming, SyllableTiming } from '@/types/karaoke'
-import { TIMING, TimingUtils } from '@/models/TimingConstants'
+import type { WordTiming } from '@/types/karaoke'
+import { TIMING } from '@/models/TimingConstants'
 
 export interface MusicalNote {
   type: 'eighth' | 'quarter' | 'half' | 'whole'

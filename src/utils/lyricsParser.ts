@@ -13,11 +13,11 @@ export function parseLyricsLine(text: string, lineNumber: number, lineId: string
   // Split by spaces to get words
   const wordTexts = text.split(/\s+/).filter(word => word.length > 0)
 
-  wordTexts.forEach((wordText, wordIndex) => {
+  wordTexts.forEach((wordText) => {
     // Split word by "/" to get syllables
     const syllableTexts = wordText.split('/').filter(syl => syl.length > 0)
 
-    const syllables: SyllableTiming[] = syllableTexts.map((syllableText, syllableIndex) => ({
+    const syllables: SyllableTiming[] = syllableTexts.map((syllableText) => ({
       syllable: syllableText,
       // startTime, endTime, duration will be added during timing
     }))
@@ -85,7 +85,7 @@ export function getCurrentPosition(
   syllable?: SyllableTiming
 } {
   // Use our improved timing engine for position detection
-  const engine = new KaraokeTimingEngine()
+  const engine = new KaraokeTimingEngine({ silent: true })
   engine.loadLyrics(lyrics)
 
   const position = engine.getCurrentPosition(currentTime)

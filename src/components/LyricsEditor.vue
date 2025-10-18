@@ -256,14 +256,12 @@ const handleKeydown = (event: KeyboardEvent) => {
     if (event.code === 'Space') {
       event.preventDefault()
       // This will be handled by the parent component
-    }
-    else if (event.code === 'ArrowUp') {
+    } else if (event.code === 'ArrowUp') {
       event.preventDefault()
       if (props.currentLine > 0) {
         emit('line-select', props.currentLine - 1)
       }
-    }
-    else if (event.code === 'ArrowDown') {
+    } else if (event.code === 'ArrowDown') {
       event.preventDefault()
       if (props.currentLine < props.lyrics.length - 1) {
         emit('line-select', props.currentLine + 1)

@@ -1,5 +1,5 @@
 // Jest provides describe, it, expect globally
-import { RelativeSyllableTiming, type RelativeSyllable, type AbsoluteSyllable, type TimedWordData } from '../models/RelativeSyllableTiming'
+import { RelativeSyllableTiming, type AbsoluteSyllable, type TimedWordData } from '../models/RelativeSyllableTiming'
 
 describe('RelativeSyllableTiming', () => {
   const createTestWord = (): TimedWordData => ({
@@ -26,8 +26,8 @@ describe('RelativeSyllableTiming', () => {
       const wordData = timing.getWordData()
 
       expect(wordData.text).toBe('November')
-      expect(wordData.startTime).toBe(1.0)
-      expect(wordData.endTime).toBe(2.0)
+      expect(wordData.startTime).toBe(1000)
+      expect(wordData.endTime).toBe(2000)
       expect(wordData.syllables).toHaveLength(3)
     })
 
@@ -36,14 +36,14 @@ describe('RelativeSyllableTiming', () => {
         id: 'invalid',
         text: 'test',
         startTime: 0,
-        endTime: 1,
+        endTime: 1000,
         syllables: [
           {
-            text: 'te', startOffset: 0.0, duration: 0.3
+            text: 'te', startOffset: 0, duration: 300
           },
           {
-            text: 'st', startOffset: 0.5, duration: 0.5
-          } // Gap at 0.3-0.5
+            text: 'st', startOffset: 500, duration: 500
+          } // Gap at 300-500
         ]
       }
 
@@ -55,14 +55,14 @@ describe('RelativeSyllableTiming', () => {
         id: 'invalid',
         text: 'test',
         startTime: 0,
-        endTime: 1,
+        endTime: 1000,
         syllables: [
           {
-            text: 'te', startOffset: 0.0, duration: 0.3
+            text: 'te', startOffset: 0, duration: 300
           },
           {
-            text: 'st', startOffset: 0.3, duration: 0.3
-          } // Total 0.6, but word is 1.0
+            text: 'st', startOffset: 300, duration: 300
+          } // Total 600, but word is 1000
         ]
       }
 
@@ -89,13 +89,13 @@ describe('RelativeSyllableTiming', () => {
 
       expect(absoluteSyllables).toEqual([
         {
-          text: 'No', startTime: 1.0, endTime: 1.3
+          text: 'No', startTime: 1000, endTime: 1300
         },
         {
-          text: 'vem', startTime: 1.3, endTime: 1.6
+          text: 'vem', startTime: 1300, endTime: 1600
         },
         {
-          text: 'ber', startTime: 1.6, endTime: 2.0
+          text: 'ber', startTime: 1600, endTime: 2000
         }
       ])
     })

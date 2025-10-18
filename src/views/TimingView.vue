@@ -62,15 +62,6 @@
                 :currentLine="currentLine" :currentWord="currentWordIndex"
                 :currentSyllable="isTimingMode ? 0 : playbackState.currentSyllable?.syllableIndex" />
             </div>
-            <!-- Debug info when in timing mode -->
-            <div v-if="isTimingMode" class="col-12 mt-2">
-              <small class="text-muted">
-                🎯 Timing Mode: Line {{ currentLine }}, Word {{ currentWordIndex }}
-                <span v-if="project.lyrics[currentLine]?.words[currentWordIndex]">
-                  ({{ project.lyrics[currentLine].words[currentWordIndex].word }})
-                </span>
-              </small>
-            </div>
           </div>
 
           <!-- Waveform View with Word Timing Editor - Full Width -->
@@ -89,6 +80,22 @@
                     :show-debug="false" @update:words="handleTimingEditorWordsUpdate" @select-word="handleWordSelect" />
                 </template>
               </WaveformViewer>
+            </div>
+          </div>
+
+          <!-- Debug info -->
+          <div class="row mb-3">
+            <div class="col-12">
+              <small class=" text-muted">
+                🎯 {{ isTimingMode ? 'Timing' : 'Playback' }} Mode: Line {{ currentLine }}
+                , Word {{ currentWordIndex + 1 }}
+                <span v-if="project.lyrics[currentLine]?.words[currentWordIndex]">
+                  ({{ project.lyrics[currentLine].words[currentWordIndex].word }})
+                </span>
+                <span class="ms-3" :class="isFastMode ? 'text-success fw-bold' : 'text-muted'">
+                  🔄 {{ isFastMode ? '12Hz FAST' : '8Hz Normal' }}
+                </span>
+              </small>
             </div>
           </div>
         </div>
@@ -253,6 +260,9 @@ const playbackState = ref<PlaybackState>({
   isLoaded: false,
 })
 
+// Fast refresh mode state
+const isFastMode = ref(false)
+
 // Computed properties
 const timingStats = computed(() => {
   if (!project.value) {
@@ -289,14 +299,15 @@ const timingEditorWords = computed(() => {
   const words: { id: string; text: string; startTime: number; endTime: number; syllables?: any[] }[] = []
   let lyricsLineIndex = 0 // Track lyrics-only line index
 
-  project.value.lyrics.forEach((line, originalLineIndex) => {
-    console.log(`🔍 Processing line ${originalLineIndex}:`, {
-      text: line.text,
-      type: line.type,
-      isMetadata: isMetadataLine(line),
-      hasWords: !!line.words,
-      wordCount: line.words?.length || 0
-    })
+  project.value.lyrics.forEach((line) => {
+
+    // console.log(`🔍 Processing line ${originalLineIndex}:`, {
+    //   text: line.text,
+    //   type: line.type,
+    //   isMetadata: isMetadataLine(line),
+    //   hasWords: !!line.words,
+    //   wordCount: line.words?.length || 0
+    // })
 
     // Skip metadata lines - only process lyrics lines
     if (isMetadataLine(line)) {
@@ -325,13 +336,14 @@ const timingEditorWords = computed(() => {
     lyricsLineIndex++ // Increment only for actual lyrics lines
   })
 
-  console.log('🔍 timingEditorWords result:', {
-    totalLyricsLines: project.value.lyrics.length,
-    wordsGenerated: words.length,
-    firstFewWords: words.slice(0, 5).map(w => ({
-      id: w.id, text: w.text, startTime: w.startTime, endTime: w.endTime
-    }))
-  })
+  // Debug logging disabled - this computed runs frequently during drag operations
+  // console.log('🔍 timingEditorWords result:', {
+  //   totalLyricsLines: project.value.lyrics.length,
+  //   wordsGenerated: words.length,
+  //   firstFewWords: words.slice(0, 5).map(w => ({
+  //     id: w.id, text: w.text, startTime: w.startTime, endTime: w.endTime
+  //   }))
+  // })
 
   return words
 })
@@ -360,9 +372,9 @@ const handleViewWindowChange = (viewStart: number, viewEnd: number, mode: 'full'
   viewWindowStart.value = viewStart
   viewWindowEnd.value = viewEnd
   viewWindowMode.value = mode
-  console.log('🔄 View window synchronized:', {
-    viewStart, viewEnd, mode
-  })
+  // console.log('🔄 View window synchronized:', {
+  //   viewStart, viewEnd, mode
+  // })
 }
 
 // Helper function to check if a line is a metadata line
@@ -1132,6 +1144,7 @@ const setupGlobalHotkeys = () => {
           event.preventDefault()
           // Toggle fast refresh mode for smoother syllable boundary movement
           audioService.toggleFastMode()
+          isFastMode.value = audioService.getFastMode()
           console.log('🔄 Toggled fast refresh mode')
         }
         break
@@ -1300,8 +1313,36 @@ const handleTimingEditorWordsUpdate = (updatedWords: any[]) => {
 
           // console.log(`🔧 Word update: "${originalWord.word}" from ${oldStartTime}ms-${oldEndTime}ms to ${newStartTime}ms-${newEndTime}ms`)
 
-          // Use RelativeSyllableTiming model for proper syllable handling
-          if (originalWord.syllables && originalWord.syllables.length > 0) {
+          // Check if syllables have actually changed (s-break drag)
+          let syllablesChanged = false
+          if (updatedWord.syllables && originalWord.syllables &&
+            updatedWord.syllables.length === originalWord.syllables.length) {
+            // Compare syllable boundaries to detect s-break changes
+            syllablesChanged = updatedWord.syllables.some((syl: any, idx: number) => {
+              const origSyl = originalWord.syllables[idx]
+              const newSylStart = Math.round(syl.startTime * 1000)
+              const newSylEnd = Math.round(syl.endTime * 1000)
+              return Math.abs(newSylStart - (origSyl.startTime || 0)) > 1 ||
+                Math.abs(newSylEnd - (origSyl.endTime || 0)) > 1
+            })
+          }
+
+          // If syllables changed (s-break drag), use them directly
+          if (syllablesChanged && updatedWord.syllables) {
+            // Direct syllable update (s-break drag) - convert seconds to milliseconds
+            originalWord.syllables = updatedWord.syllables.map((syl: any) => ({
+              syllable: syl.text,
+              startTime: Math.round(syl.startTime * 1000),
+              endTime: Math.round(syl.endTime * 1000)
+            }))
+            originalWord.startTime = newStartTime
+            originalWord.endTime = newEndTime
+            originalWord.duration = newEndTime - newStartTime
+            // console.log(`  → Direct syllable update from s-break drag`)
+          }
+
+          // Use RelativeSyllableTiming model for word-level timing changes (move/resize)
+          else if (originalWord.syllables && originalWord.syllables.length > 0) {
             try {
               // console.log(`🔍 Debug syllable data for "${originalWord.word}":`, originalWord.syllables)
 
@@ -1313,7 +1354,7 @@ const handleTimingEditorWordsUpdate = (updatedWords: any[]) => {
               }))
 
               // Debug the absolute syllables data before conversion
-              console.log(`🔍 Converting "${originalWord.word}" syllables:`, absoluteSyllables.map(s => `"${s.text}": ${s.startTime}-${s.endTime} (${s.endTime - s.startTime}ms)`))
+              // console.log(`🔍 Converting "${originalWord.word}" syllables:`, absoluteSyllables.map(s => `"${s.text}": ${s.startTime}-${s.endTime} (${s.endTime - s.startTime}ms)`))
 
               // Create RelativeSyllableTiming instance from current word data
               const timing = RelativeSyllableTiming.fromAbsoluteSyllables(
@@ -1331,42 +1372,50 @@ const handleTimingEditorWordsUpdate = (updatedWords: any[]) => {
               const endTimeChanged = Math.abs(newEndTime - oldEndTime) > 10
 
               if (startTimeChanged && !endTimeChanged) {
-                // Moving word: use moveWord method
+                // Moving word: use moveWord method to shift all syllables
                 updatedTiming = timing.moveWord(newStartTime)
+
+                // Apply the timing changes
+                const updatedWordData = updatedTiming.getWordData()
+                const updatedAbsoluteSyllables = updatedTiming.getAbsoluteSyllables()
+                originalWord.startTime = updatedWordData.startTime
+                originalWord.endTime = updatedWordData.endTime
+                originalWord.duration = originalWord.endTime - originalWord.startTime
+                originalWord.syllables = updatedAbsoluteSyllables.map(syl => ({
+                  syllable: syl.text,
+                  startTime: syl.startTime,
+                  endTime: syl.endTime,
+                  duration: syl.endTime - syl.startTime
+                }))
                 // console.log(`  → MOVE: "${originalWord.word}" moved to ${newStartTime}ms`)
 
               } else if (endTimeChanged && !startTimeChanged) {
-                // Resizing word end: use resizeWordEnd method
-                updatedTiming = timing.resizeWordEnd(newEndTime)
-                // console.log(`  → RESIZE: "${originalWord.word}" resized to ${newEndTime}ms`)
+                // Resizing word end: DON'T redistribute syllables, just update word boundary
+                // Keep syllables at their absolute positions (like test rig)
+                originalWord.endTime = newEndTime
+                originalWord.duration = newEndTime - (originalWord.startTime || 0)
+                // console.log(`  → RESIZE: "${originalWord.word}" end changed, syllables unchanged`)
 
               } else if (startTimeChanged && endTimeChanged) {
-                // Both changed: first move, then resize
-                const movedTiming = timing.moveWord(newStartTime)
-                updatedTiming = movedTiming.resizeWordEnd(newEndTime)
-                // console.log(`  → MOVE & RESIZE: "${originalWord.word}" moved and resized`)
+                // Both changed: move word (shifts syllables), then update end time
+                updatedTiming = timing.moveWord(newStartTime)
+
+                // Apply move, then adjust end time without redistributing syllables
+                const updatedAbsoluteSyllables = updatedTiming.getAbsoluteSyllables()
+                originalWord.startTime = newStartTime
+                originalWord.endTime = newEndTime
+                originalWord.duration = newEndTime - newStartTime
+                originalWord.syllables = updatedAbsoluteSyllables.map(syl => ({
+                  syllable: syl.text,
+                  startTime: syl.startTime,
+                  endTime: syl.endTime,
+                  duration: syl.endTime - syl.startTime
+                }))
+                // console.log(`  → MOVE & RESIZE: "${originalWord.word}" moved, syllables shifted, end changed`)
 
               } else {
-                // No significant change
-                updatedTiming = timing
+                // No significant change - no updates needed
               }
-
-              // Convert back to original format and update the word
-              const updatedWordData = updatedTiming.getWordData()
-              const updatedAbsoluteSyllables = updatedTiming.getAbsoluteSyllables()
-
-              // Update the original word with new timing data
-              originalWord.startTime = updatedWordData.startTime
-              originalWord.endTime = updatedWordData.endTime
-              originalWord.duration = originalWord.endTime - originalWord.startTime
-
-              // Update syllables
-              originalWord.syllables = updatedAbsoluteSyllables.map(syl => ({
-                syllable: syl.text,
-                startTime: syl.startTime,
-                endTime: syl.endTime,
-                duration: syl.endTime - syl.startTime
-              }))
 
               // console.log(`✅ Updated "${originalWord.word}" using RelativeSyllableTiming model`)
 
@@ -1391,8 +1440,8 @@ const handleTimingEditorWordsUpdate = (updatedWords: any[]) => {
     }
   })
 
-  // Save the project after updating
-  saveProject()
+  // No auto-save: User controls when to save with Ctrl+S
+  // (Removed auto-save to prevent unwanted saves during experimentation)
 }
 
 const handleWordSelect = (wordId: string | null) => {

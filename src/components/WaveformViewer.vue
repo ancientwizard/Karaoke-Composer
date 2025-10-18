@@ -226,7 +226,7 @@ const autoScroll = ref(true) // Auto-scroll with playback
 const positionedLyrics = computed(() => {
   return props.lyrics
     .filter(lyric => lyric.startTime !== undefined)
-    .map((lyric, index) => ({
+    .map((lyric) => ({
       ...lyric,
       position: timeToPixel(lyric.startTime!),
     }))
@@ -358,9 +358,9 @@ const startDragMarker = (index: number, event: MouseEvent) => {
   const handleMouseMove = (moveEvent: MouseEvent) => {
     if (!isDragging.value) return
 
-    const rect = waveformCanvas.value!.getBoundingClientRect()
-    const x = moveEvent.clientX - rect.left
-    const time = pixelToTime(x)
+    // const rect = waveformCanvas.value!.getBoundingClientRect()
+    // const x = moveEvent.clientX - rect.left
+    // const time = pixelToTime(x) // unused???
 
     // Update marker position temporarily (visual feedback)
     // The actual update happens on mouse up
@@ -485,14 +485,14 @@ const updateWindowPosition = () => {
       windowStart.value = 0
     }
 
-    console.log('Window position updated:', {
-      windowStart: windowStart.value,
-      windowDuration: windowDuration.value,
-      currentTime: props.currentTime,
-      halfWindow,
-      autoScroll: autoScroll.value,
-      phase: props.currentTime <= halfWindow ? 'line-moves' : 'wave-scrolls',
-    })
+    // console.log('Window position updated:', {
+    //   windowStart: windowStart.value,
+    //   windowDuration: windowDuration.value,
+    //   currentTime: props.currentTime,
+    //   halfWindow,
+    //   autoScroll: autoScroll.value,
+    //   phase: props.currentTime <= halfWindow ? 'line-moves' : 'wave-scrolls',
+    // })
   }
 
   // Emit view window change whenever position updates
@@ -779,14 +779,14 @@ watch(
         const behavior = newTime <= halfWindow ? 'red-line-moves-left' :
           newTime >= endThreshold ? 'red-line-tracks-right' : 'waveform-scrolls'
 
-        console.log('Window position update:', {
-          currentTime: newTime,
-          endThreshold,
-          isManualSeek,
-          autoScroll: autoScroll.value,
-          windowStart: windowStart.value,
-          behavior
-        })
+        // console.log('Window position update:', {
+        //   currentTime: newTime,
+        //   endThreshold,
+        //   isManualSeek,
+        //   autoScroll: autoScroll.value,
+        //   windowStart: windowStart.value,
+        //   behavior
+        // })
 
         // Emit view window change after updating window position
         emitViewWindowChange()

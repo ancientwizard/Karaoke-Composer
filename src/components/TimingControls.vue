@@ -43,15 +43,8 @@
               <label class="form-label">Speed</label>
               <div class="d-flex align-items-center gap-2">
                 <span class="small">0.5x</span>
-                <input
-                  type="range"
-                  class="form-range"
-                  min="0.5"
-                  max="2"
-                  step="0.1"
-                  v-model="playbackState.playbackRate"
-                  @input="updatePlaybackRate"
-                />
+                <input type="range" class="form-range" min="0.5" max="2" step="0.1" :value="playbackState.playbackRate"
+                  @input="(e) => emit('playback-rate', parseFloat((e.target as HTMLInputElement).value))" />
                 <span class="small">2x</span>
                 <span class="badge bg-light text-dark">{{ playbackState.playbackRate }}x</span>
               </div>
@@ -60,15 +53,8 @@
               <label class="form-label">Volume</label>
               <div class="d-flex align-items-center gap-2">
                 <i class="bi bi-volume-down"></i>
-                <input
-                  type="range"
-                  class="form-range"
-                  min="0"
-                  max="1"
-                  step="0.1"
-                  v-model="playbackState.volume"
-                  @input="updateVolume"
-                />
+                <input type="range" class="form-range" min="0" max="1" step="0.1" :value="playbackState.volume"
+                  @input="(e) => emit('volume', parseFloat((e.target as HTMLInputElement).value))" />
                 <i class="bi bi-volume-up"></i>
               </div>
             </div>
@@ -79,18 +65,15 @@
         <div class="timing-section">
           <div class="row mb-3">
             <div class="col-md-6">
-              <button class="btn w-100" :class="isTimingMode ? 'btn-warning' : 'btn-outline-warning'" @click="toggleTimingMode">
+              <button class="btn w-100" :class="isTimingMode ? 'btn-warning' : 'btn-outline-warning'"
+                @click="toggleTimingMode">
                 <i class="bi bi-stopwatch"></i>
                 {{ isTimingMode ? 'Exit Timing Mode' : 'Enter Timing Mode' }}
               </button>
             </div>
             <div class="col-md-6">
-              <button
-                class="btn btn-outline-primary w-100"
-                @click="autoSync"
-                :disabled="!hasAudio || isTimingMode"
-                title="Attempt automatic synchronization"
-              >
+              <button class="btn btn-outline-primary w-100" @click="autoSync" :disabled="!hasAudio || isTimingMode"
+                title="Attempt automatic synchronization">
                 <i class="bi bi-magic"></i>
                 Auto Sync
               </button>
@@ -100,34 +83,22 @@
           <!-- Musical Timing Controls -->
           <div class="row mb-3">
             <div class="col-md-4">
-              <button
-                class="btn btn-outline-success w-100"
-                @click="applyMusicalTiming"
-                :disabled="!hasTimedWords"
-                title="Apply musical intelligence to syllable timing"
-              >
+              <button class="btn btn-outline-success w-100" @click="applyMusicalTiming" :disabled="!hasTimedWords"
+                title="Apply musical intelligence to syllable timing">
                 <i class="bi bi-music-note"></i>
                 Musical Timing
               </button>
             </div>
             <div class="col-md-4">
-              <button
-                class="btn btn-outline-secondary w-100"
-                @click="resetSyllableTiming"
-                :disabled="!hasTimedWords"
-                title="Reset all syllable timing to start over"
-              >
+              <button class="btn btn-outline-secondary w-100" @click="resetSyllableTiming" :disabled="!hasTimedWords"
+                title="Reset all syllable timing to start over">
                 <i class="bi bi-arrow-clockwise"></i>
                 Reset Syllables
               </button>
             </div>
             <div class="col-md-4">
-              <button
-                class="btn btn-outline-info w-100"
-                @click="showTimingAnalysis = !showTimingAnalysis"
-                :disabled="!hasTimedWords"
-                title="Show song timing analysis"
-              >
+              <button class="btn btn-outline-info w-100" @click="showTimingAnalysis = !showTimingAnalysis"
+                :disabled="!hasTimedWords" title="Show song timing analysis">
                 <i class="bi bi-graph-up"></i>
                 Analysis
               </button>
@@ -337,14 +308,6 @@ const autoSync = () => {
   console.log('Auto sync not yet implemented')
 }
 
-const updatePlaybackRate = () => {
-  emit('playback-rate', props.playbackState.playbackRate)
-}
-
-const updateVolume = () => {
-  emit('volume', props.playbackState.volume)
-}
-
 const formatTime = (timeMs: number): string => {
   const seconds = Math.floor(timeMs / 1000)
   const minutes = Math.floor(seconds / 60)
@@ -501,20 +464,24 @@ if (typeof window !== 'undefined') {
 }
 
 @keyframes pulse {
+
   0%,
   100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0.7;
   }
 }
 
 @keyframes flash {
+
   0%,
   100% {
     background-color: #ffc107;
   }
+
   50% {
     background-color: #ffca2c;
   }

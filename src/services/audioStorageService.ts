@@ -33,7 +33,7 @@ export class AudioStorageService {
   }
 
   private async initIndexedDB(): Promise<void> {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       if (!window.indexedDB) {
         console.warn('IndexedDB not supported by browser')
         resolve()
@@ -56,7 +56,7 @@ export class AudioStorageService {
       request.onupgradeneeded = () => {
         const db = request.result
         if (!db.objectStoreNames.contains(this.storeName)) {
-          const store = db.createObjectStore(this.storeName, { keyPath: 'id' })
+          db.createObjectStore(this.storeName, { keyPath: 'id' })
           console.log('IndexedDB object store created')
         }
       }
@@ -109,11 +109,11 @@ export class AudioStorageService {
 
       // 3. Fallback to reference storage
       console.log('Using reference storage as fallback')
-      return this.storeAsReference(file, audioId)
+      return this.storeAsReference(file)
     } catch (error) {
       console.error('All storage methods failed:', error)
       // Final fallback to reference storage
-      return this.storeAsReference(file, audioId)
+      return this.storeAsReference(file)
     }
   }
 
@@ -171,7 +171,7 @@ export class AudioStorageService {
   private getLocalStorageUsage(): number {
     let total = 0
     for (const key in localStorage) {
-      if (localStorage.hasOwnProperty(key)) {
+      if (Object.prototype.hasOwnProperty.call(localStorage, key)) {
         total += localStorage[key].length * 2 // UTF-16 encoding
       }
     }
@@ -228,7 +228,7 @@ export class AudioStorageService {
     })
   }
 
-  private storeAsReference(file: File, audioId: string): StoredAudioFile {
+  private storeAsReference(file: File): StoredAudioFile {
     const stored: StoredAudioFile = {
       name: file.name,
       size: file.size,
@@ -340,8 +340,8 @@ export class AudioStorageService {
           } else {
             const proceed = confirm(
               `The selected file (${selectedFile.name}, ${(selectedFile.size / 1024 / 1024).toFixed(2)}MB) ` +
-                `doesn't exactly match the original (${storedFile.name}, ${(storedFile.size / 1024 / 1024).toFixed(2)}MB). ` +
-                'Use it anyway?'
+              `doesn't exactly match the original (${storedFile.name}, ${(storedFile.size / 1024 / 1024).toFixed(2)}MB). ` +
+              'Use it anyway?'
             )
             if (proceed) {
               resolve({
@@ -401,10 +401,11 @@ export class AudioStorageService {
 
   async deleteAudioFile(storedFile: StoredAudioFile): Promise<void> {
     try {
+      // Remove from localStorage
+      const keys = Object.keys(localStorage)
+
       switch (storedFile.storageType) {
         case 'base64':
-          // Remove from localStorage
-          const keys = Object.keys(localStorage)
           for (const key of keys) {
             if (key.startsWith('audio_') && localStorage.getItem(key)?.includes(storedFile.name)) {
               localStorage.removeItem(key)
@@ -484,13 +485,17 @@ export class AudioStorageService {
   }
 
   setStorageOptions(options: Partial<AudioStorageOptions>): void {
-    this.options = { ...this.options, ...options }
+    this.options = {
+      ...this.options, ...options
+    }
     console.log('Audio storage options updated:', this.options)
   }
 
   // Diagnostic method to test IndexedDB functionality
   async testIndexedDBConnection(): Promise<{ available: boolean; error?: string; canStore: boolean }> {
-    const result = { available: false, canStore: false, error: undefined as string | undefined }
+    const result = {
+      available: false, canStore: false, error: undefined as string | undefined
+    }
 
     try {
       // Check if IndexedDB exists
