@@ -119,6 +119,7 @@ MUSICAL ASSUMPTIONS:
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { TIMING, TimingUtils } from '@/models/TimingConstants'
 
 interface Syllable {
   text: string
@@ -154,13 +155,13 @@ const props = withDefaults(defineProps<Props>(), {
   showBorder: false,
 })
 
-console.log('🔧 WordTimingEditor props received:', {
-  wordsCount: (props as any).words?.length,
-  duration: (props as any).duration,
-  viewStart: (props as any).viewStart,
-  viewEnd: (props as any).viewEnd,
-  showDebug: (props as any).showDebug
-})
+// console.log('🔧 WordTimingEditor props received:', {
+//   words: props.words.length,
+//   duration: props.duration,
+//   viewStart: props.viewStart,
+//   viewEnd: props.viewEnd,
+//   showDebug: props.showDebug
+// })
 
 const emit = defineEmits<{
   'update:words': [words: Word[]]
@@ -189,44 +190,44 @@ const pixelsPerSecond = computed(() => trackWidth.value / viewDuration.value)
 const visibleWords = computed(() => {
   const buffer = 0.1 // Small buffer to keep words visible at edges
 
-  console.log('👁️ Calculating visibleWords:', {
-    totalWords: props.words.length,
-    viewStart: props.viewStart,
-    viewEnd: effectiveViewEnd.value,
-    duration: props.duration,
-    firstFewWords: props.words.slice(0, 3).map(w => ({
-      text: w.text,
-      startTime: w.startTime,
-      endTime: w.endTime,
-      isUntimed: w.startTime === 0 && w.endTime === 0
-    }))
-  })
+  // console.log('👁️ Calculating visibleWords:', {
+  //   totalWords: props.words.length,
+  //   viewStart: props.viewStart,
+  //   viewEnd: effectiveViewEnd.value,
+  //   duration: props.duration,
+  //   firstFewWords: props.words.slice(0, 3).map(w => ({
+  //     text: w.text,
+  //     startTime: w.startTime,
+  //     endTime: w.endTime,
+  //     isUntimed: w.startTime === 0 && w.endTime === 0
+  //   }))
+  // })
 
   const filtered = props.words.filter(word => {
     // Skip words with no timing (startTime and endTime both 0) - they clutter the interface
     const isUntimed = word.startTime === 0 && word.endTime === 0
     if (isUntimed) {
-      console.log('👁️ Skipping untimed word:', word.text)
+      // console.log('👁️ Skipping untimed word:', word.text)
       return false // Hide untimed words
     }
 
     // For words with timing, check if they're in the visible time range
     const inRange = word.endTime >= props.viewStart - buffer && word.startTime <= effectiveViewEnd.value + buffer
-    console.log('👁️ Word range check:', {
-      text: word.text,
-      startTime: word.startTime,
-      endTime: word.endTime,
-      inRange,
-      viewStart: props.viewStart,
-      viewEnd: effectiveViewEnd.value
-    })
+    // console.log('👁️ Word range check:', {
+    //   text: word.text,
+    //   startTime: word.startTime,
+    //   endTime: word.endTime,
+    //   inRange,
+    //   viewStart: props.viewStart,
+    //   viewEnd: effectiveViewEnd.value
+    // })
     return inRange
   })
 
-  console.log('👁️ Visible words result:', {
-    visible: filtered.length,
-    words: filtered.map(w => w.text)
-  })
+  // console.log('👁️ Visible words result:', {
+  //   visible: filtered.length,
+  //   words: filtered.map(w => w.text)
+  // })
 
   return filtered
 })
@@ -307,8 +308,23 @@ const handleWordMouseDown = (word: Word, event: MouseEvent) => {
 const originalSyllableProportions = ref<{ [wordId: string]: number[] }>({})
 
 // Duration-based helper functions for more natural workflow
-const getWordDuration = (word: Word): number => word.endTime - word.startTime
+const getWordDuration = (word: Word): number => Math.max(TIMING.word.minDuration / 1000, word.endTime - word.startTime)
 const getSyllableDuration = (syllable: Syllable): number => syllable.endTime - syllable.startTime
+
+// Validate and fix word timing to prevent negative durations
+const validateWordTiming = (word: Word): Word => {
+  if (word.endTime <= word.startTime) {
+    const originalDuration = word.endTime - word.startTime
+    console.error(`❌ INVALID TIMING DETECTED for "${word.text}": startTime=${word.startTime}, endTime=${word.endTime}, duration=${originalDuration}ms`)
+    const minEndTime = word.startTime + TIMING.word.minDuration / 1000
+    console.error(`   → Fixing by setting endTime to ${minEndTime}`)
+    return {
+      ...word,
+      endTime: minEndTime
+    }
+  }
+  return word
+}
 
 const setWordDuration = (word: Word, newDuration: number): Word => ({
   ...word,
@@ -381,24 +397,49 @@ const handleMouseMove = (event: MouseEvent) => {
     const wordDuration = getWordDuration(word)
     let newStartTime = Math.max(0, dragStartTime.value + deltaTime)
 
-    // Constrain movement to not overlap with previous word
-    if (previousWord) {
-      newStartTime = Math.max(newStartTime, previousWord.endTime + 0.05)
+    // Debug: log original and calculated values
+    console.log(`🔧 Moving "${word.text}": original=${word.startTime}-${word.endTime} (${wordDuration}s), newStart=${newStartTime}`)
+
+    // Smart collision detection - allow swapping when words are overlapped
+    const isMovingLeft = newStartTime < word.startTime
+    const isMovingRight = newStartTime > word.startTime
+
+    // Check if we're trying to move past an overlapped word
+    const isPreviousOverlapped = previousWord && previousWord.endTime > word.startTime
+    const isNextOverlapped = nextWord && nextWord.startTime < word.endTime
+
+    console.log(`🔧 Collision check: movingLeft=${isMovingLeft}, movingRight=${isMovingRight}, prevOverlapped=${isPreviousOverlapped}, nextOverlapped=${isNextOverlapped}`)
+
+    // Apply constraints, but allow swapping past overlapped words
+    if (previousWord && !isPreviousOverlapped) {
+      // Normal case: prevent overlap with non-overlapped previous word
+      newStartTime = Math.max(newStartTime, previousWord.endTime + TIMING.word.collisionMargin / 1000)
+    } else if (previousWord && isPreviousOverlapped && isMovingLeft) {
+      // Allow moving left past overlapped previous word, but not too far
+      const minStartTime = Math.max(0, previousWord.startTime - wordDuration - TIMING.word.collisionMargin / 1000)
+      newStartTime = Math.max(newStartTime, minStartTime)
     }
 
-    // Constrain movement to not overlap with next word
-    if (nextWord) {
-      const maxStartTime = nextWord.startTime - wordDuration - 0.05
+    if (nextWord && !isNextOverlapped) {
+      // Normal case: prevent overlap with non-overlapped next word
+      const maxStartTime = nextWord.startTime - wordDuration - TIMING.word.collisionMargin / 1000
+      newStartTime = Math.min(newStartTime, maxStartTime)
+    } else if (nextWord && isNextOverlapped && isMovingRight) {
+      // Allow moving right past overlapped next word, but not too far
+      const maxStartTime = nextWord.endTime + TIMING.word.collisionMargin / 1000
       newStartTime = Math.min(newStartTime, maxStartTime)
     }
 
     // Also constrain to view window to prevent disappearing
-    const maxViewStartTime = effectiveViewEnd.value - wordDuration - 0.1
+    const viewportBuffer = TIMING.editor.viewportBuffer / 1000
+    const maxViewStartTime = effectiveViewEnd.value - wordDuration - viewportBuffer
     newStartTime = Math.min(newStartTime, maxViewStartTime)
-    newStartTime = Math.max(newStartTime, props.viewStart - 0.1)
+    newStartTime = Math.max(newStartTime, props.viewStart - viewportBuffer)
 
     // Apply the move (preserving duration)
     const movedWord = moveWord(word, newStartTime)
+    console.log(`🔧 After moveWord: ${movedWord.startTime}-${movedWord.endTime}`)
+
     word.startTime = movedWord.startTime
     word.endTime = movedWord.endTime
 
@@ -420,18 +461,18 @@ const handleMouseMove = (event: MouseEvent) => {
     }
   } else if (dragType.value === 'resize') {
     // Resize duration - drag the end time directly
-    let newEndTime = Math.max(word.startTime + 0.1, dragStartTime.value + deltaTime)
+    let newEndTime = Math.max(word.startTime + TIMING.word.minDuration / 1000, dragStartTime.value + deltaTime)
     let newDuration = newEndTime - word.startTime
 
     // Constrain resize to not overlap with next word
     if (nextWord) {
-      const maxDuration = nextWord.startTime - word.startTime - 0.05
+      const maxDuration = nextWord.startTime - word.startTime - TIMING.word.collisionMargin / 1000
       newDuration = Math.min(newDuration, maxDuration)
       newEndTime = word.startTime + newDuration
     }
 
     // Constrain to reasonable view bounds
-    const maxEndTime = effectiveViewEnd.value + 0.1
+    const maxEndTime = effectiveViewEnd.value + TIMING.editor.viewportBuffer / 1000
     if (newEndTime > maxEndTime) {
       newDuration = maxEndTime - word.startTime
       newEndTime = maxEndTime
@@ -448,9 +489,10 @@ const handleMouseMove = (event: MouseEvent) => {
   } else if (dragType.value === 'syllable') {
     // Adjust syllable boundary
     if (word.syllables && dragSyllableIndex.value < word.syllables.length - 1) {
+      const syllableMargin = TIMING.syllable.minDuration / 2000 // Half min duration for boundary adjustment
       const newBoundaryTime = Math.max(
-        word.syllables[dragSyllableIndex.value].startTime + 0.05,
-        Math.min(word.syllables[dragSyllableIndex.value + 1].endTime - 0.05, dragStartTime.value + deltaTime)
+        word.syllables[dragSyllableIndex.value].startTime + syllableMargin,
+        Math.min(word.syllables[dragSyllableIndex.value + 1].endTime - syllableMargin, dragStartTime.value + deltaTime)
       )
 
       word.syllables[dragSyllableIndex.value].endTime = newBoundaryTime
@@ -458,8 +500,14 @@ const handleMouseMove = (event: MouseEvent) => {
     }
   }
 
-  updatedWords[wordIndex] = word
-  emit('update:words', updatedWords)
+  // Validate and fix word timing before updating
+  const validatedWord = validateWordTiming(word)
+
+  updatedWords[wordIndex] = validatedWord
+
+  // Validate all words before emitting to catch any other issues
+  const validatedWords = updatedWords.map(validateWordTiming)
+  emit('update:words', validatedWords)
 }
 
 const handleMouseUp = () => {
@@ -484,11 +532,8 @@ const handleMouseUp = () => {
 const distributeSyllableTiming = (word: Word, totalDuration: number, syllableCount: number): Syllable[] => {
   if (!word.syllables || syllableCount <= 1) return word.syllables || []
 
-  // Create timing pattern: first syllables get progressively less time, last gets more
-  const weights = Array.from({ length: syllableCount }, (_, i) => {
-    if (i === syllableCount - 1) return 2.0 // Last syllable gets double weight
-    return 0.8 + i * 0.1 // Earlier syllables get less, but increase slightly
-  })
+  // Use centralized syllable weighting system
+  const weights = TimingUtils.calculateSyllableWeights(syllableCount)
 
   const totalWeight = weights.reduce((sum, weight) => sum + weight, 0)
   const syllableDurations = weights.map(weight => (weight / totalWeight) * totalDuration)
@@ -519,7 +564,7 @@ onMounted(async () => {
       const newWidth = timelineTrack.value.clientWidth
       if (newWidth > 0) {
         trackWidth.value = newWidth
-        console.log('📏 Track width updated:', newWidth)
+        // console.log('📏 Track width updated:', newWidth)
       }
     }
   }
@@ -537,18 +582,18 @@ onMounted(async () => {
 })
 
 // Watch for changes that might affect layout
-watch([() => props.viewStart, () => props.viewEnd, () => props.duration], (newValues, oldValues) => {
-  console.log('🔄 WordTimingEditor props changed:', {
-    viewStart: {
-      old: oldValues?.[0], new: newValues[0]
-    },
-    viewEnd: {
-      old: oldValues?.[1], new: newValues[1]
-    },
-    duration: {
-      old: oldValues?.[2], new: newValues[2]
-    }
-  })
+watch([() => props.viewStart, () => props.viewEnd, () => props.duration], () => {
+  // console.log('🔄 WordTimingEditor props changed:', {
+  //   viewStart: {
+  //     old: oldValues?.[0], new: newValues[0]
+  //   },
+  //   viewEnd: {
+  //     old: oldValues?.[1], new: newValues[1]
+  //   },
+  //   duration: {
+  //     old: oldValues?.[2], new: newValues[2]
+  //   }
+  // })
 
   // Update track width when view parameters change
   nextTick(() => {
@@ -556,7 +601,7 @@ watch([() => props.viewStart, () => props.viewEnd, () => props.duration], (newVa
       const newWidth = timelineTrack.value.clientWidth
       if (newWidth > 0 && newWidth !== trackWidth.value) {
         trackWidth.value = newWidth
-        console.log('📏 Track width updated (via watcher):', newWidth)
+        // console.log('📏 Track width updated (via watcher):', newWidth)
       }
     }
   })

@@ -1,6 +1,7 @@
 // Utility functions for parsing lyrics with syllable markers
 import type { LyricLine, WordTiming, SyllableTiming, LyricsMetadata } from '@/types/karaoke'
 import { KaraokeTimingEngine } from '@/models/KaraokeTimingEngine'
+import { TIMING, TimingUtils } from '@/models/TimingConstants'
 
 /**
  * Parse a line of text with syllable markers (/) into structured word/syllable data
@@ -146,12 +147,14 @@ export function assignWordTiming(
     })
 
     // Now recalculate syllable timing for the PREVIOUS word if it exists
-    // because now we know the actual duration for the previous word
+    // Use CONSERVATIVE duration to prevent syllables from spilling into gaps
     if (wordIndex > 0) {
       const prevWord = line.words[wordIndex - 1]
       if (prevWord.startTime !== undefined) {
-        const actualPrevDuration = startTime - prevWord.startTime
-        distributeSyllableTiming(prevWord, prevWord.startTime, actualPrevDuration)
+        const fullGap = startTime - prevWord.startTime
+        // Use centralized conservative gap usage rules
+        const conservativeDuration = TimingUtils.getConservativeDuration(fullGap, false)
+        distributeSyllableTiming(prevWord, prevWord.startTime, conservativeDuration)
       }
     } else if (lineIndex > 0) {
       // Check previous line's last word
@@ -159,8 +162,10 @@ export function assignWordTiming(
       if (prevLine && prevLine.words.length > 0) {
         const lastWordOfPrevLine = prevLine.words[prevLine.words.length - 1]
         if (lastWordOfPrevLine.startTime !== undefined) {
-          const actualPrevDuration = startTime - lastWordOfPrevLine.startTime
-          distributeSyllableTiming(lastWordOfPrevLine, lastWordOfPrevLine.startTime, actualPrevDuration)
+          const fullGap = startTime - lastWordOfPrevLine.startTime
+          // Use centralized line-ending gap usage rules
+          const conservativeDuration = TimingUtils.getConservativeDuration(fullGap, true)
+          distributeSyllableTiming(lastWordOfPrevLine, lastWordOfPrevLine.startTime, conservativeDuration)
         }
       }
     }
@@ -184,14 +189,32 @@ function distributeSyllableTiming(word: WordTiming, wordStartTime: number, actua
       word.syllables[0].duration = actualDuration
     }
   } else {
-    // Multiple syllables - distribute evenly for now
-    // TODO: Could be enhanced with syllable-length-based weighting
-    const syllableDuration = actualDuration / word.syllables.length
+    // Multiple syllables - use centralized timing rules for smart distribution
+    const syllableCount = word.syllables.length
+    const totalMinDuration = TIMING.syllable.minDuration * syllableCount
 
+    if (actualDuration < totalMinDuration) {
+      // Duration too short for safe syllable distribution - extend the word
+      console.warn(`⚠️ Word "${word.word}" duration (${actualDuration}ms) too short for ${syllableCount} syllables. Extending to ${totalMinDuration}ms`)
+      actualDuration = totalMinDuration
+    }
+
+    // Use centralized syllable weighting system
+    const weights = TimingUtils.calculateSyllableWeights(syllableCount)
+
+    const totalWeight = weights.reduce((sum, weight) => sum + weight, 0)
+    const availableDuration = actualDuration - totalMinDuration // Extra duration to distribute
+
+    let currentTime = wordStartTime
     word.syllables.forEach((syllable, index) => {
-      syllable.startTime = wordStartTime + index * syllableDuration
-      syllable.endTime = wordStartTime + (index + 1) * syllableDuration
+      const baseMinDuration = TIMING.syllable.minDuration
+      const extraDuration = (weights[index] / totalWeight) * availableDuration
+      const syllableDuration = TimingUtils.constrainDuration(baseMinDuration + extraDuration, false)
+
+      syllable.startTime = currentTime
+      syllable.endTime = currentTime + syllableDuration
       syllable.duration = syllableDuration
+      currentTime = syllable.endTime
     })
   }
 

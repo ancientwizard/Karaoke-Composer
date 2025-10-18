@@ -14,12 +14,14 @@
                   <small class="text-muted">{{ project?.artist }}</small>
                 </div>
                 <div class="btn-group-vertical btn-group-sm">
-                  <button class="btn btn-success btn-sm" @click="saveProject">
+                  <button class="btn btn-success btn-sm" @click="saveProject" title="Save project (Ctrl+S)"
+                    data-bs-toggle="tooltip">
                     <i class="bi bi-save"></i>
                   </button>
-                  <router-link to="/compose" class="btn btn-outline-secondary btn-sm">
+                  <button class="btn btn-outline-secondary btn-sm" @click="exitProject" title="Exit to previous page"
+                    data-bs-toggle="tooltip">
                     <i class="bi bi-x-circle"></i>
-                  </router-link>
+                  </button>
                 </div>
               </div>
             </div>
@@ -27,15 +29,11 @@
             <!-- Help & Controls Body -->
             <div class="card-body">
               <!-- Timing Controls -->
-              <TimingControlsPanel
-                :is-timing-mode="isTimingMode"
-                :timed-words="timingStats.timedWords"
-                :total-words="timingStats.totalWords"
-                :song-analysis="songAnalysis"
-                @toggle-timing-mode="toggleTimingMode"
-                @clear-timing="clearCurrentLineTiming"
-                @apply-musical-timing="applyMusicalTiming"
-                @reset-syllable-timing="resetSyllableTiming" />
+              <TimingControlsPanel :is-timing-mode="isTimingMode" :timed-words="timingStats.timedWords"
+                :total-words="timingStats.totalWords" :song-analysis="songAnalysis" :timing-analysis="timingAnalysis"
+                @toggle-timing-mode="toggleTimingMode" @clear-timing="clearCurrentLineTiming"
+                @apply-musical-timing="applyMusicalTiming" @reset-syllable-timing="resetSyllableTiming"
+                @analyze-timing="analyzeCurrentTiming" @fix-overlaps="fixCurrentOverlaps" />
 
               <!-- Progress Stats -->
               <ProgressStats :timing-stats="timingStats" />
@@ -86,8 +84,9 @@
 
                 <!-- Word Timing Editor in slot above waveform -->
                 <template #above-waveform>
-                  <WordTimingEditor :words="timingEditorWords" :duration="audioDuration" :view-start="viewWindowStart"
-                    :view-end="viewWindowEnd" :show-debug="true" />
+                  <WordTimingEditor :key="`timing-editor-${visualRefreshKey}`" :words="timingEditorWords"
+                    :duration="audioDuration" :view-start="viewWindowStart" :view-end="viewWindowEnd"
+                    :show-debug="false" @update:words="handleTimingEditorWordsUpdate" @select-word="handleWordSelect" />
                 </template>
               </WaveformViewer>
             </div>
@@ -159,6 +158,8 @@
 
                 <h6 class="text-info">📝 Editing</h6>
                 <ul class="list-unstyled mb-4">
+                  <li class="mb-2"><kbd>Ctrl+S</kbd> - Save project</li>
+                  <li class="mb-2"><kbd>Escape</kbd> - Close modal or exit timing mode</li>
                   <li class="mb-2"><kbd>Double-click</kbd> any lyric line to edit</li>
                   <li class="mb-2"><kbd>Enter</kbd> or <kbd>Blur</kbd> to save</li>
                   <li class="mb-2"><kbd>Escape</kbd> to cancel</li>
@@ -187,13 +188,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { KaraokeProject, LyricLine, PlaybackState, WaveformData } from '@/types/karaoke'
 import { audioService } from '@/services/audioService'
 import { audioStorageService } from '@/services/audioStorageService'
 import { assignWordTiming, getCurrentPosition, getTimingStats, finalizePendingSyllableTiming, clearTimingFromLine } from '@/utils/lyricsParser'
 import { applyMusicalTimingToSong, resetSongSyllableTiming, type SongAnalysis } from '@/models/MusicalTimingModel'
+import { TIMING, TimingUtils } from '@/models/TimingConstants'
+import { useTimingAnalysis, type TimingAnalysisResult } from '@/composables/useTimingAnalysis'
+import { RelativeSyllableTiming } from '@/models/RelativeSyllableTiming'
 import LyricsEditor from '@/components/LyricsEditor.vue'
 import LyricsPreview from '@/components/LyricsPreview.vue'
 import WaveformViewer from '@/components/WaveformViewer.vue'
@@ -215,10 +219,17 @@ const showHotkeyModal = ref(false)
 const currentLine = ref(0)
 const currentWordIndex = ref(0)
 const isTimingMode = ref(false)
+
+// Visual refresh counter to force component re-renders after timing fixes
+const visualRefreshKey = ref(0)
 const waveformData = ref<WaveformData | null>(null)
 
 // Musical timing state
 const songAnalysis = ref<SongAnalysis | null>(null)
+
+// Timing analysis state
+const { analyzeTimingOverlaps, fixTimingOverlaps } = useTimingAnalysis()
+const timingAnalysis = ref<TimingAnalysisResult | null>(null)
 
 // View window state (synchronized with WaveformViewer)
 const viewWindowStart = ref(0) // in seconds
@@ -276,9 +287,10 @@ const timingEditorWords = computed(() => {
   }
 
   const words: { id: string; text: string; startTime: number; endTime: number; syllables?: any[] }[] = []
+  let lyricsLineIndex = 0 // Track lyrics-only line index
 
-  project.value.lyrics.forEach((line, lineIndex) => {
-    console.log(`🔍 Processing line ${lineIndex}:`, {
+  project.value.lyrics.forEach((line, originalLineIndex) => {
+    console.log(`🔍 Processing line ${originalLineIndex}:`, {
       text: line.text,
       type: line.type,
       isMetadata: isMetadataLine(line),
@@ -298,7 +310,7 @@ const timingEditorWords = computed(() => {
 
     line.words.forEach((word, wordIndex) => {
       words.push({
-        id: `line-${lineIndex}-word-${wordIndex}`,
+        id: `lyrics-${lyricsLineIndex}-word-${wordIndex}`, // Use lyrics-only line index
         text: word.word,
         startTime: (word.startTime || 0) / 1000, // Convert milliseconds to seconds
         endTime: (word.endTime || word.startTime || 0) / 1000, // Convert milliseconds to seconds
@@ -309,6 +321,8 @@ const timingEditorWords = computed(() => {
         })),
       })
     })
+
+    lyricsLineIndex++ // Increment only for actual lyrics lines
   })
 
   console.log('🔍 timingEditorWords result:', {
@@ -329,6 +343,16 @@ const audioDuration = computed(() => {
 // Methods
 const closeHotkeyModal = () => {
   showHotkeyModal.value = false
+}
+
+const exitProject = () => {
+  // Use browser back navigation to maintain proper history
+  // If there's no history (user came directly to this URL), fall back to compose page
+  if (window.history.length > 1) {
+    router.back()
+  } else {
+    router.push('/compose')
+  }
 }
 
 // Handler for view window changes from WaveformViewer
@@ -547,15 +571,17 @@ const calculateSmartDuration = (currentLineIndex: number, currentWordIndex: numb
     const currentTime = playbackState.value.currentTime
     const timeToNext = nextTiming / 1000 - currentTime // Convert to seconds
 
-    // Determine if this is a phrase/verse break (longer gap)
-    const isLongBreak = timeToNext > 3 // More than 3 seconds = phrase break
+    // Use centralized timing rules for auto-timing behavior
+    const isLongBreak = TimingUtils.isPhraseBreak(timeToNext)
 
     if (isLongBreak) {
-      // 50% of time to next for phrase/verse breaks
-      return Math.max(300, timeToNext * 0.5 * 1000) // Min 300ms, max 50% in milliseconds
+      // Use centralized phrase break spacing rules
+      const duration = timeToNext * TIMING.autoTiming.phraseBreakSpacing * 1000
+      return Math.max(TIMING.word.minDuration, Math.min(TIMING.autoTiming.maxPhraseBreakDuration, duration))
     } else {
-      // 80-85% of time to next for normal word spacing
-      return Math.max(200, timeToNext * 0.825 * 1000) // Min 200ms, 82.5% average in milliseconds
+      // Use centralized normal word spacing rules
+      const duration = timeToNext * TIMING.autoTiming.normalWordSpacing * 1000
+      return Math.max(TIMING.word.minDuration, Math.min(TIMING.autoTiming.maxNormalDuration, duration))
     }
   }
 
@@ -997,6 +1023,15 @@ const setupGlobalHotkeys = () => {
         }
         break
 
+      case 'KeyS':
+        if (event.ctrlKey || event.metaKey) {
+          event.preventDefault()
+          saveProject()
+        }
+        break
+
+      // Removed Ctrl+Q due to Firefox browser conflict - use Escape instead
+
       case 'KeyL':
         if (event.ctrlKey || event.metaKey) {
           event.preventDefault()
@@ -1045,6 +1080,7 @@ const setupGlobalHotkeys = () => {
           // Exit timing mode
           isTimingMode.value = false
         }
+        // Removed page exit on Escape - too easy to lose work accidentally
         break
     }
   }
@@ -1099,6 +1135,203 @@ const resetSyllableTiming = () => {
   } catch (error) {
     console.error('❌ Error resetting syllable timing:', error)
   }
+}
+
+// Timing Analysis Methods
+const analyzeCurrentTiming = () => {
+  if (!project.value?.lyrics) {
+    console.log('❌ Timing analysis: No project or lyrics available')
+    return
+  }
+
+  console.log('🔍 Analyzing timing overlaps...')
+
+  try {
+    const result = analyzeTimingOverlaps(project.value.lyrics)
+    timingAnalysis.value = result
+
+    console.log('✅ Timing analysis completed:', result.summary)
+
+    if (result.overlaps.length > 0) {
+      console.warn(`Found ${result.overlaps.length} timing overlaps:`)
+      result.overlaps.forEach((overlap, index) => {
+        console.warn(`  ${index + 1}. "${overlap.word1.word}" → "${overlap.word2.word}" (${overlap.overlapDuration}ms overlap)`)
+      })
+    }
+
+  } catch (error) {
+    console.error('❌ Error analyzing timing:', error)
+  }
+}
+
+const fixCurrentOverlaps = async () => {
+  if (!project.value?.lyrics) {
+    console.log('❌ Fix overlaps: No project or lyrics available')
+    return
+  }
+
+  console.log('🔧 Fixing timing overlaps...')
+
+  try {
+    const result = fixTimingOverlaps(project.value.lyrics)
+
+    if (result.fixCount > 0) {
+      console.log(`✅ Fixed ${result.fixCount} timing overlaps:`)
+      result.details.forEach(detail => console.log(`  • ${detail}`))
+
+      // Save the project after fixing
+      await saveProject()
+
+      // Force visual refresh by incrementing the component key
+      visualRefreshKey.value++
+
+      // Wait for the component to re-render
+      await nextTick()
+
+      // Re-analyze to update the UI
+      analyzeCurrentTiming()
+
+      console.log('🔄 Visual refresh triggered after timing fix')
+    } else {
+      console.log('✅ No overlaps to fix!')
+    }
+
+  } catch (error) {
+    console.error('❌ Error fixing timing overlaps:', error)
+  }
+}
+
+// WordTimingEditor event handlers
+const handleTimingEditorWordsUpdate = (updatedWords: any[]) => {
+  // console.log('🔄 WordTimingEditor words updated:', updatedWords.length)
+
+  if (!project.value?.lyrics) {
+    console.error('❌ No project lyrics to update')
+    return
+  }
+
+  // Map the updated words back to the lyrics data
+  // We need to handle the metadata offset here
+  const lyricsOnlyLines = project.value.lyrics.filter(line => !isMetadataLine(line))
+
+  updatedWords.forEach((updatedWord) => {
+    // Parse the word ID to get line and word indices
+    const match = updatedWord.id.match(/lyrics-(\d+)-word-(\d+)/)
+    if (match) {
+      const lyricsLineIndex = parseInt(match[1])
+      const wordIndex = parseInt(match[2])
+
+      if (lyricsLineIndex < lyricsOnlyLines.length) {
+        const lyricsLine = lyricsOnlyLines[lyricsLineIndex]
+        if (wordIndex < lyricsLine.words.length) {
+          const originalWord = lyricsLine.words[wordIndex]
+
+          // Store old values for smart syllable handling
+          const oldStartTime = originalWord.startTime || 0
+          const oldEndTime = originalWord.endTime || 0
+          const newStartTime = Math.round(updatedWord.startTime * 1000)
+          const newEndTime = Math.round(updatedWord.endTime * 1000)
+
+          // console.log(`🔧 Word update: "${originalWord.word}" from ${oldStartTime}ms-${oldEndTime}ms to ${newStartTime}ms-${newEndTime}ms`)
+
+          // Use RelativeSyllableTiming model for proper syllable handling
+          if (originalWord.syllables && originalWord.syllables.length > 0) {
+            try {
+              // console.log(`🔍 Debug syllable data for "${originalWord.word}":`, originalWord.syllables)
+
+              // Create absolute syllables for conversion
+              const absoluteSyllables = originalWord.syllables.map(syl => ({
+                text: syl.syllable || '',
+                startTime: syl.startTime || 0,
+                endTime: syl.endTime || 0
+              }))
+
+              // Debug the absolute syllables data before conversion
+              console.log(`🔍 Converting "${originalWord.word}" syllables:`, absoluteSyllables.map(s => `"${s.text}": ${s.startTime}-${s.endTime} (${s.endTime - s.startTime}ms)`))
+
+              // Create RelativeSyllableTiming instance from current word data
+              const timing = RelativeSyllableTiming.fromAbsoluteSyllables(
+                `word-${lyricsLineIndex}-${wordIndex}`,
+                originalWord.word,
+                oldStartTime,
+                oldEndTime,
+                absoluteSyllables
+              )
+
+              let updatedTiming: RelativeSyllableTiming
+
+              // Determine the type of change and apply appropriate operation
+              const startTimeChanged = Math.abs(newStartTime - oldStartTime) > 10
+              const endTimeChanged = Math.abs(newEndTime - oldEndTime) > 10
+
+              if (startTimeChanged && !endTimeChanged) {
+                // Moving word: use moveWord method
+                updatedTiming = timing.moveWord(newStartTime)
+                // console.log(`  → MOVE: "${originalWord.word}" moved to ${newStartTime}ms`)
+
+              } else if (endTimeChanged && !startTimeChanged) {
+                // Resizing word end: use resizeWordEnd method
+                updatedTiming = timing.resizeWordEnd(newEndTime)
+                // console.log(`  → RESIZE: "${originalWord.word}" resized to ${newEndTime}ms`)
+
+              } else if (startTimeChanged && endTimeChanged) {
+                // Both changed: first move, then resize
+                const movedTiming = timing.moveWord(newStartTime)
+                updatedTiming = movedTiming.resizeWordEnd(newEndTime)
+                // console.log(`  → MOVE & RESIZE: "${originalWord.word}" moved and resized`)
+
+              } else {
+                // No significant change
+                updatedTiming = timing
+              }
+
+              // Convert back to original format and update the word
+              const updatedWordData = updatedTiming.getWordData()
+              const updatedAbsoluteSyllables = updatedTiming.getAbsoluteSyllables()
+
+              // Update the original word with new timing data
+              originalWord.startTime = updatedWordData.startTime
+              originalWord.endTime = updatedWordData.endTime
+              originalWord.duration = originalWord.endTime - originalWord.startTime
+
+              // Update syllables
+              originalWord.syllables = updatedAbsoluteSyllables.map(syl => ({
+                syllable: syl.text,
+                startTime: syl.startTime,
+                endTime: syl.endTime,
+                duration: syl.endTime - syl.startTime
+              }))
+
+              // console.log(`✅ Updated "${originalWord.word}" using RelativeSyllableTiming model`)
+
+            } catch (error) {
+              console.error(`❌ Error using RelativeSyllableTiming for "${originalWord.word}":`, error)
+
+              // Fallback: simple update without syllable model
+              originalWord.startTime = newStartTime
+              originalWord.endTime = newEndTime
+              originalWord.duration = originalWord.endTime - originalWord.startTime
+              // console.log(`  → Fallback: Basic timing update only`)
+            }
+          } else {
+            // No syllables: simple timing update
+            originalWord.startTime = newStartTime
+            originalWord.endTime = newEndTime
+            originalWord.duration = originalWord.endTime - originalWord.startTime
+            // console.log(`  → Simple timing update (no syllables)`)
+          }
+        }
+      }
+    }
+  })
+
+  // Save the project after updating
+  saveProject()
+}
+
+const handleWordSelect = (wordId: string | null) => {
+  console.log('🎯 Word selected:', wordId)
+  // Could be used for highlighting or focus management in the future
 }
 
 // Lifecycle

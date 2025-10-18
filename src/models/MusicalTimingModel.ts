@@ -5,6 +5,7 @@
  */
 
 import type { WordTiming, SyllableTiming } from '@/types/karaoke'
+import { TIMING, TimingUtils } from '@/models/TimingConstants'
 
 export interface MusicalNote {
   type: 'eighth' | 'quarter' | 'half' | 'whole'
@@ -40,7 +41,7 @@ export function detectRestPattern(
     return {
       hasRest: true,
       restType: 'phrase',
-      estimatedRestDuration: 800 // Long pause for sentence/phrase breaks
+      estimatedRestDuration: TIMING.musical.restDuration.period
     }
   }
 
@@ -48,7 +49,7 @@ export function detectRestPattern(
     return {
       hasRest: true,
       restType: 'comma',
-      estimatedRestDuration: 400 // Medium pause for comma breaks
+      estimatedRestDuration: TIMING.musical.restDuration.comma
     }
   }
 
@@ -57,7 +58,7 @@ export function detectRestPattern(
     return {
       hasRest: true,
       restType: 'breath',
-      estimatedRestDuration: Math.min(timeToNextWord * 0.3, 800) // Use 30% of gap, max 800ms
+      estimatedRestDuration: Math.min(timeToNextWord * 0.3, TIMING.musical.restDuration.breath)
     }
   }
 
@@ -163,7 +164,8 @@ export function distributeSyllablesMusically(
   timeToNextWord: number,
   nextWordText?: string,
   context: TimingContext = {},
-  silent = false
+  silent = false,
+  preserveWordBoundaries = false
 ): void {
   if (word.syllables.length === 0) return
 
@@ -171,7 +173,14 @@ export function distributeSyllablesMusically(
   const restPattern = detectRestPattern(word.word, nextWordText, timeToNextWord)
 
   // Step 2: Calculate available time for actual singing (minus rest)
-  const availableTime = timeToNextWord - restPattern.estimatedRestDuration
+  let availableTime = timeToNextWord - restPattern.estimatedRestDuration
+
+  // If preserving word boundaries, constrain to existing word duration
+  if (preserveWordBoundaries && word.endTime !== undefined && word.startTime !== undefined) {
+    const existingWordDuration = word.endTime - word.startTime
+    availableTime = Math.min(availableTime, existingWordDuration)
+    console.log(`🎵 Constraining "${word.word}" to existing duration: ${existingWordDuration}ms`)
+  }
 
   // Step 3: Use musical note patterns instead of filling all space
   const notePattern = estimateNotePattern(word.syllables.length, availableTime, context)
@@ -188,10 +197,15 @@ export function distributeSyllablesMusically(
     currentTime = syllable.endTime
   })
 
-  // Step 5: Set word boundaries
+  // Step 5: Set word boundaries (only if not preserving existing boundaries)
   word.startTime = wordStartTime
-  word.endTime = currentTime
-  word.duration = currentTime - wordStartTime
+  if (!preserveWordBoundaries) {
+    word.endTime = currentTime
+    word.duration = currentTime - wordStartTime
+  } else {
+    // Keep existing word boundaries, just redistribute syllables within them
+    console.log(`🎵 Preserving word boundaries for "${word.word}": ${word.startTime}-${word.endTime}`)
+  }
 
   if (!silent) {
     console.log(`🎵 Musical timing: "${word.word}" uses ${word.duration}ms of ${timeToNextWord}ms available` +
@@ -312,9 +326,13 @@ export function applyMusicalTimingToSong(
   options: {
     preserveWordTiming?: boolean // Keep word start/end times, only redistribute syllables
     aggressiveness?: 'conservative' | 'moderate' | 'aggressive' // How much to change
+    onlyProcessUntimedSyllables?: boolean // Only fix syllables that have no timing yet
   } = {}
 ): SongAnalysis {
-  const { preserveWordTiming = true, aggressiveness = 'moderate' } = options
+  const {
+    preserveWordTiming = true,
+    onlyProcessUntimedSyllables = true
+  } = options
 
   // First, analyze the song to understand its musical context
   const analysis = analyzeSongTiming(lyrics)
@@ -331,6 +349,15 @@ export function applyMusicalTimingToSong(
     for (let i = 0; i < line.words.length; i++) {
       const word = line.words[i]
       if (word.startTime !== undefined) {
+
+        // Skip words that already have good syllable timing (unless forced)
+        if (onlyProcessUntimedSyllables) {
+          const hasExistingSyllableTiming = word.syllables.some(s => s.startTime !== undefined)
+          if (hasExistingSyllableTiming) {
+            console.log(`🎵 Skipping "${word.word}" - already has syllable timing`)
+            continue
+          }
+        }
         // Calculate time to next word
         let timeToNextWord = 1000 // Default
         const nextWord = line.words[i + 1]
@@ -342,12 +369,13 @@ export function applyMusicalTimingToSong(
         const nextWordText = nextWord?.word
 
         if (preserveWordTiming && word.endTime !== undefined) {
-          // Only redistribute syllables within existing word duration
+          // Only redistribute syllables within existing word duration - DON'T change word boundaries
           const wordDuration = word.endTime - word.startTime
-          distributeSyllablesMusically(word, word.startTime, wordDuration, nextWordText, context)
+          distributeSyllablesMusically(word, word.startTime, wordDuration, nextWordText, context, false, true)
         } else {
-          // Allow word timing to change based on musical analysis
-          distributeSyllablesMusically(word, word.startTime, timeToNextWord, nextWordText, context)
+          // Allow word timing to change based on musical analysis, using centralized conservative rules
+          const conservativeTime = Math.min(timeToNextWord * TIMING.musical.conservativeMultiplier, TIMING.autoTiming.maxPhraseBreakDuration)
+          distributeSyllablesMusically(word, word.startTime, conservativeTime, nextWordText, context, false, false)
         }
       }
     }

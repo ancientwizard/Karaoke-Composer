@@ -146,6 +146,7 @@
 import { ref, computed, onMounted } from 'vue'
 import WordTimingEditor from '@/components/WordTimingEditor.vue'
 import { parseNovemberLyrics, getTestDuration, type TimedWord } from '@/utils/novemberLyrics'
+import { RelativeSyllableTiming } from '@/models/RelativeSyllableTiming'
 
 // Reactive state
 const words = ref<TimedWord[]>([])
@@ -153,7 +154,7 @@ const duration = ref(60)
 const viewStartInput = ref(0)
 const viewDurationInput = ref(3)
 const selectedWordId = ref<string | null>(null)
-const showDebugInfo = ref(false)
+const showDebugInfo = ref(true) // Enable debug by default in test rig
 const showHelp = ref(false)
 const showDebug = computed(() => showDebugInfo.value)
 
@@ -214,20 +215,57 @@ const handleWordUpdate = (wordId: string, startTime: number, endTime: number) =>
   const wordIndex = words.value.findIndex(w => w.id === wordId)
   if (wordIndex !== -1) {
     const word = words.value[wordIndex]
-    const duration = endTime - startTime
+    const oldStartTime = word.startTime
+    const oldEndTime = word.endTime
 
     // Update word timing
     word.startTime = startTime
     word.endTime = endTime
 
-    // Update syllable timing proportionally
-    const syllableDuration = duration / word.syllables.length
-    word.syllables.forEach((syllable, index) => {
-      syllable.startTime = startTime + index * syllableDuration
-      syllable.endTime = startTime + (index + 1) * syllableDuration
-    })
+    // SMART SYLLABLE HANDLING: Only adjust what needs to change
+    if (word.syllables.length > 1) {
+      const startTimeChanged = Math.abs(startTime - oldStartTime) > 0.01
+      const endTimeChanged = Math.abs(endTime - oldEndTime) > 0.01
 
-    console.log(`Updated word "${word.text}": ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s`)
+      if (startTimeChanged && !endTimeChanged) {
+        // Moving word start: shift all syllables equally
+        const deltaStart = startTime - oldStartTime
+        word.syllables.forEach((syllable) => {
+          syllable.startTime += deltaStart
+          syllable.endTime += deltaStart
+        })
+        console.log(`MOVE START: "${word.text}" shifted by ${deltaStart.toFixed(2)}s`)
+
+      } else if (endTimeChanged && !startTimeChanged) {
+        // Resizing word end: redistribute syllables proportionally from original start
+        const originalTotalDuration = oldEndTime - oldStartTime
+        const newTotalDuration = endTime - oldStartTime
+        const scaleFactor = newTotalDuration / originalTotalDuration
+
+        console.log(`RESIZE END: "${word.text}" ${oldEndTime.toFixed(2)}s -> ${endTime.toFixed(2)}s (scale: ${scaleFactor.toFixed(2)})`)
+
+        let syllableStartTime = oldStartTime
+        word.syllables.forEach((syllable) => {
+          const originalDuration = syllable.endTime - syllable.startTime
+          const newDuration = originalDuration * scaleFactor
+          syllable.startTime = syllableStartTime
+          syllable.endTime = syllableStartTime + newDuration
+          syllableStartTime = syllable.endTime
+        })
+
+        console.log(`   -> Syllables: ${word.syllables.map(s => `${s.text}(${s.startTime.toFixed(1)}-${s.endTime.toFixed(1)})`).join(' ')}`)
+
+      } else if (startTimeChanged && endTimeChanged) {
+        // Both changed: adjust first and last syllable boundaries, keep middle boundaries
+        word.syllables[0].startTime = startTime
+        word.syllables[word.syllables.length - 1].endTime = endTime
+        console.log(`MOVE WORD: "${word.text}" adjusted boundaries only`)
+      }
+    } else {
+      // Single syllable: just update it to match word
+      word.syllables[0].startTime = startTime
+      word.syllables[0].endTime = endTime
+    }
   }
 }
 
@@ -258,7 +296,74 @@ const handleWordSelected = (wordId: string | null) => {
 
 // New handlers for the simplified component
 const handleWordsUpdate = (updatedWords: any[]) => {
-  words.value = updatedWords as TimedWord[]
+  // Use RelativeSyllableTiming model for proper syllable handling
+  updatedWords.forEach((updatedWordData) => {
+    const originalWordIndex = words.value.findIndex(w => w.id === updatedWordData.id)
+    if (originalWordIndex !== -1) {
+      const originalWord = words.value[originalWordIndex]
+      const oldStartTime = originalWord.startTime
+      const oldEndTime = originalWord.endTime
+      const newStartTime = updatedWordData.startTime
+      const newEndTime = updatedWordData.endTime
+
+      // Create RelativeSyllableTiming instance from current word data
+      // Convert seconds to milliseconds and create absolute syllables for conversion
+      const absoluteSyllables = originalWord.syllables.map(syl => ({
+        text: syl.text,
+        startTime: Math.round(syl.startTime * 1000),
+        endTime: Math.round(syl.endTime * 1000)
+      }))
+
+      const timing = RelativeSyllableTiming.fromAbsoluteSyllables(
+        originalWord.id,
+        originalWord.text,
+        Math.round(oldStartTime * 1000),
+        Math.round(oldEndTime * 1000),
+        absoluteSyllables
+      )
+
+      let updatedTiming: RelativeSyllableTiming
+
+      // Determine the type of change and apply appropriate operation
+      const startTimeChanged = Math.abs(newStartTime - oldStartTime) > 0.01
+      const endTimeChanged = Math.abs(newEndTime - oldEndTime) > 0.01
+
+      if (startTimeChanged && !endTimeChanged) {
+        // Moving word: use moveWord method
+        updatedTiming = timing.moveWord(Math.round(newStartTime * 1000))
+        if (showDebugInfo.value) console.log(`MOVE: "${originalWord.text}" moved to ${newStartTime.toFixed(2)}s`)
+
+      } else if (endTimeChanged && !startTimeChanged) {
+        // Resizing word end: use resizeWordEnd method
+        updatedTiming = timing.resizeWordEnd(Math.round(newEndTime * 1000))
+        if (showDebugInfo.value) console.log(`RESIZE: "${originalWord.text}" resized to ${newEndTime.toFixed(2)}s`)
+
+      } else if (startTimeChanged && endTimeChanged) {
+        // Both changed: first move, then resize
+        const movedTiming = timing.moveWord(Math.round(newStartTime * 1000))
+        updatedTiming = movedTiming.resizeWordEnd(Math.round(newEndTime * 1000))
+        if (showDebugInfo.value) console.log(`MOVE & RESIZE: "${originalWord.text}" moved and resized`)
+
+      } else {
+        // No change needed
+        updatedTiming = timing
+      }
+
+      // Convert back to TimedWord format (milliseconds to seconds)
+      const updatedTimingWordData = updatedTiming.getWordData()
+      const updatedAbsoluteSyllables = updatedTiming.getAbsoluteSyllables()
+
+      // Update the original word with new timing data
+      originalWord.startTime = updatedTimingWordData.startTime / 1000
+      originalWord.endTime = updatedTimingWordData.endTime / 1000
+      originalWord.syllables = updatedAbsoluteSyllables.map(syl => ({
+        text: syl.text,
+        startTime: syl.startTime / 1000,
+        endTime: syl.endTime / 1000
+      }))
+    }
+  })
+
   console.log('Words updated:', updatedWords.length)
 }
 

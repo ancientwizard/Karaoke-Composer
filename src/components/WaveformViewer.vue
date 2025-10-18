@@ -64,6 +64,7 @@
             <!-- Window Controls (only for window view) -->
             <div v-if="viewMode === 'window'" class="window-controls d-flex align-items-center gap-2">
               <select class="form-select form-select-sm" v-model="windowDuration" @change="onWindowDurationChange">
+                <option :value="5000">5s</option>
                 <option :value="10000">10s</option>
                 <option :value="15000">15s</option>
                 <option :value="25000">25s</option>

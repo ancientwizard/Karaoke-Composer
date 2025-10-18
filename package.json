@@ -23,6 +23,7 @@
     "debug:test-exact": "tsx src/debug/debugTestExact.ts",
     "debug:final-verification": "tsx src/debug/finalVerification.ts",
     "debug:integration": "tsx src/debug/integrationTest.ts",
+    "debug:analyze-overlaps": "tsx src/debug/analyzeTimingOverlaps.ts",
     "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix --ignore-path .gitignore",
     "type-check": "vue-tsc --noEmit",
     "format": "prettier --write .",
