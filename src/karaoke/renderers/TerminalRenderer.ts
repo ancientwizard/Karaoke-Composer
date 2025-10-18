@@ -8,7 +8,7 @@
  * - Background text in dim white
  * - Smooth visual updates
  *
- * Think: "What you'd see on a karaoke TV screen" rendered in your terminal! 🎤
+ * Think: "What you'd see on a karaoke lyrics screen" rendered in your terminal! 🎤
  */
 
 import {
@@ -59,10 +59,11 @@ const ANSI = {
  * Terminal renderer configuration
  */
 export interface TerminalRendererConfig extends RendererConfig {
-  rows?: number    // Terminal height (default: process.stdout.rows or 24)
-  cols?: number    // Terminal width (default: process.stdout.columns or 80)
+  rows?: number    // Terminal height (default: 18 for CDG simulation, or process.stdout.rows)
+  cols?: number    // Terminal width (default: 50 for CDG simulation, or process.stdout.columns)
   backgroundColor?: 'black' | 'blue'  // Karaoke background color
   showBorder?: boolean  // Draw a border like a karaoke screen
+  simulateCDG?: boolean  // Use CDG-like dimensions (18 rows, 50 cols ~= 300px wide)
 }
 
 /**
@@ -101,11 +102,20 @@ export class TerminalRenderer extends RealTimeRenderer {
   constructor(config: TerminalRendererConfig = {}) {
     super(config)
 
-    // Get terminal dimensions from process.stdout or use defaults
-    this.rows = config.rows || (process.stdout.rows || 24)
-    this.cols = config.cols || (process.stdout.columns || 80)
+    // CDG simulation mode: use CDG-like dimensions
+    // CDG is 300x216 pixels = ~50 chars wide x 18 lines tall
+    if (config.simulateCDG) {
+      this.rows = 18  // CDG has 18 tile rows
+      this.cols = 50  // ~50 characters for 300px width
+      this.showBorder = true  // Auto-enable border in CDG mode
+    } else {
+      // Get terminal dimensions from process.stdout or use defaults
+      this.rows = config.rows || (process.stdout.rows || 24)
+      this.cols = config.cols || (process.stdout.columns || 80)
+      this.showBorder = config.showBorder ?? false
+    }
+
     this.backgroundColor = config.backgroundColor || 'black'
-    this.showBorder = config.showBorder ?? false
 
     this.displayedTexts = new Map()
     this.frameBuffer = []
@@ -188,15 +198,19 @@ export class TerminalRenderer extends RealTimeRenderer {
 
   /**
    * Map logical colors to ANSI codes
+   * ONLY sets text (foreground) color, NOT background!
    */
   protected mapColor(color: LogicalColor): string {
     switch (color) {
       case 'background':
-        return ANSI.BgBlack + ANSI.DimWhite
+        // Text that's not yet sung or already sung - dim white
+        return ANSI.DimWhite
       case 'active':
-        return ANSI.BrightYellow + ANSI.Bold  // Singing NOW!
+        // Currently singing syllable - bright yellow bold!
+        return ANSI.BrightYellow + ANSI.Bold
       case 'transition':
-        return ANSI.DimWhite  // Upcoming lyrics
+        // Upcoming lyrics - slightly brighter white
+        return ANSI.DimWhite
       default:
         return ANSI.Reset
     }
@@ -333,9 +347,16 @@ export class TerminalRenderer extends RealTimeRenderer {
 
   /**
    * Center text at given row
+   * Simpler version - just centers within total width
    */
   private centerText(text: string, row: number): { row: number; col: number } {
-    const col = Math.max(1, Math.floor((this.cols - text.length) / 2))
+    // Calculate available width (account for border if present)
+    const availableWidth = this.showBorder ? this.cols - 4 : this.cols
+    const startCol = this.showBorder ? 3 : 1  // Inside border
+
+    // Center within available space
+    const col = Math.max(startCol, startCol + Math.floor((availableWidth - text.length) / 2))
+
     return {
       row, col
     }
@@ -367,7 +388,8 @@ export class TerminalRenderer extends RealTimeRenderer {
     // This is CRITICAL for change_color commands to work
 
     // Clear screen when showing new lyric line (not metadata)
-    if (textId.startsWith('line-')) {
+    // Only clear on the FIRST wrapped line (textId ends with -0)
+    if (textId.startsWith('line-') && textId.endsWith('-0')) {
       process.stdout.write(ANSI.ClearScreen)
       process.stdout.write(ANSI.Home)
       this.drawBackground()
@@ -388,25 +410,38 @@ export class TerminalRenderer extends RealTimeRenderer {
       }
     }
 
+    // Calculate available width (account for border if present)
+    const availableWidth = this.showBorder ? this.cols - 4 : this.cols - 2
+
+    // Truncate text if too long for display
+    let displayText = text
+    if (text.length > availableWidth) {
+      displayText = text.substring(0, availableWidth - 3) + '...'
+    }
+
     // Convert position
     let termPos = this.positionToTerminal(position)
 
     // Adjust for alignment
     if (align === 'center') {
-      termPos = this.centerText(text, termPos.row)
+      termPos = this.centerText(displayText, termPos.row)
     } else if (align === 'right') {
-      termPos.col = Math.max(1, this.cols - text.length)
+      const startCol = this.showBorder ? 2 : 1
+      termPos.col = Math.max(startCol, this.cols - displayText.length - (this.showBorder ? 2 : 0))
+    } else {
+      // Left align
+      termPos.col = this.showBorder ? 3 : 1
     }
 
     // Create text element with initial color for all characters
     const colors = new Map<number, LogicalColor>()
-    for (let i = 0; i < text.length; i++) {
+    for (let i = 0; i < displayText.length; i++) {
       colors.set(i, color || 'transition')
     }
 
     this.displayedTexts.set(textId, {
       textId,
-      text,
+      text: displayText,  // Use truncated text!
       row: termPos.row,
       col: termPos.col,
       colors,

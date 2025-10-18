@@ -88,8 +88,9 @@ async function playLRCFile(filePath: string) {
     }
     console.log('')
 
-    // Create terminal renderer
+    // Create terminal renderer with CDG simulation
     const renderer = new TerminalRenderer({
+      simulateCDG: true,  // Use CDG-like dimensions (18 rows x 50 cols)
       backgroundColor: 'black',
       showBorder: false
     })

@@ -122,26 +122,48 @@ export class TimingConverter {
   ): AnyPresentationCommand[] {
     const commands: AnyPresentationCommand[] = []
 
-    const position: Position = {
+    const lineHeight = this.config.layoutConfig.fontSize * 1.2
+
+    // Title on first line
+    const titlePosition: Position = {
       x: 500,  // Centered
       y: 400   // Middle of screen
     }
 
-    // Show metadata
     commands.push(
-      PresentationCommands.showMetadata(
+      PresentationCommands.showText(
         0,
-        position,
-        {
-          title, artist
-        },
+        'metadata-title',
+        title,
+        titlePosition,
+        LogicalColor.ActiveText,
         TextAlign.Center
       )
     )
 
-    // Remove metadata after duration
+    // Artist on second line (below title)
+    const artistPosition: Position = {
+      x: 500,
+      y: 400 + lineHeight
+    }
+
     commands.push(
-      PresentationCommands.removeText(durationMs, 'metadata-0')
+      PresentationCommands.showText(
+        0,
+        'metadata-artist',
+        `by ${artist}`,
+        artistPosition,
+        LogicalColor.ActiveText,
+        TextAlign.Center
+      )
+    )
+
+    // Remove both metadata texts after duration
+    commands.push(
+      PresentationCommands.removeText(durationMs, 'metadata-title')
+    )
+    commands.push(
+      PresentationCommands.removeText(durationMs, 'metadata-artist')
     )
 
     return commands
@@ -163,7 +185,6 @@ export class TimingConverter {
       return commands
     }
 
-    const textId = `line-${lineIndex}`
     const fullText = this.getLineText(line)
 
     // Calculate layout position
@@ -176,43 +197,62 @@ export class TimingConverter {
     // Show text before first syllable starts (preview)
     const previewTime = Math.max(0, line.startTime - this.config.previewDurationMs)
 
-    commands.push(
-      PresentationCommands.showText(
-        previewTime,
-        textId,  // Pass the textId for later color changes!
-        fullText,
-        layout.position,
-        LogicalColor.TransitionText,  // Start with dim color
-        this.config.displayAlign
-      )
-    )
+    // Generate show_text commands for each wrapped line
+    const lineHeight = this.config.layoutConfig.fontSize * 1.2
 
-    // Create syllable highlighting commands
+    for (let wrappedLineIdx = 0; wrappedLineIdx < layout.lines.length; wrappedLineIdx++) {
+      const wrappedText = layout.lines[wrappedLineIdx]
+      const textId = `line-${lineIndex}-${wrappedLineIdx}`
+
+      // Calculate Y position for this wrapped line
+      const yOffset = wrappedLineIdx * lineHeight
+      const linePosition: Position = {
+        x: layout.position.x,
+        y: layout.position.y + yOffset
+      }
+
+      commands.push(
+        PresentationCommands.showText(
+          previewTime,
+          textId,
+          wrappedText,
+          linePosition,
+          LogicalColor.TransitionText,  // Start with dim color
+          this.config.displayAlign
+        )
+      )
+    }
+
+    // Create syllable highlighting commands across all wrapped lines
     const highlightCommands = this.createSyllableHighlights(
       line,
-      textId
+      lineIndex,
+      layout.lines
     )
     commands.push(...highlightCommands)
 
-    // Remove text after line ends
-    if (nextLine) {
-      // Transition to next line
-      const transitionStart = line.endTime
+    // Remove all wrapped line texts after line ends
+    for (let wrappedLineIdx = 0; wrappedLineIdx < layout.lines.length; wrappedLineIdx++) {
+      const textId = `line-${lineIndex}-${wrappedLineIdx}`
 
-      commands.push(
-        PresentationCommands.removeText(
-          transitionStart + this.config.transitionDurationMs,
-          textId
+      if (nextLine) {
+        // Transition to next line
+        const transitionStart = line.endTime
+        commands.push(
+          PresentationCommands.removeText(
+            transitionStart + this.config.transitionDurationMs,
+            textId
+          )
         )
-      )
-    } else {
-      // Last line - just remove after a delay
-      commands.push(
-        PresentationCommands.removeText(
-          line.endTime + 2000,  // Keep last line visible for 2 seconds
-          textId
+      } else {
+        // Last line - just remove after a delay
+        commands.push(
+          PresentationCommands.removeText(
+            line.endTime + 2000,  // Keep last line visible for 2 seconds
+            textId
+          )
         )
-      )
+      }
     }
 
     return commands
@@ -220,12 +260,43 @@ export class TimingConverter {
 
   /**
    * Create color change commands for syllable-level highlighting
+   * Maps syllables to the correct wrapped line and character position
    */
   private createSyllableHighlights(
     line: LyricLine,
-    textId: string
+    lineIndex: number,
+    wrappedLines: string[]
   ): AnyPresentationCommand[] {
     const commands: AnyPresentationCommand[] = []
+
+    // Build a map of character index in full text to wrapped line
+    const fullText = this.getLineText(line)
+    const charToLineMap: { lineIdx: number; charIdx: number }[] = []
+
+    let currentLineIdx = 0
+    let charInLine = 0
+
+    for (let i = 0; i < fullText.length; i++) {
+      charToLineMap.push({
+        lineIdx: currentLineIdx,
+        charIdx: charInLine
+      })
+
+      charInLine++
+
+      // Check if we're at the end of current wrapped line
+      if (currentLineIdx < wrappedLines.length - 1 &&
+        charInLine >= wrappedLines[currentLineIdx].length) {
+        currentLineIdx++
+        charInLine = 0
+
+        // Skip the space character that was used to wrap
+        if (i + 1 < fullText.length && fullText[i + 1] === ' ') {
+          i++  // Skip space in mapping
+        }
+      }
+    }
+
     let charOffset = 0
 
     for (const word of line.words) {
@@ -233,16 +304,33 @@ export class TimingConverter {
         if (syllable.startTime !== undefined) {
           const syllableLength = syllable.syllable.length
 
-          // Change color when syllable starts
-          commands.push(
-            PresentationCommands.changeColor(
-              syllable.startTime,
-              textId,
-              charOffset,
-              charOffset + syllableLength,
-              LogicalColor.ActiveText
-            )
-          )
+          // Find which wrapped line(s) this syllable appears in
+          const startMapping = charToLineMap[charOffset]
+          const endMapping = charToLineMap[Math.min(charOffset + syllableLength - 1, charToLineMap.length - 1)]
+
+          if (startMapping && endMapping) {
+            // Syllable might span multiple wrapped lines (rare but possible)
+            for (let lineIdx = startMapping.lineIdx; lineIdx <= endMapping.lineIdx; lineIdx++) {
+              const textId = `line-${lineIndex}-${lineIdx}`
+
+              // Calculate start and end positions within this wrapped line
+              const isFirstLine = lineIdx === startMapping.lineIdx
+              const isLastLine = lineIdx === endMapping.lineIdx
+
+              const startChar = isFirstLine ? startMapping.charIdx : 0
+              const endChar = isLastLine ? endMapping.charIdx + 1 : wrappedLines[lineIdx].length
+
+              commands.push(
+                PresentationCommands.changeColor(
+                  syllable.startTime,
+                  textId,
+                  startChar,
+                  endChar,
+                  LogicalColor.ActiveText
+                )
+              )
+            }
+          }
 
           charOffset += syllableLength
         } else {

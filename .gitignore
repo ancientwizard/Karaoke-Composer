@@ -51,6 +51,9 @@ dist/
 dist-ssr/
 *.local
 
+# Generated output files (CDG, LRC, etc.)
+output/
+
 # Rollup build output
 build/
 

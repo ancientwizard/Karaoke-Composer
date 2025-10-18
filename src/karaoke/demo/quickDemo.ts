@@ -37,6 +37,7 @@ async function quickDemo(filePath: string, durationSeconds: number = 30) {
     console.log(`🎬 Playing ${commands.length} commands in ${durationSeconds}s...\n`)
 
     const renderer = new TerminalRenderer({
+      simulateCDG: true,  // Use CDG-like dimensions (18 rows x 50 cols)
       backgroundColor: 'black',
       showBorder: false
     })
