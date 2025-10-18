@@ -314,10 +314,7 @@ const getSyllableDuration = (syllable: Syllable): number => syllable.endTime - s
 // Validate and fix word timing to prevent negative durations
 const validateWordTiming = (word: Word): Word => {
   if (word.endTime <= word.startTime) {
-    const originalDuration = word.endTime - word.startTime
-    console.error(`❌ INVALID TIMING DETECTED for "${word.text}": startTime=${word.startTime}, endTime=${word.endTime}, duration=${originalDuration}ms`)
     const minEndTime = word.startTime + TIMING.word.minDuration / 1000
-    console.error(`   → Fixing by setting endTime to ${minEndTime}`)
     return {
       ...word,
       endTime: minEndTime
@@ -356,6 +353,7 @@ const startDrag = (type: 'move' | 'resize' | 'syllable', word: Word, event: Mous
   } else if (type === 'syllable' && typeof syllableIndex === 'number' && word.syllables) {
     dragStartTime.value = word.syllables[syllableIndex].endTime
     dragSyllableIndex.value = syllableIndex
+    console.log(`🎯 Starting syllable drag: word="${word.text}", syllable=${syllableIndex}, boundary=${dragStartTime.value.toFixed(3)}s`)
   }
 
   // Store original syllable proportions for this word (duration-based)
@@ -489,11 +487,14 @@ const handleMouseMove = (event: MouseEvent) => {
   } else if (dragType.value === 'syllable') {
     // Adjust syllable boundary
     if (word.syllables && dragSyllableIndex.value < word.syllables.length - 1) {
-      const syllableMargin = TIMING.syllable.minDuration / 2000 // Half min duration for boundary adjustment
+      const syllableMargin = TIMING.syllable.minDuration / 1000 / 2 // Half of min duration in seconds for boundary adjustment
       const newBoundaryTime = Math.max(
         word.syllables[dragSyllableIndex.value].startTime + syllableMargin,
         Math.min(word.syllables[dragSyllableIndex.value + 1].endTime - syllableMargin, dragStartTime.value + deltaTime)
       )
+
+      // Debug logging for syllable boundary adjustment
+      console.log(`🔧 Syllable boundary: "${word.syllables[dragSyllableIndex.value].text}" | "${word.syllables[dragSyllableIndex.value + 1].text}" → ${newBoundaryTime.toFixed(3)}s`)
 
       word.syllables[dragSyllableIndex.value].endTime = newBoundaryTime
       word.syllables[dragSyllableIndex.value + 1].startTime = newBoundaryTime

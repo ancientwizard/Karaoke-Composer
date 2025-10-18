@@ -1,5 +1,6 @@
 // Audio playback service using Web Audio API and HTML5 Audio
 import type { PlaybackState, AudioFile } from '@/types/karaoke'
+import { TimingUtils } from '@/models/TimingConstants'
 
 export class AudioService {
   private audio: HTMLAudioElement | null = null
@@ -8,6 +9,10 @@ export class AudioService {
   private analyser: AnalyserNode | null = null
   private gainNode: GainNode | null = null
   private isInitialized = false
+
+  // High-frequency timer for smooth updates
+  private updateTimer: number | null = null
+  private fastMode = false
 
   private playbackState: PlaybackState = {
     isPlaying: false,
@@ -54,8 +59,7 @@ export class AudioService {
         await this.audioContext.resume()
         console.log('Audio context resumed')
       }
-    }
-    catch (error) {
+    } catch (error) {
       console.error('Failed to initialize audio context:', error)
     }
   }
@@ -80,11 +84,9 @@ export class AudioService {
       if (audioFile.file) {
         const url = URL.createObjectURL(audioFile.file)
         this.audio.src = url
-      }
-      else if (audioFile.url) {
+      } else if (audioFile.url) {
         this.audio.src = audioFile.url
-      }
-      else {
+      } else {
         throw new Error('No audio file or URL provided')
       }
 
@@ -97,8 +99,7 @@ export class AudioService {
           this.source = this.audioContext.createMediaElementSource(this.audio)
           this.source.connect(this.gainNode)
           console.log('Audio source connected to Web Audio API')
-        }
-        catch (contextError) {
+        } catch (contextError) {
           console.warn('Web Audio API connection failed, falling back to basic audio:', contextError)
           // Continue without Web Audio API features
         }
@@ -131,8 +132,7 @@ export class AudioService {
       this.updatePlaybackState()
 
       return true
-    }
-    catch (error) {
+    } catch (error) {
       console.error('Failed to load audio file:', error)
       this.playbackState.isLoaded = false
       this.updatePlaybackState()
@@ -189,10 +189,10 @@ export class AudioService {
 
       await this.audio.play()
       this.playbackState.isPlaying = true
+      this.startUpdateTimer() // Start high-frequency timer
       this.updatePlaybackState()
       console.log('Audio playback started successfully')
-    }
-    catch (error) {
+    } catch (error) {
       console.error('Failed to play audio:', error)
       throw error
     }
@@ -201,6 +201,7 @@ export class AudioService {
   pause(): void {
     if (this.audio) {
       this.audio.pause()
+      this.stopUpdateTimer() // Stop high-frequency timer
     }
   }
 
@@ -249,9 +250,7 @@ export class AudioService {
   }
 
   getPlaybackState(): PlaybackState {
-    return {
-      ...this.playbackState
-    }
+    return { ...this.playbackState }
   }
 
   onTimeUpdate(callback: (time: number) => void): void {
@@ -262,11 +261,49 @@ export class AudioService {
     this.playbackStateCallback = callback
   }
 
+  // Enable/disable fast refresh mode for smoother updates
+  setFastMode(enabled: boolean): void {
+    this.fastMode = enabled
+    if (this.playbackState.isPlaying) {
+      this.stopUpdateTimer()
+      this.startUpdateTimer()
+    }
+    console.log(`🔄 Fast refresh mode: ${enabled ? 'enabled' : 'disabled'} (${enabled ? '12Hz' : '8Hz'})`)
+  }
+
+  // Toggle fast refresh mode for hotkey convenience
+  toggleFastMode(): void {
+    this.setFastMode(!this.fastMode)
+  }
+
+  private startUpdateTimer(): void {
+    if (this.updateTimer) {
+      clearInterval(this.updateTimer)
+    }
+
+    const interval = TimingUtils.getPlaybackUpdateInterval(this.fastMode)
+    this.updateTimer = window.setInterval(() => {
+      if (this.audio && this.playbackState.isPlaying) {
+        const currentTimeMs = this.audio.currentTime * 1000
+        this.playbackState.currentTime = currentTimeMs
+
+        if (this.timeUpdateCallback) {
+          this.timeUpdateCallback(currentTimeMs)
+        }
+      }
+    }, interval)
+  }
+
+  private stopUpdateTimer(): void {
+    if (this.updateTimer) {
+      clearInterval(this.updateTimer)
+      this.updateTimer = null
+    }
+  }
+
   private updatePlaybackState(): void {
     if (this.playbackStateCallback) {
-      this.playbackStateCallback({
-        ...this.playbackState
-      })
+      this.playbackStateCallback({ ...this.playbackState })
     }
   }
 
@@ -315,8 +352,7 @@ export class AudioService {
       }
 
       return peaks
-    }
-    catch (error) {
+    } catch (error) {
       console.error('Failed to generate waveform data:', error)
       return null
     }
@@ -350,8 +386,7 @@ export class AudioService {
 
       console.log('🎵 Duration detected via Web Audio API:', audioBuffer.duration, 'seconds')
       return durationMs
-    }
-    catch (error) {
+    } catch (error) {
       console.error('❌ Failed to detect audio duration:', error)
 
       // Fallback: return a default duration and warn user
@@ -363,12 +398,10 @@ export class AudioService {
   private async fileToArrayBuffer(audioFile: AudioFile): Promise<ArrayBuffer> {
     if (audioFile.file) {
       return await audioFile.file.arrayBuffer()
-    }
-    else if (audioFile.url) {
+    } else if (audioFile.url) {
       const response = await fetch(audioFile.url)
       return await response.arrayBuffer()
-    }
-    else {
+    } else {
       throw new Error('No audio file or URL available')
     }
   }

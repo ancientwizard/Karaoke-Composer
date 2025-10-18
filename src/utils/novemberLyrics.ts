@@ -23,6 +23,9 @@ interface TimedWord {
 const NOVEMBER_LYRICS = `[@TITLE:Meet Me In November]
 [@AUTHOR:Ancient Wizard]
 
+[@CAPTION:You GO Marry Poppins!]
+Su/per/cal/i/frag/i/lis/tic/ex/pi/al/i/do/cious!
+
 [@CAPTION:Verse 1]
 Meet me in No/vem/ber, like a song of sto/ries told.
 So per/fect it can't be real, yet hope will make it so.
@@ -81,9 +84,9 @@ export function parseNovemberLyrics(): TimedWord[] {
   let wordId = 0
   const beatInterval = 0.8 // Longer intervals for more obvious gaps
   const wordDuration = 0.4 // Words are shorter than the beat interval
-  const gapBetweenWords = 0.4 // Larger gap between words for easier dragging
 
-  console.log(`🎵 Generating lyrics with: wordDuration=${wordDuration}s, beatInterval=${beatInterval}s, gap=${gapBetweenWords}s`)
+  console.log(`🎵 Generating lyrics with: wordDuration=${wordDuration}s, beatInterval=${beatInterval}s`)
+  console.log(`⚙️ Using centralized timing: minGap=${TIMING.word.collisionMargin}ms, minSyllable=${TIMING.syllable.minDuration}ms`)
 
   // Parse the lyrics with metadata handling (like the main app)
   const { lyrics, metadata } = parseLyricsWithMetadata(NOVEMBER_LYRICS)
@@ -191,18 +194,32 @@ export function parseNovemberLyrics(): TimedWord[] {
         }
       }
 
-      currentTime += actualWordDuration
+      // Apply realistic word spacing using beat-based gaps
+      // Use a fraction of the beat interval as gap (more musical)
+      const wordGap = beatInterval - actualWordDuration // Remaining time in beat
+      const minGap = TIMING.word.collisionMargin / 1000 // Minimum safe gap
+      const actualGap = Math.max(wordGap * 0.6, minGap) // Use 60% of available gap, minimum safe gap
+
+      // Debug first few words to show gap calculations
+      if (wordId <= 5) {
+        console.log(`📏 Word "${cleanWord}": duration=${actualWordDuration.toFixed(3)}s, gap=${actualGap.toFixed(3)}s, next=${(currentTime + actualWordDuration + actualGap).toFixed(3)}s`)
+      }
+
+      currentTime += actualWordDuration + actualGap
     }
 
     // Add pause between lines
     currentTime += beatInterval * 0.5
   }
 
-  // Debug: Log first few words to see timing
-  console.log('📊 First 5 words timing:')
+  // Debug: Log first few words to see timing and gaps
+  console.log('📊 First 5 words with gaps:')
   words.slice(0, 5).forEach((word, index) => {
+    const nextWord = words[index + 1]
+    const gap = nextWord ? nextWord.startTime - word.endTime : 0
     console.log(
-      `  ${index + 1}. "${word.text}": ${word.startTime.toFixed(2)}s - ${word.endTime.toFixed(2)}s (duration: ${(word.endTime - word.startTime).toFixed(2)}s)`
+      `  ${index + 1}. "${word.text}": ${word.startTime.toFixed(3)}s - ${word.endTime.toFixed(3)}s` +
+      (gap > 0 ? ` → gap: ${gap.toFixed(3)}s` : ' (last)')
     )
   })
 

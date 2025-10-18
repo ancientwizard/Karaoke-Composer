@@ -22,6 +22,9 @@
           <kbd>Alt</kbd><kbd>T</kbd><span>Toggle mode</span>
         </div>
         <div class="hotkey-item">
+          <kbd>Ctrl</kbd><kbd>F</kbd><span>Fast refresh (smoother)</span>
+        </div>
+        <div class="hotkey-item">
           <kbd>Home</kbd><kbd>End</kbd><span>Start/End</span>
         </div>
         <div class="hotkey-item">

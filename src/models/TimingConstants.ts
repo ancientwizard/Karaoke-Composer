@@ -95,6 +95,13 @@ export interface TimingRules {
     durationTolerance: number    // Tolerance for duration matching (ms)
     timingPrecision: number      // Rounding precision for timing values (ms)
   }
+
+  // Visual refresh and update rates
+  refresh: {
+    playbackUpdateHz: number     // Playback position update frequency (Hz)
+    fastModeMultiplier: number   // Multiplier for faster refresh mode
+    dragUpdateHz: number         // UI update frequency during drag operations (Hz)
+  }
 }
 
 /**
@@ -155,6 +162,12 @@ export const DEFAULT_TIMING_RULES: TimingRules = {
     overlapTolerance: 3,         // Auto-fix overlaps up to 3ms
     durationTolerance: 1,        // 1ms tolerance for duration matching
     timingPrecision: 1,          // Round to nearest 1ms
+  },
+
+  refresh: {
+    playbackUpdateHz: 8,         // 8 Hz = 125ms intervals (2x faster than HTML5 default)
+    fastModeMultiplier: 1.5,     // 1.5x faster = 12 Hz for fast mode
+    dragUpdateHz: 60,            // 60 Hz for smooth drag operations (requestAnimationFrame)
   }
 }
 
@@ -209,6 +222,23 @@ export class TimingUtils {
    */
   static roundTiming(value: number): number {
     return Math.round(value / TIMING.validation.timingPrecision) * TIMING.validation.timingPrecision
+  }
+
+  /**
+   * Get playback update interval in milliseconds
+   */
+  static getPlaybackUpdateInterval(fastMode: boolean = false): number {
+    const hz = fastMode
+      ? TIMING.refresh.playbackUpdateHz * TIMING.refresh.fastModeMultiplier
+      : TIMING.refresh.playbackUpdateHz
+    return 1000 / hz
+  }
+
+  /**
+   * Get drag update interval in milliseconds
+   */
+  static getDragUpdateInterval(): number {
+    return 1000 / TIMING.refresh.dragUpdateHz
   }
 }
 

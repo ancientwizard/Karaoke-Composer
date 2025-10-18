@@ -421,21 +421,78 @@ const finalizeCurrentWordSyllables = () => {
 }
 
 const selectLine = (lineIndex: number) => {
-  // If selecting a metadata line, find the nearest lyric line
-  if (project.value && lineIndex < project.value.lyrics.length) {
-    const selectedLine = project.value.lyrics[lineIndex]
-    if (isMetadataLine(selectedLine)) {
-      // Try to find the next lyric line first, then previous
-      let nextLyricIndex = findNextLyricLine(lineIndex + 1)
-      if (nextLyricIndex === lineIndex + 1 && nextLyricIndex >= project.value.lyrics.length) {
-        nextLyricIndex = findPrevLyricLine(lineIndex - 1)
-      }
-      currentLine.value = nextLyricIndex
-    } else {
-      currentLine.value = lineIndex
-    }
-  } else {
+  if (!project.value || lineIndex >= project.value.lyrics.length) {
     currentLine.value = lineIndex
+    return
+  }
+
+  const selectedLine = project.value.lyrics[lineIndex]
+
+  // If selecting a metadata line, find the nearest lyric line
+  if (isMetadataLine(selectedLine)) {
+    // Try to find the next lyric line first, then previous
+    let nextLyricIndex = findNextLyricLine(lineIndex + 1)
+    if (nextLyricIndex === lineIndex + 1 && nextLyricIndex >= project.value.lyrics.length) {
+      nextLyricIndex = findPrevLyricLine(lineIndex - 1)
+    }
+    currentLine.value = nextLyricIndex
+    return
+  }
+
+  // Handle regular lyric lines with smart timing behavior
+  if (selectedLine.startTime !== undefined && selectedLine.words && selectedLine.words.length > 0) {
+    // Case A: Line has timing - focus first word and seek to start time minus word duration as lead-in
+    currentLine.value = lineIndex
+    currentWordIndex.value = 0
+
+    // Calculate lead-in time: subtract first word's duration from line start time
+    const firstWord = selectedLine.words[0]
+    const wordDuration = firstWord.endTime && firstWord.startTime
+      ? firstWord.endTime - firstWord.startTime
+      : 500 // Default 500ms if no word timing
+
+    const leadInTime = Math.max(0, selectedLine.startTime - wordDuration)
+
+    console.log(`📍 Smart line selection: Line ${lineIndex + 1} with timing at ${selectedLine.startTime}ms, seeking to lead-in at ${leadInTime}ms`)
+    audioService.seek(leadInTime)
+
+  } else {
+    // Case B: Line has no timing - find previous timed line, seek there, select next line and focus first word
+    let previousTimedLineIndex = lineIndex - 1
+    let previousTimedLine = null
+
+    // Find the closest previous line with timing
+    while (previousTimedLineIndex >= 0) {
+      const line = project.value.lyrics[previousTimedLineIndex]
+      if (!isMetadataLine(line) && line.startTime !== undefined) {
+        previousTimedLine = line
+        break
+      }
+      previousTimedLineIndex--
+    }
+
+    if (previousTimedLine && previousTimedLine.startTime !== undefined) {
+      // Seek to the previous timed line's start time
+      console.log(`📍 Smart line selection: Line ${lineIndex + 1} without timing, seeking to previous timed line at ${previousTimedLine.startTime}ms`)
+      audioService.seek(previousTimedLine.startTime)
+
+      // Select the line that follows the previous timed line (could be the original selection or the line after the timed line)
+      const nextLineIndex = previousTimedLineIndex + 1
+      if (nextLineIndex < project.value.lyrics.length && !isMetadataLine(project.value.lyrics[nextLineIndex])) {
+        currentLine.value = nextLineIndex
+        currentWordIndex.value = 0
+        console.log(`📍 Auto-selected next line ${nextLineIndex + 1} for timing continuation`)
+      } else {
+        // Fallback to original selection
+        currentLine.value = lineIndex
+        currentWordIndex.value = 0
+      }
+    } else {
+      // No previous timed line found, just select normally
+      currentLine.value = lineIndex
+      currentWordIndex.value = 0
+      console.log(`📍 Line ${lineIndex + 1} selected without timing, no previous timed line found`)
+    }
   }
 }
 
@@ -1067,6 +1124,15 @@ const setupGlobalHotkeys = () => {
         if (event.ctrlKey || event.metaKey) {
           event.preventDefault()
           skipForward()
+        }
+        break
+
+      case 'KeyF':
+        if (event.ctrlKey || event.metaKey) {
+          event.preventDefault()
+          // Toggle fast refresh mode for smoother syllable boundary movement
+          audioService.toggleFastMode()
+          console.log('🔄 Toggled fast refresh mode')
         }
         break
 

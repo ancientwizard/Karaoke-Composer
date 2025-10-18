@@ -1,4 +1,4 @@
-import { TIMING, TimingUtils } from '@/models/TimingConstants'
+import { TIMING } from '@/models/TimingConstants'
 
 /**
  * RelativeSyllableTiming - A proper TypeScript model for handling syllable timing
@@ -48,8 +48,10 @@ export class RelativeSyllableTiming {
 
     let currentOffset = 0
     for (const syllable of this.word.syllables) {
-      if (syllable.startOffset !== currentOffset) {
-        throw new Error(`Syllable "${syllable.text}" has gap or overlap. Expected startOffset: ${currentOffset}, got: ${syllable.startOffset}`)
+      // Allow small rounding errors in offset alignment
+      const offsetError = Math.abs(syllable.startOffset - currentOffset)
+      if (offsetError > TIMING.validation.timingPrecision) {
+        throw new Error(`Syllable "${syllable.text}" has gap or overlap. Expected startOffset: ${currentOffset}, got: ${syllable.startOffset} (error: ${offsetError}ms)`)
       }
       if (syllable.duration <= 0) {
         throw new Error(`Syllable "${syllable.text}" must have positive duration, got: ${syllable.duration}`)
@@ -271,8 +273,9 @@ export class RelativeSyllableTiming {
 
       // Ensure positive duration using centralized minimum
       if (endTime <= startTime) {
-        const minEndTime = startTime + TIMING.validation.timingPrecision
-        console.warn(`⚠️ Fixed negative duration for syllable "${syllable.text}": was ${startTime}-${endTime}, now ${startTime}-${minEndTime}`)
+        const minDuration = Math.max(TIMING.validation.timingPrecision, TIMING.syllable.minDuration / 1000)
+        const minEndTime = startTime + minDuration
+        // console.warn(`⚠️ Fixed negative duration for syllable "${syllable.text}": was ${startTime}-${endTime}, now ${startTime}-${minEndTime}`)
         endTime = minEndTime
       }
 
@@ -290,24 +293,44 @@ export class RelativeSyllableTiming {
       currentTime = endTime
     }
 
-    // Convert to relative syllables
-    const relativeSyllables: RelativeSyllable[] = cleanedSyllables.map(syllable => {
+    // Convert to relative syllables with proper offset calculation
+    const relativeSyllables: RelativeSyllable[] = []
+    let expectedOffset = 0
+
+    for (const syllable of cleanedSyllables) {
       const duration = syllable.endTime - syllable.startTime
+
+      // Ensure minimum duration
+      const safeDuration = Math.max(duration, TIMING.validation.timingPrecision)
+
       if (duration <= 0) {
-        console.error(`❌ Still negative duration after cleanup for "${syllable.text}": ${syllable.startTime}-${syllable.endTime} = ${duration}`)
+        // console.warn(`⚠️ Fixed zero/negative duration for "${syllable.text}": ${duration}ms → ${safeDuration}ms`)
       }
-      return {
+
+      relativeSyllables.push({
         text: syllable.text,
-        startOffset: syllable.startTime - Math.round(wordStartTime),
-        duration: duration
-      }
-    })
+        startOffset: expectedOffset, // Use expected offset, not calculated
+        duration: safeDuration
+      })
+
+      expectedOffset += safeDuration
+    }
+
+    // Calculate actual word duration from cleaned syllables
+    const actualWordDuration = relativeSyllables.reduce((sum, syl) => sum + syl.duration, 0)
+    const adjustedWordEndTime = Math.round(wordStartTime) + actualWordDuration
+
+    // If word duration changed significantly, log it
+    const originalWordDuration = Math.round(wordEndTime) - Math.round(wordStartTime)
+    if (Math.abs(actualWordDuration - originalWordDuration) > TIMING.validation.durationTolerance) {
+      // console.warn(`⚠️ Adjusted word "${wordText}" duration: ${originalWordDuration}ms → ${actualWordDuration}ms to match syllables`)
+    }
 
     return new RelativeSyllableTiming({
       id: wordId,
       text: wordText,
       startTime: Math.round(wordStartTime),
-      endTime: Math.round(wordEndTime),
+      endTime: adjustedWordEndTime,
       syllables: relativeSyllables
     })
   }
