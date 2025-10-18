@@ -263,6 +263,9 @@
       </div>
     </div>
   </div>
+
+  <!-- Export Dialog -->
+  <ExportDialog v-if="showExportDialog && projectToExport" :project="projectToExport" @close="closeExportDialog" />
 </template>
 
 <script setup lang="ts">
@@ -271,12 +274,14 @@ import { useRouter } from 'vue-router'
 import type { KaraokeProject } from '@/types/karaoke'
 import { audioStorageService } from '@/services/audioStorageService'
 import { parseLyricsWithMetadata } from '@/utils/lyricsParser'
-import { LRCWriter } from '@/formats/LRCFormat'
+import ExportDialog from '@/components/ExportDialog.vue'
 
 // Reactive state
 const router = useRouter()
 const showCreateProject = ref(false)
 const showStorageInfo = ref(false)
+const showExportDialog = ref(false)
+const projectToExport = ref<KaraokeProject | null>(null)
 const projects = ref<KaraokeProject[]>([])
 const isMounted = ref(true)
 
@@ -498,29 +503,13 @@ const deleteProject = async (project: KaraokeProject) => {
 }
 
 const exportProject = (project: KaraokeProject) => {
-  try {
-    // Export as LRC V2+ with syllable timing
-    const lrcContent = LRCWriter.toLRC(project)
+  projectToExport.value = project
+  showExportDialog.value = true
+}
 
-    // Download as .lrc file
-    const blob = new Blob([lrcContent], { type: 'text/plain; charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    const filename = project.name.toLowerCase().replace(/[^a-z0-9]+/g, '_')
-    link.download = `${filename}.lrc`
-
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-
-    URL.revokeObjectURL(url)
-
-    alert(`✅ Project "${project.name}" exported as LRC!\n\nFile: ${filename}.lrc\n\nThis file contains:\n- Full syllable timing\n- All lyrics\n- Song metadata\n\nYou can:\n- Share it with others\n- Import it back later\n- Use it with the terminal renderer`)
-  } catch (error) {
-    console.error('Export error:', error)
-    alert(`❌ Export failed: ${error}`)
-  }
+const closeExportDialog = () => {
+  showExportDialog.value = false
+  projectToExport.value = null
 }
 
 const formatDate = (date: Date) => {

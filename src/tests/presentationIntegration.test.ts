@@ -170,12 +170,26 @@ describe('Karaoke Presentation Integration', () => {
       const project = createTestProject()
       const script = engine.generateScript(project)
 
-      const metadataCmd = script.commands.find(cmd => cmd.type === 'show_metadata')
-      expect(metadataCmd).toBeDefined()
+      // Metadata now uses two show_text commands (title and artist on separate lines)
+      const titleCmd = script.commands.find(cmd =>
+        cmd.type === 'show_text' &&
+        'textId' in cmd &&
+        cmd.textId === 'metadata-title'
+      )
+      const artistCmd = script.commands.find(cmd =>
+        cmd.type === 'show_text' &&
+        'textId' in cmd &&
+        cmd.textId === 'metadata-artist'
+      )
 
-      if (metadataCmd && 'title' in metadataCmd) {
-        expect(metadataCmd.title).toBe('Test Song')
-        expect(metadataCmd.artist).toBe('Test Artist')
+      expect(titleCmd).toBeDefined()
+      expect(artistCmd).toBeDefined()
+
+      if (titleCmd && 'text' in titleCmd) {
+        expect(titleCmd.text).toBe('Test Song')
+      }
+      if (artistCmd && 'text' in artistCmd) {
+        expect(artistCmd.text).toBe('by Test Artist')
       }
     })
 
