@@ -203,6 +203,10 @@
                       </span>
                     </div>
                   </button>
+                  <button class="btn btn-success export-btn" @click.stop="exportProject(project)"
+                    title="Export project for terminal demo">
+                    <i class="bi bi-download"></i>
+                  </button>
                   <button class="btn btn-warning delete-btn" @click.stop="deleteProject(project)"
                     title="Delete project">
                     <i class="bi bi-trash3"></i>
@@ -267,6 +271,7 @@ import { useRouter } from 'vue-router'
 import type { KaraokeProject } from '@/types/karaoke'
 import { audioStorageService } from '@/services/audioStorageService'
 import { parseLyricsWithMetadata } from '@/utils/lyricsParser'
+import { LRCWriter } from '@/formats/LRCFormat'
 
 // Reactive state
 const router = useRouter()
@@ -489,6 +494,32 @@ const deleteProject = async (project: KaraokeProject) => {
 
       console.log(`Project "${project.name}" deleted successfully`)
     }
+  }
+}
+
+const exportProject = (project: KaraokeProject) => {
+  try {
+    // Export as LRC V2+ with syllable timing
+    const lrcContent = LRCWriter.toLRC(project)
+
+    // Download as .lrc file
+    const blob = new Blob([lrcContent], { type: 'text/plain; charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    const filename = project.name.toLowerCase().replace(/[^a-z0-9]+/g, '_')
+    link.download = `${filename}.lrc`
+
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+
+    URL.revokeObjectURL(url)
+
+    alert(`✅ Project "${project.name}" exported as LRC!\n\nFile: ${filename}.lrc\n\nThis file contains:\n- Full syllable timing\n- All lyrics\n- Song metadata\n\nYou can:\n- Share it with others\n- Import it back later\n- Use it with the terminal renderer`)
+  } catch (error) {
+    console.error('Export error:', error)
+    alert(`❌ Export failed: ${error}`)
   }
 }
 
@@ -735,6 +766,21 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   font-size: 1.5rem;
+}
+
+.export-btn {
+  width: 60px;
+  max-width: 60px;
+  flex: 0 0 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+}
+
+.export-btn:hover {
+  background-color: #198754 !important;
+  border-color: #198754 !important;
 }
 
 .project-item .btn-group {

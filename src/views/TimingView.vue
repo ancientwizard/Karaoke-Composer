@@ -1339,10 +1339,8 @@ const handleTimingEditorWordsUpdate = (updatedWords: any[]) => {
             originalWord.endTime = newEndTime
             originalWord.duration = newEndTime - newStartTime
             // console.log(`  → Direct syllable update from s-break drag`)
-          }
-
-          // Use RelativeSyllableTiming model for word-level timing changes (move/resize)
-          else if (originalWord.syllables && originalWord.syllables.length > 0) {
+          } else if (originalWord.syllables && originalWord.syllables.length > 0) {
+            // Use RelativeSyllableTiming model for word-level timing changes (move/resize)
             try {
               // console.log(`🔍 Debug syllable data for "${originalWord.word}":`, originalWord.syllables)
 

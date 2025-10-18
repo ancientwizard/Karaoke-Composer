@@ -66,7 +66,7 @@ describe('RelativeSyllableTiming', () => {
         ]
       }
 
-      expect(() => new RelativeSyllableTiming(invalidWord)).toThrow("duration doesn't match")
+      expect(() => new RelativeSyllableTiming(invalidWord)).toThrow("doesn't match")
     })
 
     it('should require at least one syllable', () => {
@@ -104,10 +104,10 @@ describe('RelativeSyllableTiming', () => {
       const singleSyllableWord: TimedWordData = {
         id: 'single',
         text: 'cat',
-        startTime: 0.5,
-        endTime: 1.0,
+        startTime: 500,
+        endTime: 1000,
         syllables: [{
-          text: 'cat', startOffset: 0.0, duration: 0.5
+          text: 'cat', startOffset: 0, duration: 500
         }]
       }
 
@@ -116,7 +116,7 @@ describe('RelativeSyllableTiming', () => {
 
       expect(absoluteSyllables).toEqual([
         {
-          text: 'cat', startTime: 0.5, endTime: 1.0
+          text: 'cat', startTime: 500, endTime: 1000
         }
       ])
     })
@@ -125,144 +125,144 @@ describe('RelativeSyllableTiming', () => {
   describe('Word Movement', () => {
     it('should move word and all syllables automatically', () => {
       const timing = new RelativeSyllableTiming(createTestWord())
-      const moved = timing.moveWord(2.5)
+      const moved = timing.moveWord(2500) // 2.5s = 2500ms
 
       const movedData = moved.getWordData()
-      expect(movedData.startTime).toBe(2.5)
-      expect(movedData.endTime).toBe(3.5) // Duration preserved
+      expect(movedData.startTime).toBe(2500)
+      expect(movedData.endTime).toBe(3500) // Duration preserved
 
       // Syllables should have same relative positions
       expect(movedData.syllables).toEqual([
         {
-          text: 'No', startOffset: 0.0, duration: 0.3
+          text: 'No', startOffset: 0, duration: 300
         },
         {
-          text: 'vem', startOffset: 0.3, duration: 0.3
+          text: 'vem', startOffset: 300, duration: 300
         },
         {
-          text: 'ber', startOffset: 0.6, duration: 0.4
+          text: 'ber', startOffset: 600, duration: 400
         }
       ])
 
       // But absolute positions should be shifted
       const absoluteSyllables = moved.getAbsoluteSyllables()
       expect(absoluteSyllables[0]).toEqual({
-        text: 'No', startTime: 2.5, endTime: 2.8
+        text: 'No', startTime: 2500, endTime: 2800
       })
       expect(absoluteSyllables[1].text).toBe('vem')
-      expect(absoluteSyllables[1].startTime).toBeCloseTo(2.8, 1)
-      expect(absoluteSyllables[1].endTime).toBeCloseTo(3.1, 1)
+      expect(absoluteSyllables[1].startTime).toBeCloseTo(2800, 0)
+      expect(absoluteSyllables[1].endTime).toBeCloseTo(3100, 0)
       expect(absoluteSyllables[2]).toEqual({
-        text: 'ber', startTime: 3.1, endTime: 3.5
+        text: 'ber', startTime: 3100, endTime: 3500
       })
     })
 
     it('should preserve original object (immutability)', () => {
       const timing = new RelativeSyllableTiming(createTestWord())
-      const moved = timing.moveWord(2.5)
+      const moved = timing.moveWord(2500) // 2.5s = 2500ms
 
       // Original should be unchanged
       const originalData = timing.getWordData()
-      expect(originalData.startTime).toBe(1.0)
-      expect(originalData.endTime).toBe(2.0)
+      expect(originalData.startTime).toBe(1000)
+      expect(originalData.endTime).toBe(2000)
 
       // New object should have different times
       const movedData = moved.getWordData()
-      expect(movedData.startTime).toBe(2.5)
-      expect(movedData.endTime).toBe(3.5)
+      expect(movedData.startTime).toBe(2500)
+      expect(movedData.endTime).toBe(3500)
     })
   })
 
   describe('Word End Resizing', () => {
     it('should resize word end by adjusting only last syllable', () => {
       const timing = new RelativeSyllableTiming(createTestWord())
-      const resized = timing.resizeWordEnd(2.5) // 0.5s longer
+      const resized = timing.resizeWordEnd(2500) // 500ms longer
 
       const resizedData = resized.getWordData()
-      expect(resizedData.startTime).toBe(1.0) // Unchanged
-      expect(resizedData.endTime).toBe(2.5)
+      expect(resizedData.startTime).toBe(1000) // Unchanged
+      expect(resizedData.endTime).toBe(2500)
 
       // First two syllables unchanged
       expect(resizedData.syllables[0]).toEqual({
-        text: 'No', startOffset: 0.0, duration: 0.3
+        text: 'No', startOffset: 0, duration: 300
       })
       expect(resizedData.syllables[1]).toEqual({
-        text: 'vem', startOffset: 0.3, duration: 0.3
+        text: 'vem', startOffset: 300, duration: 300
       })
 
       // Last syllable extended
       expect(resizedData.syllables[2]).toEqual({
-        text: 'ber', startOffset: 0.6, duration: 0.9
+        text: 'ber', startOffset: 600, duration: 900
       })
     })
 
     it('should resize word end shorter by shrinking last syllable', () => {
       const timing = new RelativeSyllableTiming(createTestWord())
-      const resized = timing.resizeWordEnd(1.8) // 0.2s shorter
+      const resized = timing.resizeWordEnd(1800) // 200ms shorter
 
       const resizedData = resized.getWordData()
-      expect(resizedData.endTime).toBe(1.8)
+      expect(resizedData.endTime).toBe(1800)
 
       // First two syllables unchanged
-      expect(resizedData.syllables[0].duration).toBe(0.3)
-      expect(resizedData.syllables[1].duration).toBe(0.3)
+      expect(resizedData.syllables[0].duration).toBe(300)
+      expect(resizedData.syllables[1].duration).toBe(300)
 
       // Last syllable shrunk
-      expect(resizedData.syllables[2].duration).toBeCloseTo(0.2, 1)
+      expect(resizedData.syllables[2].duration).toBeCloseTo(200, 0)
     })
 
     it('should handle single syllable word resize', () => {
       const singleSyllableWord: TimedWordData = {
         id: 'single',
         text: 'cat',
-        startTime: 0.5,
-        endTime: 1.0,
+        startTime: 500,
+        endTime: 1000,
         syllables: [{
-          text: 'cat', startOffset: 0.0, duration: 0.5
+          text: 'cat', startOffset: 0, duration: 500
         }]
       }
 
       const timing = new RelativeSyllableTiming(singleSyllableWord)
-      const resized = timing.resizeWordEnd(1.5)
+      const resized = timing.resizeWordEnd(1500)
 
       const resizedData = resized.getWordData()
-      expect(resizedData.syllables[0].duration).toBe(1.0)
+      expect(resizedData.syllables[0].duration).toBe(1000)
     })
 
     it('should prevent making last syllable have zero duration', () => {
       const timing = new RelativeSyllableTiming(createTestWord())
 
-      // Trying to resize to exactly where last syllable starts
-      expect(() => timing.resizeWordEnd(1.61)).toThrow('zero or negative duration')
+      // Trying to resize to exactly where last syllable starts (1000ms + 600ms = 1600ms)
+      expect(() => timing.resizeWordEnd(1600)).toThrow('zero or negative duration')
     })
 
     it('should prevent end time before start time', () => {
       const timing = new RelativeSyllableTiming(createTestWord())
 
-      expect(() => timing.resizeWordEnd(0.5)).toThrow('must be after start time')
+      expect(() => timing.resizeWordEnd(500)).toThrow('must be after start time')
     })
   })
 
   describe('Word Start Resizing', () => {
     it('should resize word start by adjusting first syllable', () => {
       const timing = new RelativeSyllableTiming(createTestWord())
-      const resized = timing.resizeWordStart(0.8) // Start 0.2s earlier
+      const resized = timing.resizeWordStart(800) // Start 200ms earlier
 
       const resizedData = resized.getWordData()
-      expect(resizedData.startTime).toBe(0.8)
-      expect(resizedData.endTime).toBe(2.0) // Unchanged
+      expect(resizedData.startTime).toBe(800)
+      expect(resizedData.endTime).toBe(2000) // Unchanged
 
       // First syllable should be longer and start at 0
       expect(resizedData.syllables[0]).toEqual({
-        text: 'No', startOffset: 0.0, duration: 0.5
+        text: 'No', startOffset: 0, duration: 500
       })
 
       // Other syllables should shift their offsets
       expect(resizedData.syllables[1]).toEqual({
-        text: 'vem', startOffset: 0.5, duration: 0.3
+        text: 'vem', startOffset: 500, duration: 300
       })
       expect(resizedData.syllables[2]).toEqual({
-        text: 'ber', startOffset: 0.8, duration: 0.4
+        text: 'ber', startOffset: 800, duration: 400
       })
     })
   })
@@ -270,42 +270,42 @@ describe('RelativeSyllableTiming', () => {
   describe('Move and Resize', () => {
     it('should move and resize word in one operation', () => {
       const timing = new RelativeSyllableTiming(createTestWord())
-      const result = timing.moveAndResize(0.5, 1.8)
+      const result = timing.moveAndResize(500, 1800)
 
       const resultData = result.getWordData()
-      expect(resultData.startTime).toBe(0.5)
-      expect(resultData.endTime).toBe(1.8)
-      expect(resultData.syllables[2].duration).toBeCloseTo(0.7, 1) // Last syllable adjusted
+      expect(resultData.startTime).toBe(500)
+      expect(resultData.endTime).toBe(1800)
+      expect(resultData.syllables[2].duration).toBeCloseTo(700, 0) // Last syllable adjusted
     })
 
     it('should validate start < end time', () => {
       const timing = new RelativeSyllableTiming(createTestWord())
 
-      expect(() => timing.moveAndResize(2.0, 1.5)).toThrow('must be before end time')
+      expect(() => timing.moveAndResize(2000, 1500)).toThrow('must be before end time')
     })
   })
 
   describe('Syllable Boundary Adjustment', () => {
     it('should adjust boundary between syllables', () => {
       const timing = new RelativeSyllableTiming(createTestWord())
-      // Move boundary between "No" and "vem" from 1.3 to 1.4
-      const adjusted = timing.adjustSyllableBoundary(0, 1.4)
+      // Move boundary between "No" and "vem" from 1300ms to 1400ms
+      const adjusted = timing.adjustSyllableBoundary(0, 1400)
 
       const adjustedData = adjusted.getWordData()
 
       // First syllable should be longer
       expect(adjustedData.syllables[0].text).toBe('No')
-      expect(adjustedData.syllables[0].startOffset).toBe(0.0)
-      expect(adjustedData.syllables[0].duration).toBeCloseTo(0.4, 1)
+      expect(adjustedData.syllables[0].startOffset).toBe(0)
+      expect(adjustedData.syllables[0].duration).toBeCloseTo(400, 0)
 
       // Second syllable should start later and be shorter
       expect(adjustedData.syllables[1]).toEqual({
-        text: 'vem', startOffset: 0.4, duration: 0.2
+        text: 'vem', startOffset: 400, duration: 200
       })
 
       // Third syllable unchanged
       expect(adjustedData.syllables[2]).toEqual({
-        text: 'ber', startOffset: 0.6, duration: 0.4
+        text: 'ber', startOffset: 600, duration: 400
       })
     })
 
@@ -334,48 +334,49 @@ describe('RelativeSyllableTiming', () => {
     it('should create from absolute syllable data', () => {
       const absoluteSyllables: AbsoluteSyllable[] = [
         {
-          text: 'hel', startTime: 2.0, endTime: 2.3
+          text: 'hel', startTime: 2000, endTime: 2300
         },
         {
-          text: 'lo', startTime: 2.3, endTime: 2.6
+          text: 'lo', startTime: 2300, endTime: 2600
         }
       ]
 
-      const timing = RelativeSyllableTiming.fromAbsoluteSyllables('hello-1', 'hello', 2.0, 2.6, absoluteSyllables)
+      const timing = RelativeSyllableTiming.fromAbsoluteSyllables('hello-1', 'hello', 2000, 2600, absoluteSyllables)
       const wordData = timing.getWordData()
 
       expect(wordData.syllables[0].text).toBe('hel')
-      expect(wordData.syllables[0].startOffset).toBeCloseTo(0.0, 1)
-      expect(wordData.syllables[0].duration).toBeCloseTo(0.3, 1)
+      expect(wordData.syllables[0].startOffset).toBeCloseTo(0, 0)
+      expect(wordData.syllables[0].duration).toBeCloseTo(300, 0)
       expect(wordData.syllables[1].text).toBe('lo')
-      expect(wordData.syllables[1].startOffset).toBeCloseTo(0.3, 1)
-      expect(wordData.syllables[1].duration).toBeCloseTo(0.3, 1)
+      expect(wordData.syllables[1].startOffset).toBeCloseTo(300, 0)
+      expect(wordData.syllables[1].duration).toBeCloseTo(300, 0)
     })
 
     it('should create even syllable distribution', () => {
-      const timing = RelativeSyllableTiming.createEvenSyllables('test-1', 'testing', 1.0, 2.0, ['test', 'ing'])
+      const timing = RelativeSyllableTiming.createEvenSyllables('test-1', 'testing', 1000, 2000, ['test', 'ing'])
       const wordData = timing.getWordData()
 
       expect(wordData.syllables).toEqual([
         {
-          text: 'test', startOffset: 0.0, duration: 0.5
+          text: 'test', startOffset: 0, duration: 500
         },
         {
-          text: 'ing', startOffset: 0.5, duration: 0.5
+          text: 'ing', startOffset: 500, duration: 500
         }
       ])
     })
 
     it('should create weighted syllable distribution', () => {
-      const timing = RelativeSyllableTiming.createWeightedSyllables('test-1', 'testing', 1.0, 2.0, ['test', 'ing'], 1.5)
+      const timing = RelativeSyllableTiming.createWeightedSyllables('test-1', 'testing', 1000, 2000, ['test', 'ing'], 1.5)
       const wordData = timing.getWordData()
 
       // Total weight: 1.0 + 1.5 = 2.5
-      // First syllable: (1.0/2.5) * 1.0 = 0.4
-      // Second syllable: (1.5/2.5) * 1.0 = 0.6
-      expect(wordData.syllables[0].duration).toBeCloseTo(0.4, 2)
-      expect(wordData.syllables[1].duration).toBeCloseTo(0.6, 2)
-      expect(wordData.syllables[1].startOffset).toBeCloseTo(0.4, 2)
+      // Total duration: 1000ms
+      // First syllable: (1.0/2.5) * 1000 = 400ms
+      // Second syllable: (1.5/2.5) * 1000 = 600ms
+      expect(wordData.syllables[0].duration).toBeCloseTo(400, 0)
+      expect(wordData.syllables[1].duration).toBeCloseTo(600, 0)
+      expect(wordData.syllables[1].startOffset).toBeCloseTo(400, 0)
     })
   })
 
@@ -385,33 +386,33 @@ describe('RelativeSyllableTiming', () => {
         id: 'short',
         text: 'hi',
         startTime: 0,
-        endTime: 0.1,
+        endTime: 100,
         syllables: [
           {
-            text: 'hi', startOffset: 0, duration: 0.1
+            text: 'hi', startOffset: 0, duration: 100
           }
         ]
       }
 
       const timing = new RelativeSyllableTiming(shortWord)
-      const moved = timing.moveWord(5.0)
+      const moved = timing.moveWord(5000)
 
-      expect(moved.getWordData().startTime).toBe(5.0)
-      expect(moved.getWordData().endTime).toBe(5.1)
+      expect(moved.getWordData().startTime).toBe(5000)
+      expect(moved.getWordData().endTime).toBe(5100)
     })
 
     it('should handle precision issues with floating point', () => {
       const word: TimedWordData = {
         id: 'precision',
         text: 'test',
-        startTime: 0.1,
-        endTime: 0.4,
+        startTime: 100,
+        endTime: 400,
         syllables: [
           {
-            text: 'te', startOffset: 0, duration: 0.15
+            text: 'te', startOffset: 0, duration: 150
           },
           {
-            text: 'st', startOffset: 0.15, duration: 0.15
+            text: 'st', startOffset: 150, duration: 150
           }
         ]
       }
