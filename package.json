@@ -1,6 +1,6 @@
 {
   "name": "karaoke-composer",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "A Vue 3 Karaoke Application",
   "type": "module",
   "scripts": {
@@ -24,6 +24,7 @@
     "debug:final-verification": "tsx src/debug/finalVerification.ts",
     "debug:integration": "tsx src/debug/integrationTest.ts",
     "debug:analyze-overlaps": "tsx src/debug/analyzeTimingOverlaps.ts",
+    "deploy-gh-pages": "gh-pages -d dist -m \"Deploy v0.0.1\" --dest v0.0.1 --no-push -verbose",
     "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix --ignore-path .gitignore",
     "type-check": "vue-tsc --noEmit",
     "format": "prettier --write .",
@@ -54,10 +55,12 @@
     "cypress": "^12.17.0",
     "eslint": "^8.42.0",
     "eslint-plugin-vue": "^9.15.0",
+    "gh-pages": "^6.3.0",
     "jest": "^29.5.0",
     "jest-environment-jsdom": "^29.5.0",
     "jest-transform-stub": "^2.0.0",
     "npm-run-all": "^4.1.0",
+    "ora": "^9.0.0",
     "prettier": "^3.6.2",
     "terser": "^5.18.0",
     "ts-jest": "^29.1.0",

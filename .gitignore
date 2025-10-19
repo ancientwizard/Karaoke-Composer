@@ -6,6 +6,7 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+.deployments.log
 
 # Dependency directories & files
 node_modules/
@@ -50,6 +51,7 @@ dist
 dist/
 dist-ssr/
 *.local
+.vite/
 
 # Generated output files (CDG, LRC, etc.)
 output/
