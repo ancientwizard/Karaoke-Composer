@@ -147,6 +147,22 @@
                       Center text on screen
                     </label>
                   </div>
+
+                  <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" v-model="cdgSettings.showCaptions"
+                      id="cdgCaptions" />
+                    <label class="form-check-label" for="cdgCaptions">
+                      Show captions (e.g., "Verse 1", "Chorus")
+                    </label>
+                  </div>
+
+                  <div v-if="cdgSettings.showCaptions" class="row align-items-center mb-2 ms-4">
+                    <label class="col-sm-5 col-form-label small">Caption duration (seconds):</label>
+                    <div class="col-sm-7">
+                      <input type="number" class="form-control form-control-sm"
+                        v-model.number="cdgSettings.captionDuration" min="1" max="10" step="0.5" />
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -268,7 +284,9 @@ const cdgSettings = ref({
   showBorder: true,
   centerText: true,
   showMetadata: true,
-  metadataDuration: 3
+  metadataDuration: 3,
+  showCaptions: true,          // Show captions above lyrics
+  captionDuration: 2           // Show captions for 2 seconds
 })
 
 const jsonSettings = ref({

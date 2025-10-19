@@ -422,6 +422,7 @@ export function parseLyricsWithMetadata(lyricsText: string): {
   const metadata: LyricsMetadata = {}
 
   let lyricsLineNumber = 1
+  let pendingCaption: string | null = null  // Store caption to attach to next lyrics line
 
   // Process each line
   lines.forEach((line, originalIndex) => {
@@ -446,6 +447,8 @@ export function parseLyricsWithMetadata(lyricsText: string): {
       } else if (metadataInfo.type === 'caption') {
         if (!metadata.captions) metadata.captions = []
         metadata.captions.push(metadataInfo.value)
+        // Store caption to also attach to next lyrics line
+        pendingCaption = metadataInfo.value
       }
 
       lyrics.push(metadataLine)
@@ -454,12 +457,20 @@ export function parseLyricsWithMetadata(lyricsText: string): {
       // Handle regular lyrics lines
       const lyricLine = parseLyricsLine(line, lyricsLineNumber, `line-${lyricsLineNumber}`)
       lyricLine.type = 'lyrics'
+
+      // Attach pending caption if exists (for export purposes)
+      if (pendingCaption) {
+        if (!lyricLine.metadata) {
+          lyricLine.metadata = {}
+        }
+        lyricLine.metadata.caption = pendingCaption
+        pendingCaption = null
+      }
+
       lyrics.push(lyricLine)
       lyricsLineNumber++
     }
-  })
-
-  // Move title to first position if it exists but isn't first
+  })  // Move title to first position if it exists but isn't first
   const titleLineIndex = lyrics.findIndex(line => line.type === 'title')
   if (titleLineIndex > 0) {
     const titleLine = lyrics.splice(titleLineIndex, 1)[0]

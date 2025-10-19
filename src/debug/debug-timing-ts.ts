@@ -4,9 +4,9 @@
  * Run this with: npx tsx test-timing-ts.ts
  */
 
-import { KaraokeTimingEngine } from './src/models/KaraokeTimingEngine.js'
-import { parseLyricsLine, parseLyricsWithMetadata } from './src/utils/lyricsParser.js'
-import type { LyricLine } from './src/types/karaoke.js'
+import { KaraokeTimingEngine } from '../models/KaraokeTimingEngine.js'
+import { parseLyricsLine, parseLyricsWithMetadata } from '../utils/lyricsParser.js'
+import type { LyricLine } from '../types/karaoke.js'
 
 // Happy Birthday lyrics with metadata and syllable markers
 const HAPPY_BIRTHDAY_WITH_METADATA = `[@TITLE:Happy Birthday Song]

@@ -16,8 +16,7 @@ import {
 import {
   TextLayoutEngine,
   DEFAULT_LAYOUT_CONFIG,
-  type LayoutConfig,
-  type LayoutResult
+  type LayoutConfig
 } from './TextLayoutEngine'
 
 /**
@@ -30,6 +29,8 @@ export interface TimingConverterConfig {
   displayAlign?: TextAlign       // Text alignment (default: center)
   showMetadata?: boolean         // Show title/artist at start
   metadataDurationMs?: number    // How long to show metadata
+  showCaptions?: boolean         // Show caption labels (e.g., "Verse 1", "Chorus")
+  captionDurationMs?: number     // How long to show caption before line
 }
 
 export const DEFAULT_TIMING_CONFIG: TimingConverterConfig = {
@@ -37,7 +38,9 @@ export const DEFAULT_TIMING_CONFIG: TimingConverterConfig = {
   previewDurationMs: 1000,       // Show line 1 second before singing starts
   displayAlign: TextAlign.Center,
   showMetadata: true,
-  metadataDurationMs: 3000       // Show title/artist for 3 seconds
+  metadataDurationMs: 3000,      // Show title/artist for 3 seconds
+  showCaptions: true,
+  captionDurationMs: 2000        // Show captions for 2 seconds
 }
 
 /**
@@ -54,7 +57,9 @@ export class TimingConverter {
       previewDurationMs: config.previewDurationMs ?? DEFAULT_TIMING_CONFIG.previewDurationMs!,
       displayAlign: config.displayAlign || DEFAULT_TIMING_CONFIG.displayAlign!,
       showMetadata: config.showMetadata ?? DEFAULT_TIMING_CONFIG.showMetadata!,
-      metadataDurationMs: config.metadataDurationMs ?? DEFAULT_TIMING_CONFIG.metadataDurationMs!
+      metadataDurationMs: config.metadataDurationMs ?? DEFAULT_TIMING_CONFIG.metadataDurationMs!,
+      showCaptions: config.showCaptions ?? DEFAULT_TIMING_CONFIG.showCaptions!,
+      captionDurationMs: config.captionDurationMs ?? DEFAULT_TIMING_CONFIG.captionDurationMs!
     }
     this.layoutEngine = new TextLayoutEngine(this.config.layoutConfig)
   }
@@ -170,6 +175,47 @@ export class TimingConverter {
   }
 
   /**
+   * Create caption display commands (e.g., "Verse 1", "Chorus")
+   * Displays caption above the lyrics line temporarily
+   */
+  private createCaptionCommands(
+    caption: string,
+    lineStartTime: number,
+    durationMs: number
+  ): AnyPresentationCommand[] {
+    const commands: AnyPresentationCommand[] = []
+
+    // Show caption before the line starts
+    const captionStartTime = Math.max(0, lineStartTime - durationMs)
+    const captionEndTime = lineStartTime
+
+    // Position caption higher on screen (above where lyrics appear)
+    const captionPosition: Position = {
+      x: 500,  // Centered
+      y: 250   // Upper third of screen
+    }
+
+    // Show caption
+    commands.push(
+      PresentationCommands.showText(
+        captionStartTime,
+        `caption-${lineStartTime}`,
+        `[${caption}]`,  // Wrap in brackets for visual distinction
+        captionPosition,
+        LogicalColor.TransitionText,  // Use transition color for captions
+        TextAlign.Center
+      )
+    )
+
+    // Remove caption when line starts
+    commands.push(
+      PresentationCommands.removeText(captionEndTime, `caption-${lineStartTime}`)
+    )
+
+    return commands
+  }
+
+  /**
    * Convert a single lyric line to presentation commands
    */
   private convertLine(
@@ -183,6 +229,16 @@ export class TimingConverter {
     // Skip lines without timing
     if (!line.startTime || !line.endTime) {
       return commands
+    }
+
+    // Add caption if this line has one and captions are enabled
+    if (this.config.showCaptions && line.metadata?.caption) {
+      const captionCommands = this.createCaptionCommands(
+        line.metadata.caption,
+        line.startTime,
+        this.config.captionDurationMs
+      )
+      commands.push(...captionCommands)
     }
 
     const fullText = this.getLineText(line)
@@ -291,8 +347,10 @@ export class TimingConverter {
         charInLine = 0
 
         // Skip the space character that was used to wrap
+        // This space won't appear in the next line, so skip it in the fullText as well
         if (i + 1 < fullText.length && fullText[i + 1] === ' ') {
-          i++  // Skip space in mapping
+          i++  // Skip space in fullText iteration
+          // Don't add mapping for the skipped space - it won't be displayed
         }
       }
     }
@@ -304,9 +362,16 @@ export class TimingConverter {
         if (syllable.startTime !== undefined) {
           const syllableLength = syllable.syllable.length
 
+          // Ensure we don't go out of bounds
+          if (charOffset >= charToLineMap.length) {
+            console.warn(`[TimingConverter] charOffset ${charOffset} exceeds charToLineMap length ${charToLineMap.length}`)
+            break
+          }
+
           // Find which wrapped line(s) this syllable appears in
           const startMapping = charToLineMap[charOffset]
-          const endMapping = charToLineMap[Math.min(charOffset + syllableLength - 1, charToLineMap.length - 1)]
+          const endIdx = Math.min(charOffset + syllableLength - 1, charToLineMap.length - 1)
+          const endMapping = charToLineMap[endIdx]
 
           if (startMapping && endMapping) {
             // Syllable might span multiple wrapped lines (rare but possible)
@@ -338,8 +403,11 @@ export class TimingConverter {
         }
       }
 
-      // Account for space between words
-      charOffset += 1
+      // Account for space between words - but only if it's not already been skipped
+      // If the next char in charToLineMap exists, add 1; otherwise we're at the end or space was skipped
+      if (charOffset < charToLineMap.length) {
+        charOffset += 1
+      }
     }
 
     return commands

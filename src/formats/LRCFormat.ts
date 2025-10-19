@@ -68,6 +68,7 @@ export interface LRCMetadata {
 export interface LRCLine {
   timestamp: number // milliseconds
   text: string
+  caption?: string // Optional caption for this line (e.g., "Verse 1", "Chorus")
   words?: Array<{
     text: string
     timestamp: number
@@ -111,9 +112,17 @@ export class LRCWriter {
     lines.push('') // Blank line after metadata
 
     // Write lyrics with timing
+    let lyricsLineIndex = 0
     for (const lyricLine of project.lyrics) {
-      // Skip metadata lines
-      if (lyricLine.type && lyricLine.type !== 'lyrics') {
+      // Skip metadata lines (title, author) but not caption
+      if (lyricLine.type && lyricLine.type !== 'lyrics' && lyricLine.type !== 'caption') {
+        continue
+      }
+
+      // Handle caption lines - output as extended metadata
+      if (lyricLine.type === 'caption') {
+        const captionText = lyricLine.metadata?.caption || lyricLine.text.replace(/^\[@CAPTION:\s*/, '').replace(/\]$/, '')
+        lines.push(`#[line:${lyricsLineIndex}:caption:${this.escapeMetadata(captionText)}]`)
         continue
       }
 
@@ -125,6 +134,7 @@ export class LRCWriter {
       const lineText = this.formatLine(lyricLine)
 
       lines.push(`[${this.formatTimestamp(lineTimestamp)}]${lineText}`)
+      lyricsLineIndex++
     }
 
     return lines.join('\n') + '\n'
@@ -215,14 +225,49 @@ export class LRCParser {
   static parse(content: string): { metadata: LRCMetadata; lines: LRCLine[] } {
     const metadata: LRCMetadata = {}
     const lines: LRCLine[] = []
+    const lineMetadata: Map<number, { caption?: string }> = new Map()
 
     const fileLines = content.split(/\r?\n/)
 
+    // First pass: collect line metadata (captions, etc.)
     for (const fileLine of fileLines) {
       const trimmed = fileLine.trim()
 
       if (!trimmed) {
         continue // Skip empty lines
+      }
+
+      // Check for extended line metadata: #[line:N:key:value]
+      const lineMetadataMatch = trimmed.match(/^#\[line:(\d+):(\w+):(.+)\]$/)
+      if (lineMetadataMatch) {
+        const [, lineIndexStr, key, value] = lineMetadataMatch
+        const lineIndex = parseInt(lineIndexStr, 10)
+
+        if (!lineMetadata.has(lineIndex)) {
+          lineMetadata.set(lineIndex, {})
+        }
+
+        const lineMeta = lineMetadata.get(lineIndex)!
+        if (key === 'caption') {
+          lineMeta.caption = value
+        }
+
+        continue
+      }
+    }
+
+    // Second pass: parse lyrics lines
+    let lyricsLineIndex = 0
+    for (const fileLine of fileLines) {
+      const trimmed = fileLine.trim()
+
+      if (!trimmed) {
+        continue // Skip empty lines
+      }
+
+      // Skip line metadata lines (already processed)
+      if (trimmed.startsWith('#[line:')) {
+        continue
       }
 
       // Check if this is a timestamp line (starts with [MM:SS.xx])
@@ -238,7 +283,14 @@ export class LRCParser {
       if (isTimestampLine) {
         const parsedLine = this.parseLine(trimmed)
         if (parsedLine) {
+          // Attach caption metadata if exists
+          const lineMeta = lineMetadata.get(lyricsLineIndex)
+          if (lineMeta?.caption) {
+            parsedLine.caption = lineMeta.caption
+          }
+
           lines.push(parsedLine)
+          lyricsLineIndex++
         }
       }
     }
@@ -427,12 +479,25 @@ export class LRCParser {
     let lineNumber = 1
 
     for (const lrcLine of lines) {
+      // If this line has a caption, create a caption line first
+      if (lrcLine.caption) {
+        lyrics.push({
+          id: `caption-${lineNumber}`,
+          lineNumber: lineNumber++,
+          text: `[@CAPTION:${lrcLine.caption}]`,
+          words: [],
+          type: 'caption',
+          metadata: { caption: lrcLine.caption }
+        })
+      }
+
       if (!lrcLine.words || lrcLine.words.length === 0) {
         // Simple text line
-        lyrics.push({
+        const lyricLine: LyricLine = {
           id: `line-${lineNumber}`,
           lineNumber: lineNumber++,
           text: lrcLine.text,
+          type: 'lyrics',
           startTime: lrcLine.timestamp,
           endTime: lrcLine.timestamp + 1000, // 1 second default duration
           words: [
@@ -447,7 +512,17 @@ export class LRCParser {
               ]
             }
           ]
-        })
+        }
+
+        // Attach caption metadata if exists
+        if (lrcLine.caption) {
+          if (!lyricLine.metadata) {
+            lyricLine.metadata = {}
+          }
+          lyricLine.metadata.caption = lrcLine.caption
+        }
+
+        lyrics.push(lyricLine)
         continue
       }
 
@@ -487,14 +562,25 @@ export class LRCParser {
         }
       }
 
-      lyrics.push({
+      const lyricLine: LyricLine = {
         id: `line-${lineNumber}`,
         lineNumber: lineNumber++,
         text: lrcLine.text,
+        type: 'lyrics',
         words,
         startTime: lineStartTime,
         endTime: lineEndTime
-      })
+      }
+
+      // Attach caption metadata if exists
+      if (lrcLine.caption) {
+        if (!lyricLine.metadata) {
+          lyricLine.metadata = {}
+        }
+        lyricLine.metadata.caption = lrcLine.caption
+      }
+
+      lyrics.push(lyricLine)
     }
 
     return {

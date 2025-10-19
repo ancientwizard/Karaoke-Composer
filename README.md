@@ -281,7 +281,7 @@ Reports are generated in the `coverage/` directory with:
 - Function coverage
 - Statement coverage
 
-## � Development Guidelines
+## 📖 Development Guidelines
 
 ### Code Formatting & Style
 
@@ -344,7 +344,7 @@ const varB = 'more-of-something' // description of B
 - **Consistent style**: ESLint enforces project-wide code consistency
 - **Pre-commit**: Consider running `npm run lint` before committing
 
-## �📝 Next Steps
+## 📝 Next Steps
 
 1. **Install dependencies** with `npm install`
 2. **Start the dev server** with `npm run dev`
