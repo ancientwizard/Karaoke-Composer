@@ -121,8 +121,8 @@ class KaraokeTimingTester {
 
     this.engine.loadLyrics(this.lyrics)
 
-    const currentLineIndex = 0
-    const currentWordIndex = 0
+    // const currentLineIndex = 0
+    // const currentWordIndex = 0
 
     // Apply timing based on our expected timings
     for (const timing of EXPECTED_TIMINGS) {
@@ -164,7 +164,7 @@ class KaraokeTimingTester {
 
     const songDuration = 14000 // 14 seconds
     const timeStep = 100 // Check every 100ms
-    const speedMultiplier = 1000 // 1000x faster than real time
+    // const speedMultiplier = 1000 // 1000x faster than real time
 
     for (let time = 0; time <= songDuration; time += timeStep) {
       const position = this.engine.getCurrentPosition(time)
@@ -199,12 +199,12 @@ class KaraokeTimingTester {
     console.log('\n🔍 Syllable Timing Analysis:')
     this.lyrics.forEach((line, lineIndex) => {
       console.log(`\nLine ${lineIndex + 1}: "${line.text}"`)
-      line.words.forEach((word, wordIndex) => {
+      line.words.forEach((word) => {
         if (word.startTime !== undefined && word.endTime !== undefined) {
           const duration = word.endTime - word.startTime
           console.log(`  Word "${word.word}": ${word.startTime}ms - ${word.endTime}ms (${duration}ms)`)
 
-          word.syllables.forEach((syllable, syllableIndex) => {
+          word.syllables.forEach((syllable) => {
             if (syllable.startTime !== undefined && syllable.endTime !== undefined) {
               const sylDuration = syllable.endTime - syllable.startTime
               const percentage = ((sylDuration / duration) * 100).toFixed(1)

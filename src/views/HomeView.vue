@@ -16,6 +16,7 @@
             <p class="card-text">Browse through our extensive collection of karaoke songs and find your favorites.</p>
             <router-link to="/library" class="btn btn-outline-primary">Browse Songs</router-link>
           </div>
+          <attention-label coming-soon offset-x="-20px" offset-y="90px" bg-color-class="bg-primary" text-color-class="text-light"/>
         </div>
       </div>
 
@@ -26,6 +27,7 @@
             <p class="card-text">Create your own karaoke tracks by syncing lyrics with audio files.</p>
             <router-link to="/compose" class="btn btn-outline-success">Start Composing</router-link>
           </div>
+          <attention-label new-and-improved offset-x="-20px" offset-y="90px" bg-color-class="bg-warning" text-color-class="text-danger"/>
         </div>
       </div>
 
@@ -36,6 +38,7 @@
             <p class="card-text">Keep track of your favorite songs for quick access during your sessions.</p>
             <button class="btn btn-outline-warning" @click="viewFavorites">My Favorites</button>
           </div>
+          <attention-label coming-soon offset-x="-20px" offset-y="90px" bg-color-class="bg-primary" text-color-class="text-light"/>
         </div>
       </div>
     </div>
@@ -43,10 +46,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+// @ts-ignore: no declaration file for .vue modules
+import AttentionLabel from '@/components/AttentionLabel.vue'
 
-// Reactive data
-const isLoading = ref(false)
 
 // Methods
 const startKaraoke = () => {
@@ -54,10 +56,10 @@ const startKaraoke = () => {
   // TODO: Implement karaoke start logic
 }
 
-const startPerformance = () => {
-  console.log('Starting live performance...')
-  // TODO: Implement performance logic
-}
+// const startPerformance = () => {
+//   console.log('Starting live performance...')
+//   // TODO: Implement performance logic
+// }
 
 const viewFavorites = () => {
   console.log('Viewing favorites...')

@@ -106,7 +106,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, watch } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import type { LyricLine } from '@/types/karaoke'
 import { parseLyricsLine, clearTimingFromLine } from '@/utils/lyricsParser'
 
@@ -232,23 +232,23 @@ const formatTime = (timeMs: number): string => {
 }
 
 // Watch for current line changes to scroll into view
-watch(
-  () => props.currentLine,
-  newLine => {
-    nextTick(() => {
-      const container = lyricsContainer.value
-      if (container) {
-        const activeElement = container.querySelector('.lyric-line.active')
-        if (activeElement) {
-          activeElement.scrollIntoView({
-            behavior: 'smooth',
-            block: 'center',
-          })
-        }
-      }
-    })
-  }
-)
+// watch(
+//   () => props.currentLine,
+//   newLine => {
+//     nextTick(() => {
+//       const container = lyricsContainer.value
+//       if (container) {
+//         const activeElement = container.querySelector('.lyric-line.active')
+//         if (activeElement) {
+//           activeElement.scrollIntoView({
+//             behavior: 'smooth',
+//             block: 'center',
+//           })
+//         }
+//       }
+//     })
+//   }
+// )
 
 // Keyboard shortcuts
 const handleKeydown = (event: KeyboardEvent) => {

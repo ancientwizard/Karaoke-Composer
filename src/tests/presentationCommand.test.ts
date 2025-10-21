@@ -6,9 +6,9 @@ import {
   LogicalColor,
   TextAlign,
   PresentationCommands,
-  type ClearScreenCommand,
-  type ShowTextCommand,
-  type ChangeColorCommand
+  // type ClearScreenCommand,
+  // type ShowTextCommand,
+  // type ChangeColorCommand
 } from '../karaoke/presentation/PresentationCommand'
 
 describe('PresentationCommand', () => {

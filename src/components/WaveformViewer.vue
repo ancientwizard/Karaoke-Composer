@@ -355,15 +355,10 @@ const startDragMarker = (index: number, event: MouseEvent) => {
   isDragging.value = true
   dragMarkerIndex.value = index
 
-  const handleMouseMove = (moveEvent: MouseEvent) => {
+  const handleMouseMove = () => {
     if (!isDragging.value) return
 
-    // const rect = waveformCanvas.value!.getBoundingClientRect()
-    // const x = moveEvent.clientX - rect.left
-    // const time = pixelToTime(x) // unused???
-
-    // Update marker position temporarily (visual feedback)
-    // The actual update happens on mouse up
+    // Intentionally left blank for now; could compute live preview here if needed.
   }
 
   const handleMouseUp = () => {
@@ -776,8 +771,8 @@ watch(
           windowStart.value = Math.max(0, Math.min(newTime - halfWindow, props.audioFile.duration - windowDuration.value))
         }
 
-        const behavior = newTime <= halfWindow ? 'red-line-moves-left' :
-          newTime >= endThreshold ? 'red-line-tracks-right' : 'waveform-scrolls'
+        // const behavior = newTime <= halfWindow ? 'red-line-moves-left' :
+        //   newTime >= endThreshold ? 'red-line-tracks-right' : 'waveform-scrolls'
 
         // console.log('Window position update:', {
         //   currentTime: newTime,

@@ -211,77 +211,77 @@ const lyricsLines = computed(() => {
 })
 
 // Methods
-const handleWordUpdate = (wordId: string, startTime: number, endTime: number) => {
-  const wordIndex = words.value.findIndex(w => w.id === wordId)
-  if (wordIndex !== -1) {
-    const word = words.value[wordIndex]
-    const oldStartTime = word.startTime
-    const oldEndTime = word.endTime
+// const handleWordUpdate = (wordId: string, startTime: number, endTime: number) => {
+//   const wordIndex = words.value.findIndex(w => w.id === wordId)
+//   if (wordIndex !== -1) {
+//     const word = words.value[wordIndex]
+//     const oldStartTime = word.startTime
+//     const oldEndTime = word.endTime
 
-    // Update word timing
-    word.startTime = startTime
-    word.endTime = endTime
+//     // Update word timing
+//     word.startTime = startTime
+//     word.endTime = endTime
 
-    // SMART SYLLABLE HANDLING: Only adjust what needs to change
-    if (word.syllables.length > 1) {
-      const startTimeChanged = Math.abs(startTime - oldStartTime) > 0.01
-      const endTimeChanged = Math.abs(endTime - oldEndTime) > 0.01
+//     // SMART SYLLABLE HANDLING: Only adjust what needs to change
+//     if (word.syllables.length > 1) {
+//       const startTimeChanged = Math.abs(startTime - oldStartTime) > 0.01
+//       const endTimeChanged = Math.abs(endTime - oldEndTime) > 0.01
 
-      if (startTimeChanged && !endTimeChanged) {
-        // Moving word start: shift all syllables equally
-        const deltaStart = startTime - oldStartTime
-        word.syllables.forEach((syllable) => {
-          syllable.startTime += deltaStart
-          syllable.endTime += deltaStart
-        })
-        console.log(`MOVE START: "${word.text}" shifted by ${deltaStart.toFixed(2)}s`)
+//       if (startTimeChanged && !endTimeChanged) {
+//         // Moving word start: shift all syllables equally
+//         const deltaStart = startTime - oldStartTime
+//         word.syllables.forEach((syllable) => {
+//           syllable.startTime += deltaStart
+//           syllable.endTime += deltaStart
+//         })
+//         console.log(`MOVE START: "${word.text}" shifted by ${deltaStart.toFixed(2)}s`)
 
-      } else if (endTimeChanged && !startTimeChanged) {
-        // Resizing word end: redistribute syllables proportionally from original start
-        const originalTotalDuration = oldEndTime - oldStartTime
-        const newTotalDuration = endTime - oldStartTime
-        const scaleFactor = newTotalDuration / originalTotalDuration
+//       } else if (endTimeChanged && !startTimeChanged) {
+//         // Resizing word end: redistribute syllables proportionally from original start
+//         const originalTotalDuration = oldEndTime - oldStartTime
+//         const newTotalDuration = endTime - oldStartTime
+//         const scaleFactor = newTotalDuration / originalTotalDuration
 
-        console.log(`RESIZE END: "${word.text}" ${oldEndTime.toFixed(2)}s -> ${endTime.toFixed(2)}s (scale: ${scaleFactor.toFixed(2)})`)
+//         console.log(`RESIZE END: "${word.text}" ${oldEndTime.toFixed(2)}s -> ${endTime.toFixed(2)}s (scale: ${scaleFactor.toFixed(2)})`)
 
-        let syllableStartTime = oldStartTime
-        word.syllables.forEach((syllable) => {
-          const originalDuration = syllable.endTime - syllable.startTime
-          const newDuration = originalDuration * scaleFactor
-          syllable.startTime = syllableStartTime
-          syllable.endTime = syllableStartTime + newDuration
-          syllableStartTime = syllable.endTime
-        })
+//         let syllableStartTime = oldStartTime
+//         word.syllables.forEach((syllable) => {
+//           const originalDuration = syllable.endTime - syllable.startTime
+//           const newDuration = originalDuration * scaleFactor
+//           syllable.startTime = syllableStartTime
+//           syllable.endTime = syllableStartTime + newDuration
+//           syllableStartTime = syllable.endTime
+//         })
 
-        console.log(`   -> Syllables: ${word.syllables.map(s => `${s.text}(${s.startTime.toFixed(1)}-${s.endTime.toFixed(1)})`).join(' ')}`)
+//         console.log(`   -> Syllables: ${word.syllables.map(s => `${s.text}(${s.startTime.toFixed(1)}-${s.endTime.toFixed(1)})`).join(' ')}`)
 
-      } else if (startTimeChanged && endTimeChanged) {
-        // Both changed: adjust first and last syllable boundaries, keep middle boundaries
-        word.syllables[0].startTime = startTime
-        word.syllables[word.syllables.length - 1].endTime = endTime
-        console.log(`MOVE WORD: "${word.text}" adjusted boundaries only`)
-      }
-    } else {
-      // Single syllable: just update it to match word
-      word.syllables[0].startTime = startTime
-      word.syllables[0].endTime = endTime
-    }
-  }
-}
+//       } else if (startTimeChanged && endTimeChanged) {
+//         // Both changed: adjust first and last syllable boundaries, keep middle boundaries
+//         word.syllables[0].startTime = startTime
+//         word.syllables[word.syllables.length - 1].endTime = endTime
+//         console.log(`MOVE WORD: "${word.text}" adjusted boundaries only`)
+//       }
+//     } else {
+//       // Single syllable: just update it to match word
+//       word.syllables[0].startTime = startTime
+//       word.syllables[0].endTime = endTime
+//     }
+//   }
+// }
 
-const handleSyllableUpdate = (wordId: string, syllableIndex: number, startTime: number, endTime: number) => {
-  const word = words.value.find(w => w.id === wordId)
-  if (word && word.syllables[syllableIndex]) {
-    word.syllables[syllableIndex].startTime = startTime
-    word.syllables[syllableIndex].endTime = endTime
+// const handleSyllableUpdate = (wordId: string, syllableIndex: number, startTime: number, endTime: number) => {
+//   const word = words.value.find(w => w.id === wordId)
+//   if (word && word.syllables[syllableIndex]) {
+//     word.syllables[syllableIndex].startTime = startTime
+//     word.syllables[syllableIndex].endTime = endTime
 
-    // Update word boundaries if needed
-    word.startTime = Math.min(word.startTime, startTime)
-    word.endTime = Math.max(word.endTime, endTime)
+//     // Update word boundaries if needed
+//     word.startTime = Math.min(word.startTime, startTime)
+//     word.endTime = Math.max(word.endTime, endTime)
 
-    console.log(`Updated syllable "${word.syllables[syllableIndex].text}": ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s`)
-  }
-}
+//     console.log(`Updated syllable "${word.syllables[syllableIndex].text}": ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s`)
+//   }
+// }
 
 const handleWordSelected = (wordId: string | null) => {
   selectedWordId.value = wordId

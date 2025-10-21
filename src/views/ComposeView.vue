@@ -289,7 +289,7 @@ const isMounted = ref(true)
 const showDevToolbar = ref(true)
 
 // Storage and IndexedDB testing
-const indexedDBTestResult = ref<string>('')
+// const indexedDBTestResult = ref<string>('')
 const storageInfo = ref<{ method: string; sizeMB: number; count: number; quotaUsedMB: number; quotaLimitMB: number } | null>(null)
 
 // New project form
@@ -306,9 +306,9 @@ const canCreateProject = computed(() => {
   return newProject.value.name && newProject.value.artist && newProject.value.audioFile
 })
 
-const hotkeyHelpText = computed(() => {
-  return 'Click for complete hotkey reference guide'
-})
+// const hotkeyHelpText = computed(() => {
+//   return 'Click for complete hotkey reference guide'
+// })
 
 // Watch for lyrics changes to auto-populate title and artist from metadata
 watch(() => newProject.value.lyricsText, (newLyrics) => {

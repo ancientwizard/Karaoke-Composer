@@ -132,6 +132,7 @@ const handleWordMouseDown = (event: MouseEvent) => {
 
 const handleSyllableMouseDown = (event: MouseEvent, syllableIndex: number) => {
   // For now, just select the word - individual syllable dragging could be added later
+  void syllableIndex
   event.stopPropagation()
   emit('select', props.word.id)
 }

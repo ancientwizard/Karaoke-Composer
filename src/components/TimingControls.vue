@@ -235,7 +235,7 @@ const emit = defineEmits<{
 }>()
 
 // Reactive state
-const progressElement = ref<HTMLElement>()
+// const progressElement = ref<HTMLElement>()
 
 // Computed properties
 const hasAudio = computed(() => {
@@ -247,19 +247,19 @@ const progressPercent = computed(() => {
   return (props.playbackState.currentTime / props.playbackState.duration) * 100
 })
 
-const completionPercent = computed(() => {
-  if (props.totalLines === 0) return 0
-  return Math.round((props.timedLines / props.totalLines) * 100)
-})
+// const completionPercent = computed(() => {
+//   if (props.totalLines === 0) return 0
+//   return Math.round((props.timedLines / props.totalLines) * 100)
+// })
 
 const wordCompletionPercent = computed(() => {
   if (!props.totalWords || props.totalWords === 0) return 0
   return Math.round(((props.timedWords || 0) / props.totalWords) * 100)
 })
 
-const estimatedDuration = computed(() => {
-  return formatTime(props.playbackState.duration)
-})
+// const estimatedDuration = computed(() => {
+//   return formatTime(props.playbackState.duration)
+// })
 
 // Methods
 const togglePlayPause = () => {
@@ -338,9 +338,9 @@ const resetSyllableTiming = () => {
   emit('reset-syllable-timing')
 }
 
-const updateSongAnalysis = (analysis: any) => {
-  songAnalysis.value = analysis
-}
+// const updateSongAnalysis = (analysis: any) => {
+//   songAnalysis.value = analysis
+// }
 
 // Keyboard shortcuts
 const handleKeydown = (event: KeyboardEvent) => {

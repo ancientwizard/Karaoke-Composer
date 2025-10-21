@@ -4,7 +4,7 @@
  * Can be tested with synthetic time progression
  */
 
-import type { LyricLine, WordTiming, SyllableTiming } from '@/types/karaoke'
+import type { LyricLine, WordTiming } from '@/types/karaoke'
 
 export interface TimingEvent {
   type: 'word_start' | 'word_end' | 'syllable_start' | 'syllable_end' | 'line_start' | 'line_end' | 'phrase_gap'

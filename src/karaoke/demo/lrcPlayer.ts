@@ -99,7 +99,6 @@ async function playLRCFile(filePath: string) {
 
     // Real-time playback
     const startTime = Date.now()
-    let commandCount = 0
 
     for (const command of script.commands) {
       const executeAt = startTime + command.timestamp
@@ -111,7 +110,6 @@ async function playLRCFile(filePath: string) {
       }
 
       await renderer.renderCommand(command)
-      commandCount++
 
       // Optional: Stop after first N commands for testing
       // if (commandCount >= 50) break

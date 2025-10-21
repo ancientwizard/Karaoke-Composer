@@ -121,7 +121,7 @@ MUSICAL ASSUMPTIONS:
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
-import { TIMING, TimingUtils } from '@/models/TimingConstants'
+import { TIMING } from '@/models/TimingConstants'
 
 interface Syllable {
   text: string
@@ -253,9 +253,9 @@ const timeToPixels = (time: number): number => {
 }
 
 // Convert pixels to time with proper bounds checking
-const pixelsToTime = (pixels: number): number => {
-  return props.viewStart + pixels / pixelsPerSecond.value
-}
+// const pixelsToTime = (pixels: number): number => {
+//   return props.viewStart + pixels / pixelsPerSecond.value
+// }
 
 // Get CSS style for word car positioning with bounds checking
 const getWordCarStyle = (word: Word) => {
@@ -546,31 +546,31 @@ const handleMouseUp = () => {
 }
 
 // Smart syllable timing distribution (musical pattern: shorter first, longer last)
-const distributeSyllableTiming = (word: Word, totalDuration: number, syllableCount: number): Syllable[] => {
-  if (!word.syllables || syllableCount <= 1) return word.syllables || []
+// const distributeSyllableTiming = (word: Word, totalDuration: number, syllableCount: number): Syllable[] => {
+//   if (!word.syllables || syllableCount <= 1) return word.syllables || []
 
-  // Use centralized syllable weighting system
-  const weights = TimingUtils.calculateSyllableWeights(syllableCount)
+//   // Use centralized syllable weighting system
+//   const weights = TimingUtils.calculateSyllableWeights(syllableCount)
 
-  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0)
-  const syllableDurations = weights.map(weight => (weight / totalWeight) * totalDuration)
+//   const totalWeight = weights.reduce((sum, weight) => sum + weight, 0)
+//   const syllableDurations = weights.map(weight => (weight / totalWeight) * totalDuration)
 
-  let currentTime = word.startTime
-  return word.syllables
-    .map((syllable, index) => ({
-      ...syllable,
-      startTime: currentTime,
-      endTime: currentTime + syllableDurations[index],
-    }))
-    .map((syllable, index, array) => {
-      currentTime = syllable.endTime
-      // Ensure last syllable ends exactly at word end
-      if (index === array.length - 1) {
-        syllable.endTime = word.endTime
-      }
-      return syllable
-    })
-}
+//   let currentTime = word.startTime
+//   return word.syllables
+//     .map((syllable, index) => ({
+//       ...syllable,
+//       startTime: currentTime,
+//       endTime: currentTime + syllableDurations[index],
+//     }))
+//     .map((syllable, index, array) => {
+//       currentTime = syllable.endTime
+//       // Ensure last syllable ends exactly at word end
+//       if (index === array.length - 1) {
+//         syllable.endTime = word.endTime
+//       }
+//       return syllable
+//     })
+// }
 
 // Setup timeline width on mount
 onMounted(async () => {
