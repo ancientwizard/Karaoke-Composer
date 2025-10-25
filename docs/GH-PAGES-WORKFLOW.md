@@ -207,7 +207,7 @@ npm run version:bump major # Auto-increment major
 ### Phase 1: Configuration
 1. ✅ Create `bin/` directory in project root
 2. ✅ Update `package.json`:
-   - Set version to `0.1.0`
+   - Set version to `0.0.1`
    - Add `deploy-gh-pages`, `build:gh-pages`, and `version:bump` scripts
 3. ✅ Update `vite.config.ts` with base path configuration
 4. ✅ Add `.deployments.log` to `.gitignore`

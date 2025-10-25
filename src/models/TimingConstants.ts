@@ -117,7 +117,7 @@ export const DEFAULT_TIMING_RULES: TimingRules = {
   },
 
   syllable: {
-    minDuration: 50,             // 50ms minimum - editor safety constraint
+    minDuration: 30,             // 30ms minimum - editor safety constraint
     defaultDuration: 200,        // 200ms reasonable syllable duration
     lastSyllableWeight: 2.0,     // Last syllable gets double time (musical)
     firstSyllableWeight: 0.8,    // First syllables slightly shorter

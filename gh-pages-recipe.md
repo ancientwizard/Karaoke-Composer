@@ -21,29 +21,24 @@ This recipe outlines the steps to manually deploy a preview version of the Karao
 
 4. Create a new orphan branch for the deployment:
    ```bash
-   git checkout --orphan gh-pages/v0.0.1
+   git checkout --orphan gh-pages
    ```
 
 5. Remove all files except the `.git` directory:
    ```bash
-   rm -rf *
+   git rm -rf .
    ```
 
-6. Optionally, remove unnecessary configuration files:
-   ```bash
-   rm .eslintrc.cjs .gitignore .prettier*
-   ```
-
-7. Copy the build output (`dist/`) from the original repository:
+6. Copy the build output (`dist/`) from the original repository:
    ```bash
    cp -r ../../Karaoke-Composer/dist/* .
    ```
 
-8. Stage and commit the changes:
+7. Stage and commit the changes:
    ```bash
    git add .
    git status
-   git commit -m "Deploy v0.0.1 to GitHub Pages"
+   git commit -m "Deploy as GitHub Pages"
    ```
 
 9. Push the changes to the remote repository:

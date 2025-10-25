@@ -403,3 +403,113 @@ export function resetSongSyllableTiming(lyrics: Array<{ words: WordTiming[] }>):
 
   console.log(`🔄 Reset syllable timing for ${resetCount} syllables`)
 }
+
+
+export interface BeatTap {
+  timestamp: number; // ms since audio start
+  confidence?: number; // optional, for future smoothing
+}
+
+export interface BeatGrid {
+  beats: BeatTap[];
+  bpm: number;
+  estimatedBeatDuration: number;
+}
+
+/**
+ * Create a beat grid from user taps
+ */
+export function createBeatGridFromTaps(taps: number[]): BeatGrid {
+  if (taps.length < 2) {
+    return {
+      beats: [],
+      bpm: 120,
+      estimatedBeatDuration: 500
+    };
+  }
+
+  const intervals = taps.slice(1).map((t, i) => t - taps[i]);
+  const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+  const bpm = Math.max(80, Math.min(200, 60000 / avgInterval));
+
+  return {
+    beats: taps.map(t => ({ timestamp: t })),
+    bpm,
+    estimatedBeatDuration: avgInterval
+  };
+}
+
+/**
+ * Snap word start times to nearest beat in grid
+ */
+export function alignWordsToBeatGrid(
+  lyrics: Array<{ words: WordTiming[] }>,
+  beatGrid: BeatGrid
+): void {
+  const beatTimes = beatGrid.beats.map(b => b.timestamp);
+
+  for (const line of lyrics) {
+    for (const word of line.words) {
+      if (word.startTime === undefined) continue;
+
+      const nearestBeat = beatTimes.reduce((prev, curr) =>
+        Math.abs(curr - word.startTime) < Math.abs(prev - word.startTime) ? curr : prev
+      );
+
+      word.startTime = nearestBeat;
+    }
+  }
+}
+
+/**
+ * Reconcile two tap passes into a smoothed timing map
+ */
+export function reconcileTapPasses(
+  passA: number[],
+  passB: number[]
+): number[] {
+  const length = Math.min(passA.length, passB.length);
+  const reconciled: number[] = [];
+
+  for (let i = 0; i < length; i++) {
+    const avg = (passA[i] + passB[i]) / 2;
+    reconciled.push(avg);
+  }
+
+  return reconciled;
+}
+
+/**
+ * Apply beat grid to lyrics using musical syllable distribution
+ */
+export function applyBeatGridToLyrics(
+  lyrics: Array<{ words: WordTiming[] }>,
+  beatGrid: BeatGrid
+): void {
+  const context: TimingContext = {
+    bpm: beatGrid.bpm,
+    estimatedBeatDuration: beatGrid.estimatedBeatDuration,
+    timeSignature: [4, 4]
+  };
+
+  for (const line of lyrics) {
+    for (let i = 0; i < line.words.length; i++) {
+      const word = line.words[i];
+      const nextWord = line.words[i + 1];
+      const timeToNext = nextWord?.startTime !== undefined
+        ? nextWord.startTime - word.startTime
+        : beatGrid.estimatedBeatDuration * 2;
+
+      distributeSyllablesMusically(
+        word,
+        word.startTime ?? beatGrid.beats[i]?.timestamp ?? 0,
+        timeToNext,
+        nextWord?.word,
+        context,
+        false,
+        false
+      );
+    }
+  }
+}
+

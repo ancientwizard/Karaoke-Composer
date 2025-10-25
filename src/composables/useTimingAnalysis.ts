@@ -1,4 +1,5 @@
-import type { LyricLine, WordTiming } from '../types/karaoke'
+import type { LyricLine, WordTiming } from '@/types/karaoke'
+import { TIMING } from '@/models/TimingConstants'
 
 export interface TimingOverlap {
   word1: WordTiming & { lineIndex: number; wordIndex: number }
@@ -24,6 +25,13 @@ export interface TimingAnalysisResult {
   }>
   summary: string
   hasIssues: boolean
+}
+
+const formatTime = (timeMs: number): string => {
+  const seconds = Math.floor(timeMs / 1000)
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = seconds % 60
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
 }
 
 export function useTimingAnalysis() {
@@ -109,7 +117,10 @@ export function useTimingAnalysis() {
       const word2 = allWords[i + 1]
       const gap = word2.startTime! - word1.endTime!
 
-      if (gap >= 0 && gap < 50) {
+      if (gap >= 0 && gap < TIMING.word.collisionMargin) {
+        const timeStr = formatTime(word1.startTime!)
+
+        console.log(`⚠️ Small gap detected between "${word1.word}" and "${word2.word}": ${gap}ms at time ${timeStr}`)
         smallGaps.push({
           word1: word1.word,
           word2: word2.word,
@@ -168,7 +179,7 @@ export function useTimingAnalysis() {
     allWords.sort((a, b) => (a.word.startTime || 0) - (b.word.startTime || 0))
 
     // Fix overlaps AND words that are too close together
-    const minGap = 50 // Minimum 50ms gap for proper visual/interaction spacing
+    const minGap = TIMING.word.collisionMargin // Minimum gap (ms) from centralized timing rules
 
     for (let i = 0; i < allWords.length - 1; i++) {
       const wordRef1 = allWords[i]

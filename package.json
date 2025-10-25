@@ -1,6 +1,6 @@
 {
   "name": "karaoke-composer",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "A Vue 3 Karaoke Application",
   "type": "module",
   "scripts": {

@@ -1,4 +1,5 @@
 import type { LyricLine, WordTiming } from '../types/karaoke'
+import { TIMING } from '@/models/TimingConstants'
 
 /**
  * Debug script to analyze timing overlaps in song data
@@ -92,7 +93,7 @@ function analyzeTimingOverlaps(lyrics: LyricLine[]): {
     const word2 = allWords[i + 1]
     const gap = word2.startTime! - word1.endTime!
 
-    if (gap >= 0 && gap < 50) { // Less than 50ms gap
+    if (gap >= 0 && gap < TIMING.word.collisionMargin) {
       smallGaps++
       console.log(`⚠️  SMALL GAP: "${word1.word}" -> "${word2.word}" gap: ${gap}ms`)
     }

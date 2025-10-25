@@ -116,7 +116,7 @@
 
       <div v-if="timingAnalysis.smallGaps.length > 0" class="mb-2">
         <strong class="text-info">Small Gaps:</strong>
-        <span class="small">{{ timingAnalysis.smallGaps.length }} gaps &lt; 50ms</span>
+        <span class="small">{{ timingAnalysis.smallGaps.length }} gaps &lt; {{ MIN_GAP_MS }}ms</span>
       </div>
 
       <div class="small text-muted">
@@ -132,6 +132,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { TIMING } from '@/models/TimingConstants'
 import type { TimingAnalysisResult } from '../composables/useTimingAnalysis'
 
 interface Props {
@@ -157,6 +158,9 @@ const showDiagnostics = ref(false)
 const hasTimedWords = computed(() => {
   return (props.timedWords || 0) > 0
 })
+
+// Centralized minimum gap value (ms) used across analysis/fixes
+const MIN_GAP_MS = TIMING.word.collisionMargin
 
 defineEmits<{
   'toggle-timing-mode': []
