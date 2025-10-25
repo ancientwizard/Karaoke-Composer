@@ -453,7 +453,7 @@ export function alignWordsToBeatGrid(
       if (word.startTime === undefined) continue;
 
       const nearestBeat = beatTimes.reduce((prev, curr) =>
-        Math.abs(curr - word.startTime) < Math.abs(prev - word.startTime) ? curr : prev
+        Math.abs(curr - (word.startTime ?? 0)) < Math.abs(prev - (word.startTime ?? 0)) ? curr : prev
       );
 
       word.startTime = nearestBeat;
@@ -497,7 +497,7 @@ export function applyBeatGridToLyrics(
       const word = line.words[i];
       const nextWord = line.words[i + 1];
       const timeToNext = nextWord?.startTime !== undefined
-        ? nextWord.startTime - word.startTime
+        ? nextWord.startTime - (word.startTime ?? 0)
         : beatGrid.estimatedBeatDuration * 2;
 
       distributeSyllablesMusically(

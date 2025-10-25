@@ -163,10 +163,11 @@ function showStatus(type: 'success' | 'error', message: string) {
   }, 3000)
 }
 
-function formatDuration(seconds: number): string {
-  const mins = Math.floor(seconds / 60)
-  const secs = Math.floor(seconds % 60)
-  return `${mins}:${secs.toString().padStart(2, '0')}`
+function formatDuration(milliseconds: number): string {
+  const secs = Math.floor(milliseconds / 1000)
+  const mins = Math.floor(secs / 60)
+  const remainingSecs = secs % 60
+  return `${mins}:${remainingSecs.toString().padStart(2, '0')}`
 }
 </script>
 
