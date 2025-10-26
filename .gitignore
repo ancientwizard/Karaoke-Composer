@@ -13,6 +13,11 @@ node_modules/
 jspm_packages/
 package-lock.json
 diag/
+reference/*/
+tmp/
+
+# Junk image files
+*.ppm
 
 # TypeScript cache
 *.tsbuildinfo
