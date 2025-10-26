@@ -1,11 +1,39 @@
-import { runCommand, git } from './utils.js';
-import fs from 'fs';
-import path from 'path';
-import ora from 'ora';
-import minimist from 'minimist';
-import { readFileSync } from 'fs';
+#!/usr/bin/env node
+/*
+# deploy-gh-pages
 
-const args = minimist(process.argv.slice(2));
+Summary: Build and deploy the `dist/` output to a new `gh-pages/vX.Y.Z` branch.
+
+Usage:
+  $ deploy-gh-pages.cjs [--dry-run] [--override-uncommitted] --run
+
+Options:
+  --help   Show this help (outputs this comment block as markdown)
+  --run    Execute the deployment (without this the script prints usage)
+  --dry-run  Do everything except push to remote
+  --override-uncommitted  Proceed even with uncommitted changes
+*/
+const { runCommand, git, readScriptMd } = require('../src/utils/bin-utils.cjs');
+const fs = require('fs');
+const path = require('path');
+const ora = require('ora');
+const minimist = require('minimist');
+const { readFileSync } = require('fs');
+
+const rawArgs = minimist(process.argv.slice(2));
+if (rawArgs.help) {
+  // print the MD header from this file
+  const md = readScriptMd(__filename);
+  console.log(md.join('\n'))
+  process.exit(0)
+}
+const shouldRun = Boolean(rawArgs.run)
+if (!shouldRun) {
+  console.log('Usage: deploy-gh-pages.cjs [--dry-run] [--override-uncommitted] --run')
+  console.log('Use --help to show extended usage (markdown).')
+  process.exit(0)
+}
+const args = rawArgs
 const isDryRun = args['dry-run'];
 const overrideUncommitted = args['override-uncommitted'];
 

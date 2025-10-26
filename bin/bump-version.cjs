@@ -1,10 +1,31 @@
-import fs from 'fs';
-import path from 'path';
-import readline from 'readline';
-import { log } from './utils.js';
+#!/usr/bin/env node
+/*
+# bump-version
+
+Summary: Interactively bump the package.json version (increments patch by default).
+
+Usage:
+  $ bump-version.cjs --run [path/to/package.json]
+
+Options:
+  --help   Show this help (outputs this comment block as markdown)
+  --run    Execute the bump (without this the script prints usage)
+*/
+const fs = require('fs');
+const path = require('path');
+const readline = require('readline');
+const { readScriptMd, log } = require('../src/utils/bin-utils.cjs');
+
+const args = process.argv.slice(2)
+if (args.includes('--help')) { console.log(readScriptMd(__filename).join('\n')); process.exit(0) }
+const shouldRun = args.includes('--run')
+if (!shouldRun) { console.log('Usage: bump-version.cjs --run [path/to/package.json]'); console.log('Use --help to show extended usage (markdown).'); process.exit(0) }
 
 // Get the file path from arguments or default to the real package.json
-const packageJsonPath = process.argv[2] || path.resolve(path.dirname(import.meta.url), '../package.json');
+const files = args.filter(a=>!a.startsWith('--'))
+const packageJsonPath = files[0]
+  ? path.resolve(files[0])
+  : path.resolve(__dirname, '../package.json');
 
 // Readline interface for user input
 const rl = readline.createInterface({
@@ -23,7 +44,7 @@ const bumpVersion = async () => {
     if (!fs.existsSync(packageJsonPath)) {
       log.warning(`File not found: ${packageJsonPath}`);
       log.info('Copying real package.json to the dummy location...');
-      const realPackageJsonPath = path.resolve(path.dirname(import.meta.url), '../package.json');
+      const realPackageJsonPath = path.resolve(__dirname, '../package.json');
       fs.copyFileSync(realPackageJsonPath, packageJsonPath);
     }
 

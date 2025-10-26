@@ -1,6 +1,34 @@
 #!/usr/bin/env node
+/*
+# inspect-cdg
+
+Summary: Inspect a .cdg file and report size, checksums, packet counts and hex dumps.
+
+Usage:
+  $ inspect-cdg.cjs --run <file1.cdg> [file2.cdg ...]
+
+Options:
+  --help   Show this help (outputs this comment block as markdown)
+  --run    Execute the script (without this the script prints usage)
+*/
 const fs = require('fs')
 const crypto = require('crypto')
+const { readScriptMd } = require('../src/utils/bin-utils.cjs')
+
+const args = process.argv.slice(2)
+if (args.includes('--help')) {
+  const md = readScriptMd(__filename)
+  console.log(md.join('\n'))
+  process.exit(0)
+}
+const shouldRun = args.includes('--run')
+if (!shouldRun) {
+  console.log('Usage: inspect-cdg.cjs --run <file1.cdg> [file2.cdg ...]')
+  console.log('Use --help to show extended usage (markdown).')
+  process.exit(0)
+}
+// filter out flags to get files
+const files = args.filter(a => !a.startsWith('--'))
 
 function hexdump(buf, offset=0, len=24) {
   return Array.from(buf.slice(offset, offset+len)).map(b=>b.toString(16).padStart(2,'0')).join(' ')
@@ -72,13 +100,13 @@ function inspect(file) {
   }
 }
 
-if (process.argv.length<3){
-  console.log('Usage: inspect-cdg.cjs <file1.cdg> [file2.cdg ...]')
+if (files.length === 0) {
+  console.log('No files provided. Usage: inspect-cdg.cjs <file1.cdg> [file2.cdg ...] --run')
   process.exit(1)
 }
 
-for (let i=2;i<process.argv.length;i++){
-  const f = process.argv[i]
+for (let i=0;i<files.length;i++){
+  const f = files[i]
   if (!fs.existsSync(f)){
     console.error('File not found:', f)
     continue
