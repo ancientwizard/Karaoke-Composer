@@ -63,7 +63,6 @@
 import { ref, computed } from 'vue'
 import type { KaraokeProject } from '../types/karaoke'
 import { LRCWriter } from '../formats/LRCFormat'
-import { getProjectStats } from '../services/projectExportService'
 
 const props = defineProps<{
   project: KaraokeProject

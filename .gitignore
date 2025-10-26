@@ -12,6 +12,7 @@ lerna-debug.log*
 node_modules/
 jspm_packages/
 package-lock.json
+diag/
 
 # TypeScript cache
 *.tsbuildinfo

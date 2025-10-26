@@ -43,8 +43,12 @@ export class KaraokePresentationEngine {
       metadata: {
         title: project.name,
         artist: project.artist,
+        // Normalize stored audio duration to milliseconds. Projects can contain
+        // either seconds (legacy) or milliseconds (stored by the browser). The
+        // helper handles both cases so that downstream code gets a consistent
+        // milliseconds value.
         songDurationMs: project.audioFile.duration
-          ? project.audioFile.duration * 1000
+          ? this.normalizeAudioDurationToMs(project.audioFile.duration)
           : undefined
       }
     }
@@ -56,7 +60,10 @@ export class KaraokePresentationEngine {
   private calculateDuration(project: KaraokeProject): number {
     // Use audio duration if available
     if (project.audioFile.duration) {
-      return project.audioFile.duration * 1000 // Convert to ms
+      // The stored `audioFile.duration` may be in seconds (legacy / test fixtures)
+      // or in milliseconds (browser-detected and persisted). Normalize to ms.
+      const normalized = this.normalizeAudioDurationToMs(project.audioFile.duration)
+      return normalized
     }
 
     // Otherwise use last lyric line end time + buffer
@@ -72,9 +79,24 @@ export class KaraokePresentationEngine {
   }
 
   /**
+   * Normalize an audio duration value to milliseconds.
+   * Accepts either seconds (common in test fixtures / legacy code) or
+   * milliseconds (what the browser/audio service persists). Heuristic:
+   * - If value looks large (> 10000) treat as milliseconds; otherwise
+   *   treat as seconds and convert to milliseconds.
+   */
+  private normalizeAudioDurationToMs(audioDuration?: number): number {
+    if (!audioDuration || isNaN(audioDuration)) return 0
+    // If the value is large ( > 10,000 ) assume it's already ms
+    if (audioDuration > 10000) return Math.floor(audioDuration)
+    // Otherwise assume seconds -> convert to ms
+    return Math.floor(audioDuration * 1000)
+  }
+
+  /**
    * Validate that a project is ready for presentation
    */
-  validateProject(project: KaraokeProject): {
+  validateProject(project: KaraokeProject, options: { allowMissingAudio?: boolean } = {}): {
     valid: boolean
     errors: string[]
     warnings: string[]
@@ -83,8 +105,10 @@ export class KaraokePresentationEngine {
     const warnings: string[] = []
 
     // Check for audio file
-    if (!project.audioFile.file && !project.audioFile.url) {
-      errors.push('No audio file loaded')
+    if (!options.allowMissingAudio) {
+      if (!project.audioFile.file && !project.audioFile.url) {
+        errors.push('No audio file loaded')
+      }
     }
 
     // Check for lyrics

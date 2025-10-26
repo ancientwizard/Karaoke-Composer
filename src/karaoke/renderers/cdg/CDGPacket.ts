@@ -43,10 +43,10 @@ export const CDG_SCREEN = {
  * Single CDG packet (24 bytes)
  */
 export class CDGPacket {
-  private buffer: Buffer
+  private buffer: Uint8Array
 
   constructor() {
-    this.buffer = Buffer.alloc(24, 0)
+    this.buffer = new Uint8Array(24)
     // First byte is always CDG subchannel code (0x09)
     this.buffer[0] = 0x09
   }
@@ -89,7 +89,8 @@ export class CDGPacket {
    */
   toBuffer(): Buffer {
     this.setParity()
-    return this.buffer
+    // Return as Uint8Array-compatible buffer. In Node consumers this can be wrapped with Buffer.from(...)
+    return this.buffer as unknown as Buffer
   }
 
   /**
