@@ -31,7 +31,7 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
 
   // Helper to place a packet at an index if empty; if not empty, find next empty within small window
   // Place a packet at or just after `index`. Returns [placedIndex, overwrittenFlag]
-  function placePacketAt(index: number, pkt: CDGPacket): [number, boolean] {
+  function placePacketAt(index: number, pkt: CDGPacket, minIndex?: number, maxIndex?: number): [number, boolean] {
     // Coerce index to integer and clamp
     let pos = Number.isFinite(index) ? Math.floor(index) : 0;
     if (pos < 0) pos = 0;
@@ -40,18 +40,34 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
     // Check the desired slot first
     const isEmpty = (i: number) => packetSlots[i] && packetSlots[i].every((b) => b === 0);
     if (isEmpty(pos)) { packetSlots[pos] = pkt; return [pos, false]; }
+    // Determine search bounds
+    const startBound = (typeof minIndex === 'number') ? Math.max(0, Math.floor(minIndex)) : 0;
+    const endBound = (typeof maxIndex === 'number') ? Math.min(packetSlots.length - 1, Math.floor(maxIndex)) : packetSlots.length - 1;
 
-    // Search outward within a small radius (prefer nearby empty slots). This checks
-    // positions pos+1, pos-1, pos+2, pos-2, ... up to radius.
-    const radius = 6;
-    for (let d = 1; d <= radius; d++) {
-      const forward = pos + d;
-      if (forward < packetSlots.length && isEmpty(forward)) { packetSlots[forward] = pkt; return [forward, false]; }
-      const back = pos - d;
-      if (back >= 0 && isEmpty(back)) { packetSlots[back] = pkt; return [back, false]; }
+    // Greedy alternating probe around `pos` within bounds: pos, pos+1, pos-1, pos+2, pos-2, ...
+    // This tends to keep placements clustered near the desired index while reducing
+    // destructive overwrites that occur when multiple events target the same slot.
+    const maxForward = endBound;
+    const maxBackward = startBound;
+    for (let step = 1; ; step++) {
+      const forwardIdx = pos + step - 1;
+      const backwardIdx = pos - step;
+      let foundAny = false;
+      if (forwardIdx <= maxForward) {
+        foundAny = true;
+        if (isEmpty(forwardIdx)) { packetSlots[forwardIdx] = pkt; return [forwardIdx, false]; }
+      }
+      if (backwardIdx >= maxBackward) {
+        foundAny = true;
+        if (isEmpty(backwardIdx)) { packetSlots[backwardIdx] = pkt; return [backwardIdx, false]; }
+      }
+      // If neither direction is still within bounds, stop probing
+      if (!foundAny) break;
+      // safety: if we've stepped beyond both bounds, break
+      if (pos + step - 1 > maxForward && pos - step < maxBackward) break;
     }
 
-    // No empty nearby slots: overwrite the original position
+    // Last resort: overwrite original position (do NOT perform an unbounded global search)
     const wasEmpty = packetSlots[pos] ? packetSlots[pos].every((b) => b === 0) : true;
     packetSlots[pos] = pkt;
     return [pos, !wasEmpty];
@@ -81,10 +97,23 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
 
     // Spread packets proportionally across the available allocated window for the event.
     // Compute positions as: placedIdxBase + floor(i * allocated / packets.length)
-  const allocated = Math.max(1, ev.durationPacks || 1);
+  // If event doesn't specify a multi-pack window, give it a small default
+  // allocation so nearby events don't all collapse onto the same single slot.
+  const defaultSmallWindow = Math.max(8, Math.ceil(pps * 0.1)); // ~10% of a second at 75pps -> ~8
+  const allocatedRaw = (ev.durationPacks && ev.durationPacks > 1) ? ev.durationPacks : defaultSmallWindow;
   // If many events share the same startPack, serialize them by adding an offset
   const priorOffset = startPackOffsets.get(ev.startPack) || 0;
-  const placedIdxBase = reservedStart + ev.startPack + priorOffset;
+  // Add a small deterministic jitter derived from block coords/startPack to
+  // spread events that would otherwise collide when many share the same startPack.
+  const jitterRange = Math.max(1, Math.min(16, allocatedRaw));
+  const jitterSeed = Math.abs((ev.blockX * 37 + ev.blockY * 97 + ev.startPack * 13));
+  const jitter = jitterSeed % jitterRange;
+  const placedIdxBase = reservedStart + ev.startPack + priorOffset + jitter;
+  // Ensure we have at least as many slots as packets where possible to avoid
+  // excessive overwrites when allocated window is smaller than the number of
+  // packets produced for a font block. Cap to remaining slots in the timeline.
+  const remainingAfterBase = Math.max(0, packetSlots.length - placedIdxBase);
+  const allocated = Math.max(allocatedRaw, Math.min(remainingAfterBase, packets.length));
     const placedIndices: number[] = [];
     for (let i = 0; i < packets.length; i++) {
       const pkt = packets[i];
@@ -96,7 +125,7 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
       if (_debugLogCount <= 10) {
         console.log(`scheduler debug: placedIdxBase=${placedIdxBase}, allocated=${allocated}, i=${i}, rel=${rel}, pos=${pos}`)
       }
-  const [placedIdx, overwritten] = placePacketAt(pos, pkt);
+  const [placedIdx, overwritten] = placePacketAt(pos, pkt, placedIdxBase, placedIdxBase + allocated - 1);
       placedIndices.push(placedIdx);
       if (_debugLogCount <= 10) {
         console.log(`scheduler: placed packet for block (${ev.blockX},${ev.blockY}) at index ${placedIdx}${overwritten ? ' (overwritten)' : ''}`);
@@ -104,12 +133,36 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
     }
     // optional: expose placedIndices via event for further debugging
     ;(ev as any).__placedIndices = placedIndices
-    // Advance the per-startPack offset so subsequent events at the same startPack don't collide
-    startPackOffsets.set(ev.startPack, (startPackOffsets.get(ev.startPack) || 0) + Math.max(1, packets.length));
+  // Advance the per-startPack offset so subsequent events at the same startPack don't collide.
+  // Use a small increment proportional to the event's packet count so events that emit
+  // many packets get extra serialization space. Cap the increment to avoid runaway pushes.
+  // Use the allocated window size (if available) to advance the offset so that
+  // subsequent events at the same startPack land in a different window. allocated
+  // was computed above; fall back to packets.length if not present.
+  const offsetInc = Math.max(1, Math.min(256, allocated || Math.max(1, packets.length)));
+  startPackOffsets.set(ev.startPack, (startPackOffsets.get(ev.startPack) || 0) + offsetInc);
   }
 
   // Build scheduling stats/histogram for debugging
   try {
+    // Dump per-event placement info for deeper diagnostics (event -> placed indices)
+    try {
+      const perEvent: any[] = [];
+      for (const ev of events) {
+        perEvent.push({
+          blockX: ev.blockX,
+          blockY: ev.blockY,
+          startPack: ev.startPack,
+          durationPacks: ev.durationPacks,
+          placed: (ev as any).__placedIndices || [],
+        });
+      }
+      try { fs.mkdirSync('./tmp', { recursive: true }); } catch (e) { /* ignore */ }
+      fs.writeFileSync('./tmp/scheduler_event_placements.json', JSON.stringify({ events: perEvent }, null, 2));
+      console.log('scheduler: wrote per-event placements to ./tmp/scheduler_event_placements.json');
+    } catch (e) {
+      console.warn('scheduler: failed to write per-event placements', e);
+    }
     const nonEmptyIndices: number[] = [];
     for (let i = 0; i < packetSlots.length; i++) {
       const pkt = packetSlots[i];

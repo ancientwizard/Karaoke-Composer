@@ -108,11 +108,18 @@ async function main() {
       const fg = (clip.foreground_color != null) ? clip.foreground_color : 1
       const bg = (clip.background_color != null) ? clip.background_color : 0
       for (const ev of clip.events || []) {
-  const evOffset = ev.clip_time_offset || 0
-  // clip.start and clip_time_offset may already be expressed in packet units in the JSON
-  const startPack = timeToPacks((clipStart || 0) + (evOffset || 0), pps)
-  const totalPacks = Math.max(1, Math.ceil(durationSeconds * pps))
-        const durationPacks = Math.max(1, totalPacks - startPack)
+        const evOff = ev.clip_time_offset || 0
+        // clip.start and clip_time_offset may already be expressed in packet units in the JSON
+        const startPack = timeToPacks((clipStart || 0) + (evOff || 0), pps)
+        // Prefer explicit event/clip durations when available. Fall back to a small
+        // default (2s) rather than reserving the remainder of the entire timeline,
+        // which spreads packets across too large a window and makes placements
+        // diverge from the reference neighborhood.
+        let evDurPacks = 0
+        if (ev.clip_time_duration != null) evDurPacks = timeToPacks(ev.clip_time_duration, pps)
+        else if (clip.duration != null) evDurPacks = timeToPacks(clip.duration, pps)
+        else evDurPacks = Math.ceil(pps * 2) // default to 2 seconds
+        const durationPacks = Math.max(1, evDurPacks)
 
         const tileRow = Math.floor((ev.clip_y_offset || 0) / CDG_SCREEN.TILE_HEIGHT)
         const tileCol = Math.floor((ev.clip_x_offset || 0) / CDG_SCREEN.TILE_WIDTH)
@@ -182,8 +189,11 @@ async function main() {
                 pixels.push(rowArr)
               }
             const startPack = timeToPacks((clipStart || 0) + (ev.clip_time_offset || 0), pps)
-            const totalPacks = Math.max(1, Math.ceil(durationSeconds * pps))
-            const durationPacks = Math.max(1, totalPacks - startPack)
+            let evDurPacks = 0
+            if (ev.clip_time_duration != null) evDurPacks = timeToPacks(ev.clip_time_duration, pps)
+            else if (clip.duration != null) evDurPacks = timeToPacks(clip.duration, pps)
+            else evDurPacks = Math.ceil(pps * 2)
+            const durationPacks = Math.max(1, evDurPacks)
               events.push({
  blockX: startCol + bx, blockY: startRow + by, pixels, startPack, durationPacks 
 })
