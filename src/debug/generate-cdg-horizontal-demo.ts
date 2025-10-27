@@ -26,16 +26,22 @@ async function run() {
       for (let x = 0; x < 6; x++) rowArr.push(color)
       pixels.push(rowArr)
     }
-    tileCoords.push({ bx, by: row, pixels })
+    tileCoords.push({
+ bx, by: row, pixels 
+})
   }
 
   const totalPacks = Math.max(1, Math.ceil(durationSeconds * pps))
   const events: any[] = []
   for (let i = 0; i < tileCoords.length; i++) {
-    const { bx, by, pixels } = tileCoords[i]
+    const {
+ bx, by, pixels 
+} = tileCoords[i]
     const startPack = Math.floor((i * totalPacks) / tileCoords.length)
     const durationPacks = Math.max(1, totalPacks - startPack)
-    events.push({ blockX: bx, blockY: by, pixels, startPack, durationPacks })
+    events.push({
+ blockX: bx, blockY: by, pixels, startPack, durationPacks 
+})
   }
 
   const palettePkts = generatePaletteLoadPackets()
@@ -43,7 +49,9 @@ async function run() {
   const memoryPkts = generateMemoryPresetPackets(1)
   const initPkts = [...palettePkts, ...borderPkts, ...memoryPkts]
 
-  const { packetSlots } = scheduleFontEvents(events, { durationSeconds, pps }, initPkts.length)
+  const { packetSlots } = scheduleFontEvents(events, {
+ durationSeconds, pps 
+}, initPkts.length)
   for (let i = 0; i < initPkts.length && i < packetSlots.length; i++) packetSlots[i] = initPkts[i]
 
   // repeat tile packets every second

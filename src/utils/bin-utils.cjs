@@ -12,7 +12,9 @@ const log = {
 function runCommand(cmd, opts = {}) {
   // Simple synchronous runner, throws on non-zero exit
   const shell = process.platform === 'win32' ? true : '/bin/sh';
-  const res = spawnSync(cmd, { stdio: 'inherit', shell: true, env: process.env, ...opts });
+  const res = spawnSync(cmd, {
+ stdio: 'inherit', shell: true, env: process.env, ...opts 
+});
   if (res.error) throw res.error;
   if (res.status && res.status !== 0) {
     const err = new Error(`Command failed: ${cmd}`);
@@ -73,4 +75,6 @@ function positionalArgs(argv) {
   return argv.filter(a => typeof a === 'string' && !a.startsWith('-'));
 }
 
-module.exports = { log, runCommand, git, readScriptMd, positionalArgs };
+module.exports = {
+ log, runCommand, git, readScriptMd, positionalArgs 
+};

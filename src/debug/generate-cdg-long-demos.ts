@@ -30,7 +30,9 @@ async function run() {
           for (let x = 0; x < 6; x++) row.push(0)
           pixels.push(row)
         }
-        tiles.push({ bx, by, pixels })
+        tiles.push({
+ bx, by, pixels 
+})
       }
     }
 
@@ -43,7 +45,9 @@ async function run() {
       const totalPacks = Math.max(1, Math.ceil(dur * pps))
       const startPack = Math.floor((i * totalPacks) / tiles.length)
       const durationPacks = Math.max(1, totalPacks - startPack)
-      solidEvents.push({ blockX: t.bx, blockY: t.by, pixels: t.pixels, startPack, durationPacks })
+      solidEvents.push({
+ blockX: t.bx, blockY: t.by, pixels: t.pixels, startPack, durationPacks 
+})
     }
 
     // ANIMATED variant: moving vertical bar across the region; we schedule frames across time
@@ -66,7 +70,9 @@ async function run() {
         }
         const startPack = Math.floor((f * totalPacksA) / frames)
         const durationPacks = Math.max(1, Math.floor(totalPacksA / frames))
-        animatedEvents.push({ blockX: colIdx, blockY: by, pixels, startPack, durationPacks })
+        animatedEvents.push({
+ blockX: colIdx, blockY: by, pixels, startPack, durationPacks 
+})
       }
     }
 
@@ -76,7 +82,9 @@ async function run() {
       const borderPkts = generateBorderPacket(0)
       const memoryPkts = generateMemoryPresetPackets(1)
       const initPkts = [...palettePkts, ...borderPkts, ...memoryPkts]
-      const { packetSlots } = scheduleFontEvents(events, { durationSeconds: dur, pps }, initPkts.length)
+      const { packetSlots } = scheduleFontEvents(events, {
+ durationSeconds: dur, pps 
+}, initPkts.length)
       for (let i = 0; i < initPkts.length && i < packetSlots.length; i++) packetSlots[i] = initPkts[i]
 
       // repeat tile packets every 1s and emit palette at each second
@@ -118,7 +126,9 @@ async function run() {
           const cp = await import('child_process')
           const execSync = (cp as any).execSync
           const copies = Math.ceil(dur / 4)
-          execSync(`ffmpeg -y -f concat -safe 0 -i <(for i in $(seq 1 ${copies}); do echo "file '${silence}'"; done) -c copy ${mp3dst}`, { stdio: 'ignore', shell: '/bin/bash' })
+          execSync(`ffmpeg -y -f concat -safe 0 -i <(for i in $(seq 1 ${copies}); do echo "file '${silence}'"; done) -c copy ${mp3dst}`, {
+ stdio: 'ignore', shell: '/bin/bash' 
+})
         } catch (e) {
           try { fs.copyFileSync(silence, mp3dst) } catch (e) { /* ignore */ }
         }

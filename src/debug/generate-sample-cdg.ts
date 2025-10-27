@@ -8,7 +8,9 @@ async function main() {
   // CDG tiles are 12 rows of 6 pixels; each element in `pixels` is a 6-bit row.
   const tile: TileDraw = {
     at: 0,
-    coord: { row: 8, col: 20 },
+    coord: {
+ row: 8, col: 20 
+},
   color0: 3,
   color1: 8,
     pixels: [

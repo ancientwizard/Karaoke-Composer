@@ -34,7 +34,9 @@ async function run() {
     const initPkts = [...palettePkts, ...borderPkts, ...memoryPkts]
 
     // schedule using same logic as scheduler.scheduleAndWriteDemo: reservedStart = initPkts.length
-    const { packetSlots } = scheduleFontEvents(events, { durationSeconds, pps }, initPkts.length)
+    const { packetSlots } = scheduleFontEvents(events, {
+ durationSeconds, pps 
+}, initPkts.length)
 
     // Place initial packets into reserved start slots
     for (let i = 0; i < initPkts.length && i < packetSlots.length; i++) packetSlots[i] = initPkts[i]

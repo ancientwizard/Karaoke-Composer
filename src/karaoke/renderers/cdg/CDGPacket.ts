@@ -157,13 +157,18 @@ export class CDGPacket {
       high ? CDGCommand.CDG_LOAD_COLOR_TABLE_HIGH : CDGCommand.CDG_LOAD_COLOR_TABLE_LOW
     )
 
-    // Pack 8 colors (each is 16-bit RGB)
-    const data: number[] = []
-    for (let i = 0; i < 8; i++) {
-      const color = colors[i] || 0
-      // CDG color format: [0 0 R3 R2 R1 R0 G3 G2] [0 0 G1 G0 B3 B2 B1 B0]
-      data.push((color >> 8) & 0x3F)  // High byte
-      data.push(color & 0x3F)         // Low byte
+    // Pack 8 colors using the same packing as the reference encoder.
+    // Each color is provided in 12-bit form (r4/g4/b4). We pack two 6-bit data bytes per color as:
+    // data[pal_inc*2+0] = (r4 << 2) | (g4 >> 2)
+    // data[pal_inc*2+1] = ((g4 & 0x03) << 4) | b4
+    const data: number[] = new Array(16).fill(0)
+    for (let pal_inc = 0; pal_inc < 8; pal_inc++) {
+      const color = colors[pal_inc] || 0
+      const r4 = (color >> 8) & 0x0F
+      const g4 = (color >> 4) & 0x0F
+      const b4 = color & 0x0F
+      data[pal_inc * 2 + 0] = ((r4 & 0x0F) << 2) | ((g4 & 0x0F) >> 2)
+      data[pal_inc * 2 + 1] = (((g4 & 0x03) << 4) | (b4 & 0x0F)) & 0x3F
     }
 
     packet.setData(data)
@@ -220,10 +225,11 @@ export class CDGPalette {
    * Convert RGB (8-bit per channel) to CDG format (4-bit per channel)
    */
   rgbToCDG(r: number, g: number, b: number): number {
-    // Scale 8-bit (0-255) to 4-bit (0-15)
-    const r4 = (r >> 4) & 0x0F
-    const g4 = (g >> 4) & 0x0F
-    const b4 = (b >> 4) & 0x0F
+    // Scale 8-bit (0-255) to 4-bit (0-15).
+    // Use the reference implementation mapping: divide by 17 (floor) to map 0..255 -> 0..15.
+    const r4 = Math.floor(r / 17) & 0x0F
+    const g4 = Math.floor(g / 17) & 0x0F
+    const b4 = Math.floor(b / 17) & 0x0F
 
     // Pack into 12-bit CDG format (stored as 16-bit)
     // Format: [0 0 R3 R2 R1 R0 G3 G2] [0 0 G1 G0 B3 B2 B1 B0]

@@ -18,7 +18,8 @@ export function makeEmptyPacket(): CDGPacket {
 // Basic header constants (subset)
 export const TV_GRAPHICS = 0x09;
 export const COPY_FONT = 0x06;
-export const XOR_FONT = 0x07;
+// CDG tile-block XOR command is 38 (0x26) in the CDG spec / reference encoder
+export const XOR_FONT = 0x26;
 
 // VRAM: 300 x 216 indices (0..15)
 export class VRAM {
@@ -125,89 +126,158 @@ export function writeFontBlock(
   blockX: number,
   blockY: number,
   blockPixels: number[][],
-  compositor?: Compositor,
+  channelOrCompositor?: number | Compositor,
+  maybeCompositor?: Compositor,
 ): CDGPacket[] {
+  // Port of CDGMagic::write_fontblock / write_fontblock_single
+  // Support two calling forms used in the codebase:
+  //  - writeFontBlock(vram, bx, by, pixels, compositor?)
+  //  - writeFontBlock(vram, bx, by, pixels, channel, compositor)
+  let channel = 0;
+  let compositorObj: Compositor | undefined = undefined;
+  if (typeof channelOrCompositor === 'number') {
+    channel = channelOrCompositor;
+    compositorObj = maybeCompositor;
+  } else if (channelOrCompositor) {
+    compositorObj = channelOrCompositor as Compositor;
+  }
   // If a compositor is provided, compare against its composited block first.
-  if (compositor) {
-    if (blockEqualsComposited(compositor, blockX, blockY, blockPixels)) return [];
+  if (compositorObj) {
+    if (blockEqualsComposited(compositorObj, blockX, blockY, blockPixels)) return [];
   } else {
     // Skip if block is identical to VRAM
     if (blockEqualsVRAM(vram, blockX, blockY, blockPixels)) return [];
   }
-  const { colors } = analyzeBlock(blockPixels);
-  const ncolors = colors.length;
+  // Build a prominence-ordered color list (most common first)
+  const counts = new Map<number, number>();
+  for (let y = 0; y < 12; y++) {
+    for (let x = 0; x < 6; x++) {
+      const v = blockPixels[y][x] & 0xFF;
+      counts.set(v, (counts.get(v) || 0) + 1);
+    }
+  }
+  const colorsByFreq = Array.from(counts.entries()).filter(e => e[1] > 0).sort((a,b) => b[1]-a[1]).map(e => e[0]);
+  const num_colors = colorsByFreq.length;
+
   const packets: CDGPacket[] = [];
 
-  // helper to produce a CDG tile packet using the project's CDGPacket utilities
-  function makePacket(instruction: number, colorOn: number, colorOff: number, lines: number[]) {
-    // CDGPacket.tileBlock expects: color0, color1, row, col, pixels(12 bytes), xor(bool)
-    const xor = instruction === XOR_FONT;
-    // tileBlock wants pixels as a flat array of 12 6-bit values
-    const pixels = lines.map((l) => l & 0x3F);
-    const cp = CDGPacketClass.tileBlock(colorOn & 0x0F, colorOff & 0x0F, blockY & 0x1F, blockX & 0x3F, pixels, xor);
-    return new Uint8Array(cp.toBuffer());
+  // helper to create a packet that matches the reference packing (command=TV_GRAPHICS, instruction)
+  function write_fontblock_single(instruction: number, channel: number,
+                                  x_block: number, y_block: number,
+                                  color_one: number, color_two: number,
+                                  lines: number[] | null): CDGPacket {
+    const packetObj = new CDGPacketClass();
+    // Set the CDG sub-command (COPY/XOR) in buffer[1] and leave instruction (buffer[2]) = 0
+    // instruction parameter here is the sub-command (COPY_FONT/XOR_FONT) per reference
+    packetObj.setCommand(instruction as any, 0);
+    // Build 16 data bytes
+    const data: number[] = new Array(16).fill(0);
+    data[0] = (color_one & 0x3F) | ((channel << 2) & 0x30);
+    data[1] = (color_two & 0x3F) | ((channel << 4) & 0x30);
+    data[2] = y_block & 0x3F;
+    data[3] = x_block & 0x3F;
+    if (lines && lines.length >= 12) {
+      for (let i = 0; i < 12; i++) data[4 + i] = lines[i] & 0x3F;
+    }
+    packetObj.setData(data);
+    return new Uint8Array(packetObj.toBuffer());
   }
 
-  // Build line masks for a given predicate function
-  function buildLines(predicate: (pixel: number) => boolean) {
+  // Helper to compute a 12-line mask array from a predicate
+  function buildLines(predicate: (pix: number) => boolean) {
     const lines: number[] = new Array(12).fill(0);
     for (let y = 0; y < 12; y++) {
-      let line = 0;
+      let the_line = 0;
       for (let x = 0; x < 6; x++) {
-        const v = blockPixels[y][x];
-        const bit = predicate(v) ? 1 : 0;
-        line |= (bit << (5 - x));
+        const pix_val = predicate(blockPixels[y][x]) ? 1 : 0;
+        the_line |= (pix_val << (5 - x));
       }
-      lines[y] = line;
+      lines[y] = the_line;
     }
     return lines;
   }
 
-  if (ncolors <= 1) {
-    // all-lines 0x3F
+  // XOR-only case isn't modelled externally here; skip (no xor_only semantics passed in)
+
+  if (num_colors === 0 || num_colors === 1) {
+    const c = colorsByFreq[0] || 0;
     const lines = new Array(12).fill(0x3F);
-    packets.push(makePacket(COPY_FONT, colors[0] || 0, colors[0] || 0, lines));
-  } else if (ncolors === 2) {
-    const c0 = colors[0];
-    const c1 = colors[1];
-    const lines = buildLines((pix) => pix === c1);
-    packets.push(makePacket(COPY_FONT, c0, c1, lines));
-  } else if (ncolors === 3) {
-    // heuristic: prominent color + second color in COPY, and XOR the third
-    const c0 = colors[0];
-    const c1 = colors[1];
-    const c2 = colors[2];
-    const lines0 = buildLines((pix) => pix === c1 || pix === c2);
-    packets.push(makePacket(COPY_FONT, c1, c0, lines0));
-    const lines1 = buildLines((pix) => pix === c2);
-    packets.push(makePacket(XOR_FONT, 0x00, (c1 ^ c2) & 0x3F, lines1));
+  packets.push(write_fontblock_single(COPY_FONT, channel, blockX, blockY, c, c, lines));
+  } else if (num_colors === 2) {
+    const colors_to_write = [colorsByFreq[0], colorsByFreq[1]];
+    const lines = buildLines((pix) => pix === colors_to_write[1]);
+  packets.push(write_fontblock_single(COPY_FONT, channel, blockX, blockY, colors_to_write[0], colors_to_write[1], lines));
+  } else if (num_colors === 3) {
+    // follow reference ordering: [1], [0], [2]
+    const colors_to_write = [colorsByFreq[1], colorsByFreq[0], colorsByFreq[2]];
+    // First COPY packet
+    const lines0 = buildLines((pix) => (pix === colors_to_write[1]) || (pix === colors_to_write[2]));
+  packets.push(write_fontblock_single(COPY_FONT, channel, blockX, blockY, colors_to_write[0], colors_to_write[1], lines0));
+    // Second XOR packet
+    const lines1 = buildLines((pix) => pix === colors_to_write[2]);
+  packets.push(write_fontblock_single(XOR_FONT, channel, blockX, blockY, 0x00, (colors_to_write[1] ^ colors_to_write[2]) & 0x3F, lines1));
   } else {
-    // bitplane fallback: determine which bitplanes are used (4 bits: 0..3)
-    let colorsOR = 0;
-    for (const c of colors) colorsOR |= c;
-    const usedPlanes: number[] = [];
-    for (let bit = 3; bit >= 0; bit--) {
-      if (((colorsOR >> bit) & 0x01) !== 0) usedPlanes.push(bit);
+    // Compute colors_OR, colors_XOR, colors_AND across prominent colors
+    let colors_OR = 0;
+    let colors_XOR = 0;
+    let colors_AND = 0xFF;
+    for (let i = 0; i < num_colors; i++) {
+      const c = colorsByFreq[i];
+      colors_OR |= c;
+      colors_XOR ^= c;
+      colors_AND &= c;
     }
-    // first plane is COPY, rest are XOR
-    let first = true;
-    for (const bit of usedPlanes) {
-      const lines = buildLines((pix) => ((pix >> bit) & 0x01) === 1);
-      if (first) {
-        packets.push(makePacket(COPY_FONT, 0x00, 0x01 << bit, lines));
-        first = false;
-      } else {
-        packets.push(makePacket(XOR_FONT, 0x00, 0x01 << bit, lines));
+    let AND_bits = 0, OR_bits = 0;
+    for (let bit = 0; bit < 4; bit++) {
+      AND_bits += (colors_AND >> bit) & 0x01;
+      OR_bits  += (colors_OR >> bit) & 0x01;
+    }
+    const used_bits = OR_bits - AND_bits;
+
+    // Special 4-color XORable case
+    if ((num_colors === 4) && (used_bits > 2) && (colors_XOR !== 0x00)) {
+      const colors_to_write = [colorsByFreq[1], colorsByFreq[0], colorsByFreq[2], colorsByFreq[3]];
+      // First COPY packet: pack colors 1/0 and mask for others
+      const lines0 = buildLines((pix) => (pix === colors_to_write[1]) || (pix === colors_to_write[2]) || (pix === colors_to_write[3]));
+  packets.push(write_fontblock_single(COPY_FONT, channel, blockX, blockY, colors_to_write[0], colors_to_write[1], lines0));
+      // Next two XOR packets
+      const lines1 = buildLines((pix) => pix === colors_to_write[2]);
+  packets.push(write_fontblock_single(XOR_FONT, channel, blockX, blockY, 0x00, (colors_to_write[1] ^ colors_to_write[2]) & 0x3F, lines1));
+      const lines2 = buildLines((pix) => pix === colors_to_write[3]);
+  packets.push(write_fontblock_single(XOR_FONT, channel, blockX, blockY, 0x00, (colors_to_write[1] ^ colors_to_write[3]) & 0x3F, lines2));
+    }
+    // Bitplane method for >4 colors or XORable
+    else if ((num_colors > 4) || (colors_XOR !== 0x00)) {
+      let copy_type = COPY_FONT;
+      for (let pal_bit = 3; pal_bit >= 0; pal_bit--) {
+        if (((colors_OR >> pal_bit) & 0x01) === 0x00) continue;
+        if (((colors_AND >> pal_bit) & 0x01) === 0x01) continue;
+        let this_color_0 = 0x00;
+        let this_color_1 = 0x01 << pal_bit;
+        if ((copy_type === COPY_FONT) && (colors_AND > 0x00)) { this_color_0 |= colors_AND; this_color_1 |= colors_AND; }
+        const lines = buildLines((pix) => ((pix >> pal_bit) & 0x01) === 1);
+  packets.push(write_fontblock_single(copy_type, channel, blockX, blockY, this_color_0, this_color_1, lines));
+        copy_type = XOR_FONT;
       }
+    }
+    // Four XORable colors fallback
+    else {
+      // colors 0..3 mapping per reference
+      const colors_to_write = [colorsByFreq[0], colorsByFreq[1], colorsByFreq[2] ^ colorsByFreq[0], colorsByFreq[3] ^ colorsByFreq[1]];
+      // First COPY packet
+      const lines0 = buildLines((pix) => (pix === colors_to_write[0]) || (pix === colorsByFreq[2]));
+  packets.push(write_fontblock_single(COPY_FONT, channel, blockX, blockY, colors_to_write[1], colors_to_write[0], lines0));
+      // XOR packet 1
+      const lines1 = buildLines((pix) => (pix === colorsByFreq[2]) || (pix === colorsByFreq[3]));
+  packets.push(write_fontblock_single(XOR_FONT, channel, blockX, blockY, 0x00, colors_to_write[2] & 0x3F, lines1));
     }
   }
 
-  // Update VRAM with the new block as if written to screen.
+  // Update VRAM and compositor view
   vram.writeBlock(blockX, blockY, blockPixels);
-  // If compositor provided, also copy block into compositor's virtual VRAM view (so subsequent comparisons reflect change)
   try {
-    if (compositor && typeof (compositor as any).copyBlockToVram === 'function') {
-      (compositor as any).copyBlockToVram(vram, blockX, blockY, blockPixels);
+    if (compositorObj && typeof (compositorObj as any).copyBlockToVram === 'function') {
+      (compositorObj as any).copyBlockToVram(vram, blockX, blockY, blockPixels);
     }
   } catch (e) {
     // ignore if compositor doesn't support copy
@@ -225,17 +295,23 @@ export function writePacketsToFile(path: string, packets: CDGPacket[]) {
 // Generate memory preset packets (16 packets). Returns our CDGPacket (Uint8Array) array.
 export function generateMemoryPresetPackets(presetIndex: number): CDGPacket[] {
   const pkts: CDGPacket[] = [];
-  // first 8 simple repeats
+  // first 8 simple repeats (use reference layout: command=TV_GRAPHICS, instruction=MEMORY_PRESET)
   for (let r = 0; r < 8; r++) {
-    const cp = CDGPacketClass.memoryPreset(presetIndex, r);
-    pkts.push(new Uint8Array(cp.toBuffer()));
+    const packet = new CDGPacketClass();
+    packet.setCommand(CDGCommand.CDG_MEMORY_PRESET, 0);
+    const data: number[] = new Array(16).fill(0);
+    data[0] = presetIndex & 0x3F;
+    data[1] = r & 0x3F;
+    packet.setData(data);
+    pkts.push(new Uint8Array(packet.toBuffer()));
   }
   // last 8 with message in data[2..15]
-  const msg = 'KARAOKE-COMPOSER';
+  // Use the same signature/message as the reference encoder so the memory preset packets match.
+  const msg = 'CD+G MAGIC 001B';
   const msgChars = Array.from(msg).map((c) => (c.charCodeAt(0) - 0x20) & 0x3F);
   for (let r = 8; r < 16; r++) {
-  const packet = new CDGPacketClass();
-  packet.setCommand(CDGCommand.CDG_MEMORY_PRESET, 0);
+    const packet = new CDGPacketClass();
+    packet.setCommand(CDGCommand.CDG_MEMORY_PRESET, 0);
     // build 16 bytes: data[0]=presetIndex, data[1]=r, rest = msg (padded)
     const data: number[] = new Array(16).fill(0);
     data[0] = presetIndex & 0x3F;
@@ -248,14 +324,38 @@ export function generateMemoryPresetPackets(presetIndex: number): CDGPacket[] {
 }
 
 export function generateBorderPacket(colorIndex: number): CDGPacket[] {
-  const p = CDGPacketClass.borderPreset(colorIndex);
-  return [new Uint8Array(p.toBuffer())];
+  const packet = new CDGPacketClass();
+  packet.setCommand(CDGCommand.CDG_BORDER_PRESET, 0);
+  const data = new Array(16).fill(0);
+  data[0] = colorIndex & 0x3F;
+  packet.setData(data);
+  return [new Uint8Array(packet.toBuffer())];
 }
 
 export function generatePaletteLoadPackets(palette?: CDGPalette): CDGPacket[] {
   const pal = palette || new CDGPalette();
-  const pkts = pal.generateLoadPackets();
-  return pkts.map((p) => new Uint8Array(p.toBuffer()));
+  const pkts: CDGPacket[] = [];
+  // Build low (0..7) and high (8..15) the way reference does (pack 4-bit channels into two bytes)
+  const colors = pal.getColors();
+  for (let hi = 0; hi < 2; hi++) {
+  const packet = new CDGPacketClass();
+  const instr = hi ? CDGCommand.CDG_LOAD_COLOR_TABLE_HIGH : CDGCommand.CDG_LOAD_COLOR_TABLE_LOW;
+  packet.setCommand(instr, 0);
+    const data: number[] = new Array(16).fill(0);
+    const pal_offset = hi * 8;
+    for (let pal_inc = 0; pal_inc < 8; pal_inc++) {
+      const actual_idx = pal_inc + pal_offset;
+      const temp = colors[actual_idx] || 0; // stored as 12-bit r4/g4/b4
+      const r4 = (temp >> 8) & 0x0F;
+      const g4 = (temp >> 4) & 0x0F;
+      const b4 = temp & 0x0F;
+      data[pal_inc * 2 + 0] = ((r4 & 0x0F) << 2) | ((g4 & 0x0F) >> 2);
+      data[pal_inc * 2 + 1] = (((g4 & 0x03) << 4) | (b4 & 0x0F)) & 0x3F;
+    }
+    packet.setData(data);
+    pkts.push(new Uint8Array(packet.toBuffer()));
+  }
+  return pkts;
 }
 
 // --- self-check demo generator used by debug script ---
