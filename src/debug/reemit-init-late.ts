@@ -2,13 +2,13 @@
 import fs from 'fs'
 import path from 'path'
 
-const PACKET_SIZE = 24
+import { CDG_PACKET_SIZE } from '@/cdg/constants'
 
 function readPackets(filePath: string) {
   const buf = fs.readFileSync(filePath)
-  const packets = Math.floor(buf.length / PACKET_SIZE)
+  const packets = Math.floor(buf.length / CDG_PACKET_SIZE)
   const arr: Buffer[] = []
-  for (let i = 0; i < packets; i++) arr.push(buf.slice(i*PACKET_SIZE, i*PACKET_SIZE+PACKET_SIZE))
+  for (let i = 0; i < packets; i++) arr.push(buf.slice(i * CDG_PACKET_SIZE, i * CDG_PACKET_SIZE + CDG_PACKET_SIZE))
   return arr
 }
 
@@ -41,7 +41,7 @@ if (nonEmpty.length === 0) {
 }
 
 // zero out the first nonEmpty.length packets
-for (let i = 0; i < nonEmpty.length; i++) pkts[i] = Buffer.alloc(PACKET_SIZE)
+for (let i = 0; i < nonEmpty.length; i++) pkts[i] = Buffer.alloc(CDG_PACKET_SIZE)
 
 // place them starting at targetStart (overwrite if needed)
 for (let i = 0; i < nonEmpty.length; i++) {
@@ -53,4 +53,4 @@ const outPath = path.join(path.dirname(inPath), path.basename(inPath, path.extna
 writePackets(outPath, pkts)
 console.log('Wrote', outPath)
 
-try { const cp = await import('child_process'); (cp as any).spawnSync('npx', ['tsx', 'src/debug/render-cdg-to-ppm.ts', outPath], { stdio: 'inherit' }) } catch (e) {}
+try { const cp = await import('child_process'); (cp as any).spawnSync('npx', ['tsx', 'src/debug/render-cdg-to-ppm.ts', outPath], { stdio: 'inherit' }) } catch (e) { console.error('render preview failed', e) }

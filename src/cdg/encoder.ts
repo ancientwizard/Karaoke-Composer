@@ -5,9 +5,10 @@
 import { writeFileSync } from 'fs';
 import type Compositor from './compositor';
 import { CDGPacket as CDGPacketClass, CDGPalette, CDGCommand } from '../karaoke/renderers/cdg/CDGPacket';
+import { CDG_PACKET_SIZE, CDG_PPS } from './constants'
 
-export const PACKET_SIZE = 24;
-export const PPS = 75; // packets per second
+export const PACKET_SIZE = CDG_PACKET_SIZE;
+export const PPS = CDG_PPS; // packets per second
 
 export type CDGPacket = Uint8Array; // length 24
 

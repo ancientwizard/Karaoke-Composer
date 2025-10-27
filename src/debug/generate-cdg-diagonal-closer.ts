@@ -1,15 +1,14 @@
 #!/usr/bin/env -S tsx
 import fs from 'fs'
 import path from 'path'
-import { scheduleFontEvents } from '../cdg/scheduler'
-import { writePacketsToFile, makeEmptyPacket } from '../cdg/encoder'
-
-const PACKET_SIZE = 24
+import { scheduleFontEvents } from '@/cdg/scheduler'
+import { writePacketsToFile, makeEmptyPacket } from '@/cdg/encoder'
+import { CDG_PACKET_SIZE } from '@/cdg/constants'
 
 function readPackets(filePath: string) {
   const buf = fs.readFileSync(filePath)
   const packets: Buffer[] = []
-  for (let i = 0; i < Math.floor(buf.length / PACKET_SIZE); i++) packets.push(buf.slice(i*PACKET_SIZE, i*PACKET_SIZE+PACKET_SIZE))
+  for (let i = 0; i < Math.floor(buf.length / CDG_PACKET_SIZE); i++) packets.push(buf.slice(i * CDG_PACKET_SIZE, i * CDG_PACKET_SIZE + CDG_PACKET_SIZE))
   return packets
 }
 

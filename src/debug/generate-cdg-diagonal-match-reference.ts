@@ -1,16 +1,15 @@
 #!/usr/bin/env -S tsx
 import fs from 'fs'
 import path from 'path'
-import { scheduleFontEvents } from '../cdg/scheduler'
-import { writePacketsToFile, generateBorderPacket, generateMemoryPresetPackets, makeEmptyPacket } from '../cdg/encoder'
-
-const PACKET_SIZE = 24
+import { scheduleFontEvents } from '@/cdg/scheduler'
+import { writePacketsToFile, makeEmptyPacket } from '@/cdg/encoder'
+import { CDG_PACKET_SIZE } from '@/cdg/constants'
 
 function readPackets(filePath: string) {
   const buf = fs.readFileSync(filePath)
-  const packets = Math.floor(buf.length / PACKET_SIZE)
+  const packets = Math.floor(buf.length / CDG_PACKET_SIZE)
   const arr: Buffer[] = []
-  for (let i = 0; i < packets; i++) arr.push(buf.slice(i*PACKET_SIZE, i*PACKET_SIZE+PACKET_SIZE))
+  for (let i = 0; i < packets; i++) arr.push(buf.slice(i * CDG_PACKET_SIZE, i * CDG_PACKET_SIZE + CDG_PACKET_SIZE))
   return arr
 }
 
@@ -126,7 +125,7 @@ async function run() {
   writePacketsToFile(outPath, pkts)
   console.log('Wrote', outPath)
 
-  try { const cp = await import('child_process'); (cp as any).spawnSync('npx', ['tsx','src/debug/render-cdg-to-ppm.ts', outPath], { stdio: 'inherit' }) } catch (e) {}
+  try { const cp = await import('child_process'); (cp as any).spawnSync('npx', ['tsx','src/debug/render-cdg-to-ppm.ts', outPath], { stdio: 'inherit' }) } catch (e) { console.error('preview failed', e) }
 }
 
 run().catch((e)=>{ console.error(e); process.exit(2) })

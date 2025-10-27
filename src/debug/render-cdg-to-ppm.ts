@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { CDG_SCREEN } from '../karaoke/renderers/cdg/CDGPacket'
 import { CDGPalette } from '../karaoke/renderers/cdg/CDGPacket'
+import { CDG_PACKET_SIZE } from '../cdg/constants'
 
 // Simple CDG -> PPM renderer (final frame)
 // Usage: npx tsx src/debug/render-cdg-to-ppm.ts diag/sample-generated.cdg
@@ -20,8 +21,7 @@ function cdgColorToRgb(color12: number): [number, number, number] {
 function render(filePath: string) {
   const outName = path.basename(filePath, path.extname(filePath)) + '.ppm'
   const buf = fs.readFileSync(filePath)
-  const packetSize = 24
-  const packets = Math.floor(buf.length / packetSize)
+  const packets = Math.floor(buf.length / CDG_PACKET_SIZE)
 
   // Screen: palette indices per pixel (300x216)
   const width = CDG_SCREEN.WIDTH
@@ -51,8 +51,8 @@ function render(filePath: string) {
   }
 
   for (let i = 0; i < packets; i++) {
-    const off = i * packetSize
-    const pkt = buf.slice(off, off + packetSize)
+  const off = i * CDG_PACKET_SIZE
+  const pkt = buf.slice(off, off + CDG_PACKET_SIZE)
     const cmd = pkt[1] & 0x3F
     // data bytes start at offset 3
     const data = pkt.slice(3, 19)

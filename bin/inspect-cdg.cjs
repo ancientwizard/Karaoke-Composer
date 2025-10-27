@@ -14,6 +14,7 @@ Options:
 const fs = require('fs')
 const crypto = require('crypto')
 const { readScriptMd } = require('../src/utils/bin-utils.cjs')
+const { CDG_PACKET_SIZE, CDG_PPS } = require('../src/cdg/constants.cjs')
 
 const args = process.argv.slice(2)
 if (args.includes('--help')) {
@@ -39,15 +40,15 @@ function inspect(file) {
   const size = data.length
   const md5 = crypto.createHash('md5').update(data).digest('hex')
   const sha1 = crypto.createHash('sha1').update(data).digest('hex')
-  const packets = Math.floor(size / 24)
-  const remainder = size % 24
+  const packets = Math.floor(size / CDG_PACKET_SIZE)
+  const remainder = size % CDG_PACKET_SIZE
 
   console.log('\n===', file)
   console.log('size:', size, 'bytes')
   console.log('md5:', md5)
   console.log('sha1:', sha1)
-  console.log('packets (24B):', packets, 'remainder:', remainder)
-  console.log('estimated duration:', (packets / 75).toFixed(2), 's')
+  console.log('packets (' + CDG_PACKET_SIZE + 'B):', packets, 'remainder:', remainder)
+  console.log('estimated duration:', (packets / CDG_PPS).toFixed(2), 's')
 
   const commandCounts = {}
   let emptyCount = 0
@@ -59,11 +60,11 @@ function inspect(file) {
   let tileXor = 0
 
   for (let i=0;i<packets;i++){
-    const off = i*24
+    const off = i * CDG_PACKET_SIZE
     const cmd = data[off+1] & 0x3F
     commandCounts[cmd] = (commandCounts[cmd]||0)+1
     const allZero = (()=>{
-      for (let j=off+1;j<off+19;j++){ if (data[j] !== 0) return false }
+    for (let j=off+1;j<off+19;j++){ if (data[j] !== 0) return false }
       return true
     })()
     if (allZero) emptyCount++
@@ -88,15 +89,15 @@ function inspect(file) {
   const first = Math.min(32, packets)
   console.log('\nFirst',first,'packets (hex):')
   for (let i=0;i<first;i++){
-    const off = i*24
-    console.log(i.toString().padStart(4), hexdump(data, off, 24))
+  const off = i * CDG_PACKET_SIZE
+  console.log(i.toString().padStart(4), hexdump(data, off, CDG_PACKET_SIZE))
   }
 
   const last = Math.min(32, packets)
   console.log('\nLast',last,'packets (hex):')
   for (let i=packets-last;i<packets;i++){
-    const off = i*24
-    console.log(i.toString().padStart(4), hexdump(data, off, 24))
+  const off = i * CDG_PACKET_SIZE
+  console.log(i.toString().padStart(4), hexdump(data, off, CDG_PACKET_SIZE))
   }
 }
 

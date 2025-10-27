@@ -1,18 +1,17 @@
 #!/usr/bin/env -S tsx
 import fs from 'fs'
-import path from 'path'
-const PACKET_SIZE = 24
+import { CDG_PACKET_SIZE } from '@/cdg/constants'
 
 function dump(filePath: string, max=200) {
   const buf = fs.readFileSync(filePath)
-  const packets = Math.floor(buf.length / PACKET_SIZE)
+  const packets = Math.floor(buf.length / CDG_PACKET_SIZE)
   console.log('Packets:', packets)
   const countsByCol = new Map<number, number>()
   const countsByRow = new Map<number, number>()
   let seen = 0
   for (let i = 0; i < packets; i++) {
-    const off = i * PACKET_SIZE
-    const pkt = buf.slice(off, off + PACKET_SIZE)
+  const off = i * CDG_PACKET_SIZE
+  const pkt = buf.slice(off, off + CDG_PACKET_SIZE)
     const cmd = pkt[1] & 0x3F
     if (cmd === 6 || cmd === 38) {
       const data = pkt.slice(3, 19)

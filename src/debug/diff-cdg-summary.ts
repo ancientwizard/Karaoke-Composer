@@ -1,18 +1,16 @@
 #!/usr/bin/env -S tsx
 import fs from 'fs'
-import path from 'path'
-
-const PACKET_SIZE = 24
+import { CDG_PACKET_SIZE } from '@/cdg/constants'
 
 function hex(buf: Buffer) { return Array.from(buf).map(b=>b.toString(16).padStart(2,'0')).join(' ') }
 
 function summarize(filePath: string) {
   const buf = fs.readFileSync(filePath)
-  const packets = Math.floor(buf.length / PACKET_SIZE)
+  const packets = Math.floor(buf.length / CDG_PACKET_SIZE)
   const counts = new Map<number, number>()
   const firstIndex = new Map<number, number>()
   for (let i = 0; i < packets; i++) {
-    const off = i * PACKET_SIZE
+  const off = i * CDG_PACKET_SIZE
     const cmd = buf[off + 1] & 0x3F
     counts.set(cmd, (counts.get(cmd)||0)+1)
     if (!firstIndex.has(cmd)) firstIndex.set(cmd, i)
@@ -25,8 +23,8 @@ function summarize(filePath: string) {
 function diff(aPath: string, bPath: string, maxDiffs=64) {
   const a = fs.readFileSync(aPath)
   const b = fs.readFileSync(bPath)
-  const aPackets = Math.floor(a.length / PACKET_SIZE)
-  const bPackets = Math.floor(b.length / PACKET_SIZE)
+  const aPackets = Math.floor(a.length / CDG_PACKET_SIZE)
+  const bPackets = Math.floor(b.length / CDG_PACKET_SIZE)
   const minPk = Math.min(aPackets, bPackets)
   console.log('File A:', aPath, 'packets=', aPackets)
   console.log('File B:', bPath, 'packets=', bPackets)
@@ -49,10 +47,10 @@ function diff(aPath: string, bPath: string, maxDiffs=64) {
   console.log('\nFirst differing packets (up to', maxDiffs, '):')
   let diffs = 0
   for (let i = 0; i < minPk; i++) {
-    const ao = i*PACKET_SIZE
-    const bo = i*PACKET_SIZE
-    const ap = a.slice(ao, ao+PACKET_SIZE)
-    const bp = b.slice(bo, bo+PACKET_SIZE)
+  const ao = i * CDG_PACKET_SIZE
+  const bo = i * CDG_PACKET_SIZE
+  const ap = a.slice(ao, ao + CDG_PACKET_SIZE)
+  const bp = b.slice(bo, bo + CDG_PACKET_SIZE)
     if (!ap.equals(bp)) {
       console.log('idx', i, 'A_cmd', (ap[1]&0x3F), 'B_cmd', (bp[1]&0x3F))
       console.log(' A:', hex(ap.slice(0,8)))

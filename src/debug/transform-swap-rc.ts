@@ -1,15 +1,14 @@
 #!/usr/bin/env -S tsx
 import fs from 'fs'
 import path from 'path'
-
-const PACKET_SIZE = 24
+import { CDG_PACKET_SIZE } from '@/cdg/constants'
 
 function swapRowCol(filePath: string) {
   const buf = fs.readFileSync(filePath)
-  const packets = Math.floor(buf.length / PACKET_SIZE)
+  const packets = Math.floor(buf.length / CDG_PACKET_SIZE)
   const out = Buffer.from(buf)
   for (let i = 0; i < packets; i++) {
-    const off = i * PACKET_SIZE
+  const off = i * CDG_PACKET_SIZE
     const cmd = out[off + 1] & 0x3F
     if (cmd === 6 || cmd === 38) {
       // data starts at off+3; data[2] is at off+5, data[3] at off+6

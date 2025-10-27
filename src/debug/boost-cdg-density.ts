@@ -1,14 +1,13 @@
 #!/usr/bin/env -S tsx
 import fs from 'fs'
 import path from 'path'
-
-const PACKET_SIZE = 24
+import { CDG_PACKET_SIZE } from '@/cdg/constants'
 
 function readPackets(filePath: string) {
   const buf = fs.readFileSync(filePath)
-  const packets = Math.floor(buf.length / PACKET_SIZE)
+  const packets = Math.floor(buf.length / CDG_PACKET_SIZE)
   const arr: Buffer[] = []
-  for (let i = 0; i < packets; i++) arr.push(buf.slice(i*PACKET_SIZE, i*PACKET_SIZE+PACKET_SIZE))
+  for (let i = 0; i < packets; i++) arr.push(buf.slice(i * CDG_PACKET_SIZE, i * CDG_PACKET_SIZE + CDG_PACKET_SIZE))
   return arr
 }
 

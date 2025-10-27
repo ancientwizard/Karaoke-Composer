@@ -14,6 +14,7 @@ Options:
 */
 const fs = require('fs')
 const { readScriptMd } = require('../src/utils/bin-utils.cjs')
+const { CDG_PACKET_SIZE } = require('../src/cdg/constants.cjs')
 
 const raw = process.argv.slice(2)
 // parse flags and positional args while allowing flags before args
@@ -34,17 +35,17 @@ if (files.length !== 2) { console.error('Usage: diff-cdg.cjs a.cdg b.cdg --run')
 if (!Number.isFinite(packetTarget) || packetTarget < 1) { console.error('Invalid --packet value:', packetTarget); process.exit(2) }
 const a = fs.readFileSync(files[0])
 const b = fs.readFileSync(files[1])
-const pa = Math.floor(a.length/24)
-const pb = Math.floor(b.length/24)
+const pa = Math.floor(a.length / CDG_PACKET_SIZE)
+const pb = Math.floor(b.length / CDG_PACKET_SIZE)
 const pmin = Math.min(pa,pb)
 console.log('fileA', files[0], 'size', a.length, 'packets', pa)
 console.log('fileB', files[1], 'size', b.length, 'packets', pb)
 let found = 0
 let targetIndex = -1
 for (let i = 0; i < pmin; i++) {
-  const off = i * 24
+  const off = i * CDG_PACKET_SIZE
   let diff = false
-  for (let j = 0; j < 24; j++) {
+  for (let j = 0; j < CDG_PACKET_SIZE; j++) {
     if (a[off + j] !== b[off + j]) { diff = true; break }
   }
   if (diff) {
@@ -61,7 +62,7 @@ if (targetIndex === -1) {
   process.exit(2)
 }
 console.log('Differing packet index (0-based):', targetIndex)
-function hex(buf, off){ return Array.from(buf.slice(off, off+24)).map(x=>x.toString(16).padStart(2,'0')).join(' ') }
+function hex(buf, off){ return Array.from(buf.slice(off, off+CDG_PACKET_SIZE)).map(x=>x.toString(16).padStart(2,'0')).join(' ') }
 console.log('A packet hex:', hex(a, targetIndex*24))
 console.log('B packet hex:', hex(b, targetIndex*24))
 // print context +-5
@@ -70,5 +71,5 @@ const end = Math.min(pmin - 1, targetIndex + 5)
 console.log(`\nContext around differing packet #${targetIndex} (0-based):`)
 for (let i = start; i <= end; i++) {
   const marker = i === targetIndex ? '<<' : '  '
-  console.log(marker, i.toString().padStart(5), hex(a, i * 24), ' | ', hex(b, i * 24))
+  console.log(marker, i.toString().padStart(5), hex(a, i * CDG_PACKET_SIZE), ' | ', hex(b, i * CDG_PACKET_SIZE))
 }

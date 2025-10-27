@@ -13,6 +13,7 @@ Options:
 */
 const fs = require('fs')
 const { readScriptMd } = require('../src/utils/bin-utils.cjs')
+const { CDG_PACKET_SIZE } = require('../src/cdg/constants.cjs')
 
 const args = process.argv.slice(2)
 if (args.includes('--help')) {
@@ -29,8 +30,8 @@ const files = args.filter(a=>!a.startsWith('--'))
 if (files.length !== 2) { console.error('Usage: compare-cdg-stats.cjs a.cdg b.cdg --run'); process.exit(2) }
 const A = fs.readFileSync(files[0])
 const B = fs.readFileSync(files[1])
-function cmdAt(buf, idx){ return buf[idx*24+1] & 0x3F }
-const pa = Math.floor(A.length/24), pb = Math.floor(B.length/24)
+function cmdAt(buf, idx){ return buf[idx*CDG_PACKET_SIZE+1] & 0x3F }
+const pa = Math.floor(A.length / CDG_PACKET_SIZE), pb = Math.floor(B.length / CDG_PACKET_SIZE)
 console.log('packets A',pa,'packets B',pb,'diff',pb-pa)
 let countAemptyBtile=0
 let countBemptyAtile=0
@@ -47,8 +48,8 @@ console.log('B empty & A tile6 count:', countBemptyAtile, 'sample indices:', ind
 // also report total tile counts
 function totalTiles(buf){
   let c=0
-  for (let i=0;i<Math.floor(buf.length/24);i++){
-    if ((buf[i*24+1]&0x3F)===6) c++
+  for (let i=0;i<Math.floor(buf.length / CDG_PACKET_SIZE);i++){
+    if ((buf[i*CDG_PACKET_SIZE+1]&0x3F)===6) c++
   }
   return c
 }

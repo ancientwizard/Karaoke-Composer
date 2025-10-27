@@ -1,10 +1,10 @@
 #!/usr/bin/env -S tsx
 import fs from 'fs'
-const PACKET_SIZE = 24
+import { CDG_PACKET_SIZE } from '@/cdg/constants'
 
 function analyze(cdgPath: string, durationSeconds = 60, pps = 75) {
   const buf = fs.readFileSync(cdgPath)
-  const packets = Math.floor(buf.length / PACKET_SIZE)
+  const packets = Math.floor(buf.length / CDG_PACKET_SIZE)
   const totalPacks = Math.ceil(durationSeconds * pps)
   console.log('Packets in file:', packets, 'expected slots:', totalPacks)
 
@@ -24,8 +24,8 @@ function analyze(cdgPath: string, durationSeconds = 60, pps = 75) {
 
   const actual: { idx: number; row: number; col: number }[] = []
   for (let i = 0; i < packets; i++) {
-    const off = i * PACKET_SIZE
-    const pkt = buf.slice(off, off + PACKET_SIZE)
+  const off = i * CDG_PACKET_SIZE
+  const pkt = buf.slice(off, off + CDG_PACKET_SIZE)
     const cmd = pkt[1] & 0x3F
     if (cmd === 6 || cmd === 38) {
       const data = pkt.slice(3, 19)

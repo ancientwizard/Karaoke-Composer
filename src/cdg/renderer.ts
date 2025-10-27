@@ -1,5 +1,6 @@
 import type { RenderOptions, RenderResult, TileDraw } from './types'
 import { CDGPacket, CDGPalette, CDG_SCREEN } from '@/karaoke/renderers/cdg/CDGPacket'
+import { CDG_PACKET_SIZE } from './constants'
 
 /**
  * Very small, conservative renderer that emits a valid CDG packet stream.
@@ -68,7 +69,7 @@ export async function renderSimple(
 
   return {
     buffer: new Uint8Array(out),
-    packets: Math.floor(out.length / 24),
+    packets: Math.floor(out.length / CDG_PACKET_SIZE),
     durationSeconds: totalPackets / pps
   }
 }

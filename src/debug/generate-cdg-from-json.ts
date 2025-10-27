@@ -3,7 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { CDGTextRenderer } from '../karaoke/renderers/cdg/CDGFont'
 import { scheduleFontEvents } from '../cdg/scheduler'
-import { writePacketsToFile, generatePaletteLoadPackets, generateBorderPacket, generateMemoryPresetPackets, writeFontBlock, VRAM } from '../cdg/encoder'
+import { writePacketsToFile, generatePaletteLoadPackets, generateBorderPacket, generateMemoryPresetPackets, writeFontBlock, VRAM, makeEmptyPacket } from '../cdg/encoder'
 import { CDG_SCREEN, CDGCommand } from '../karaoke/renderers/cdg/CDGPacket'
 import { CDGPalette } from '../karaoke/renderers/cdg/CDGPacket'
 
@@ -26,8 +26,14 @@ async function main() {
   const inPath = argv[0]
   const outPath = argv[1] || path.join('diag', path.basename(inPath, path.extname(inPath)) + '.generated.cdg')
   const overrideDuration = argv[2] ? Number(argv[2]) : undefined
-  const overrideReservedStart = argv[3] ? Number(argv[3]) : undefined
-  const referenceCdgPath = argv[4] ? argv[4] : undefined
+  // argv[3] may be either an numeric overrideReservedStart or the reference
+  // CDG path depending on how the script is invoked. Be permissive and treat
+  // argv[3] as a numeric override only when it parses to a finite number.
+  const maybeArg3 = argv[3]
+  const overrideReservedStart = (maybeArg3 && !Number.isNaN(Number(maybeArg3))) ? Number(maybeArg3) : undefined
+  // Prefer explicit argv[4] for reference path; fall back to argv[3] when it
+  // looks like a .cdg filename (common mistake in positional ordering).
+  const referenceCdgPath = argv[4] ? argv[4] : (maybeArg3 && typeof maybeArg3 === 'string' && maybeArg3.toLowerCase().endsWith('.cdg') ? maybeArg3 : undefined)
 
   const buf = fs.readFileSync(inPath, 'utf8')
   const parsed = JSON.parse(buf)
@@ -260,20 +266,169 @@ async function main() {
       const refBuf = fs.readFileSync(referenceCdgPath)
       const pktSize = 24
       const refPktCount = Math.floor(refBuf.length / pktSize)
+      // Find the first packet that contains any non-zero data in bytes 1..18
+      let firstNonEmptyIdx: number | null = null
       let firstTileIdx: number | null = null
       for (let i = 0; i < refPktCount; i++) {
-        const cmd = refBuf[i * pktSize + 1]
-        if (cmd === (CDGCommand.CDG_TILE_BLOCK & 0x3F) || cmd === (CDGCommand.CDG_TILE_BLOCK_XOR & 0x3F)) { firstTileIdx = i; break }
+        // check for any non-zero data bytes (heuristic for meaningful packets)
+        let any = false
+        for (let j = 1; j < 19; j++) { if (refBuf[i * pktSize + j] !== 0) { any = true; break } }
+        if (any && firstNonEmptyIdx == null) firstNonEmptyIdx = i
+        const cmd = refBuf[i * pktSize + 1] & 0x3F
+        if ((cmd === CDGCommand.CDG_TILE_BLOCK || cmd === CDGCommand.CDG_TILE_BLOCK_XOR) && firstTileIdx == null) firstTileIdx = i
+        if (firstNonEmptyIdx != null && firstTileIdx != null) break
       }
-      if (firstTileIdx != null) {
-        console.log('Reference CDG first tile packet at index:', firstTileIdx)
-        // adopt the reference tile start as reservedStart unless an explicit override was given
+      if (firstNonEmptyIdx != null) console.log('Reference CDG first non-empty packet at index:', firstNonEmptyIdx)
+      if (firstTileIdx != null) console.log('Reference CDG first tile packet at index:', firstTileIdx)
+      // Also detect where important init packets (palette, memory, border) occur
+      // so we can include them in the copied prelude. Some references place
+      // palette/memory packets later than the first non-empty packet; in that
+      // case we must copy through the last init packet so the generated CDG
+      // preserves the palette and memory presets players expect.
+      let lastInitIdx: number | null = null;
+      for (let i = 0; i < refPktCount; i++) {
+        const cmd = refBuf[i * pktSize + 1] & 0x3F
+        if (cmd === CDGCommand.CDG_MEMORY_PRESET || cmd === CDGCommand.CDG_BORDER_PRESET || cmd === CDGCommand.CDG_LOAD_COLOR_TABLE_LOW || cmd === CDGCommand.CDG_LOAD_COLOR_TABLE_HIGH) {
+          lastInitIdx = i
+        }
+      }
+      if (lastInitIdx != null) console.log('Reference CDG last init packet (palette/memory/border) at index:', lastInitIdx)
+      // Prefer using the first non-empty packet as part of the reserved prelude.
+      // That means reserve the slots up through that packet (inclusive) so our
+      // placements start after the reference's first meaningful packet. Use
+      // firstNonEmptyIdx+1 to include that packet in the copied prelude.
+      if (firstNonEmptyIdx != null) {
+        if (overrideReservedStart == null) reservedStart = firstNonEmptyIdx + 1
+      } else if (firstTileIdx != null) {
         if (overrideReservedStart == null) reservedStart = firstTileIdx
       } else {
-        console.log('Reference CDG contains no tile packets; leaving reservedStart =', reservedStart)
+        console.log('Reference CDG contains no meaningful packets; leaving reservedStart =', reservedStart)
+      }
+      // Ensure we reserve/copy through any init packets (palette/memory/border)
+      if (lastInitIdx != null && overrideReservedStart == null) {
+        reservedStart = Math.max(reservedStart, lastInitIdx + 1)
       }
     } catch (e) {
       console.warn('Could not read reference CDG to detect tile start:', (e as any).message || e)
+    }
+  }
+
+  // Build an initial packetSlots array and, if a reference CDG is provided, copy the
+  // reference prelude (packets before reservedStart) into these slots. Doing this
+  // before calling the scheduler ensures the scheduler treats the prelude as occupied
+  // and avoids placing font packets into that neighborhood.
+  const pktSize = 24
+  const totalPacks = Math.max(1, Math.ceil((durationSeconds || 1) * pps))
+  const initialPacketSlots = new Array(totalPacks).fill(null).map(() => makeEmptyPacket())
+  if (referenceCdgPath) {
+    try {
+      const refBuf = fs.readFileSync(referenceCdgPath)
+      const refPktCount = Math.floor(refBuf.length / pktSize)
+      const copyCount = Math.min(Math.max(0, Math.floor(reservedStart)), refPktCount)
+      for (let i = 0; i < copyCount; i++) {
+        const slice = refBuf.slice(i * pktSize, (i + 1) * pktSize)
+        initialPacketSlots[i] = Uint8Array.from(slice)
+      }
+      // If reservedStart is smaller than our generated init packets, fill remaining init slots
+      for (let i = copyCount; i < initPkts.length && i < initialPacketSlots.length; i++) initialPacketSlots[i] = initPkts[i]
+    } catch (e) {
+      console.warn('Could not read reference CDG for init packet copy (pre-schedule):', (e as any).message || e)
+      for (let i = 0; i < initPkts.length && i < initialPacketSlots.length; i++) initialPacketSlots[i] = initPkts[i]
+    }
+  } else {
+    for (let i = 0; i < initPkts.length && i < initialPacketSlots.length; i++) initialPacketSlots[i] = initPkts[i]
+  }
+
+  // --- Match-by-pattern pre-scheduling pass ---
+  // For each FontEvent produce the exact packets (via writeFontBlock) and
+  // search the reference CDG for an exact contiguous occurrence. If found
+  // and the corresponding slots in initialPacketSlots are free (or already
+  // equal to the reference bytes), reserve those indices by copying the
+  // reference packets into initialPacketSlots. Save a mapping file under tmp/.
+  if (referenceCdgPath) {
+    try {
+      const refBuf = fs.readFileSync(referenceCdgPath)
+      const refPktCount = Math.floor(refBuf.length / pktSize)
+      const matches: any[] = []
+      const searchStart = Math.max(0, Math.floor(reservedStart))
+      for (let ei = 0; ei < events.length; ei++) {
+        const ev = events[ei]
+        try {
+          const vv = new VRAM()
+          const pktArr: Uint8Array[] = writeFontBlock(vv, ev.blockX, ev.blockY, ev.pixels)
+          if (!pktArr || pktArr.length === 0) {
+            matches.push({
+              eventIndex: ei,
+              matchedIndex: null,
+            })
+            continue
+          }
+          const needed = pktArr.length
+          let foundIndex = -1
+          // Search reference packet-aligned for an exact contiguous match
+          for (let s = searchStart; s <= refPktCount - needed; s++) {
+            let ok = true
+            for (let k = 0; k < needed; k++) {
+              const refSlice = refBuf.slice((s + k) * pktSize, (s + k + 1) * pktSize)
+              const want = Buffer.from(pktArr[k])
+              if (refSlice.length !== pktSize || Buffer.compare(refSlice, want) !== 0) { ok = false; break }
+            }
+            if (ok) { foundIndex = s; break }
+          }
+          if (foundIndex >= 0) {
+            // Ensure we can reserve these slots (they must be empty or equal to ref)
+            let canReserve = true
+            for (let k = 0; k < needed; k++) {
+              const slot = initialPacketSlots[foundIndex + k]
+              if (!slot) continue
+              const slotBuf = Buffer.from(slot)
+              const empty = slotBuf.every((b) => b === 0)
+              if (!empty) {
+                const refSlice = refBuf.slice((foundIndex + k) * pktSize, (foundIndex + k + 1) * pktSize)
+                if (Buffer.compare(slotBuf, refSlice) !== 0) { canReserve = false; break }
+              }
+            }
+            if (canReserve) {
+              for (let k = 0; k < needed; k++) {
+                const slice = refBuf.slice((foundIndex + k) * pktSize, (foundIndex + k + 1) * pktSize)
+                initialPacketSlots[foundIndex + k] = Uint8Array.from(slice)
+              }
+              matches.push({
+                eventIndex: ei,
+                blockX: ev.blockX,
+                blockY: ev.blockY,
+                startPack: ev.startPack,
+                matchedIndex: foundIndex,
+                length: needed,
+              })
+              continue
+            }
+          }
+          matches.push({
+            eventIndex: ei,
+            blockX: ev.blockX,
+            blockY: ev.blockY,
+            startPack: ev.startPack,
+            matchedIndex: null,
+          })
+        } catch (e) {
+          matches.push({
+            eventIndex: ei,
+            matchedIndex: null,
+            error: (e as any).message || String(e),
+          })
+        }
+      }
+      fs.mkdirSync('tmp', { recursive: true })
+      const outObj = {
+        reservedStart,
+        matches,
+      }
+      fs.writeFileSync(path.join('tmp', 'match_by_pattern_map.json'), JSON.stringify(outObj, null, 2))
+      const reservedCount = matches.filter((m) => m.matchedIndex != null).length
+      console.log('Match-by-pattern pass complete. Reserved matches:', reservedCount)
+    } catch (e) {
+      console.warn('Match-by-pattern pass failed:', (e as any).message || e)
     }
   }
 
@@ -283,7 +438,8 @@ async function main() {
       durationSeconds,
       pps
     },
-    reservedStart
+    reservedStart,
+    initialPacketSlots
   )
   // Debug: count non-empty packet slots produced by scheduler before we place init packets
   const nonEmpty = packetSlots.reduce((acc, pkt) => acc + (pkt.some((b) => b !== 0) ? 1 : 0), 0)
@@ -294,28 +450,16 @@ async function main() {
     if (packetSlots[i].some((b) => b !== 0)) { firstNon = i; break }
   }
   console.log('First non-empty packet index (scheduler):', firstNon)
-  // place initial packets at the start of the stream (indices 0..initPkts.length-1)
-  // If a reference CDG path is provided, copy its initial packets verbatim from the start of the
-  // reference file to guarantee identical initial palette/memory/border state (useful when porting).
-  const pktSize = 24
-  if (referenceCdgPath) {
-    try {
-      const refBuf = fs.readFileSync(referenceCdgPath)
-      const refPktCount = Math.floor(refBuf.length / pktSize)
-      // Copy reference packets up to reservedStart so our scheduled packets align
-      const copyCount = Math.min(Math.max(0, Math.floor(reservedStart)), refPktCount)
-      for (let i = 0; i < copyCount; i++) {
-        const slice = refBuf.slice(i * pktSize, (i + 1) * pktSize)
-        packetSlots[i] = Uint8Array.from(slice)
-      }
-      // If reservedStart is smaller than our generated init packets, fill remaining init slots
-      for (let i = copyCount; i < initPkts.length && i < packetSlots.length; i++) packetSlots[i] = initPkts[i]
-    } catch (e) {
-      console.warn('Could not read reference CDG for init packet copy:', (e as any).message || e)
-      for (let i = 0; i < initPkts.length && i < packetSlots.length; i++) packetSlots[i] = initPkts[i]
-    }
-  } else {
-    for (let i = 0; i < initPkts.length && i < packetSlots.length; i++) packetSlots[i] = initPkts[i]
+  // (init packets were pre-copied into initialPacketSlots before scheduling)
+
+  // Write a diagnostic map of any match-by-pattern reservations we made (if any).
+  // This file is populated by the pre-scheduling pass below. If it doesn't
+  // exist then no matches were found/reserved.
+  try {
+    const mapPath = path.join('tmp', 'match_by_pattern_map.json')
+    if (fs.existsSync(mapPath)) console.log('Match-by-pattern map:', mapPath)
+  } catch (e) {
+    // ignore
   }
 
   fs.mkdirSync(path.dirname(outPath), { recursive: true })
