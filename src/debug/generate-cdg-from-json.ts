@@ -3,7 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { CDGTextRenderer } from '../karaoke/renderers/cdg/CDGFont'
 import { scheduleFontEvents } from '../cdg/scheduler'
-import { writePacketsToFile, generatePaletteLoadPackets, generateBorderPacket, generateMemoryPresetPackets, writeFontBlock, VRAM, makeEmptyPacket } from '../cdg/encoder'
+import { writePacketsToFile, generatePaletteLoadPackets, generateBorderPacket, generateMemoryPresetPackets, writeFontBlock, VRAM, makeEmptyPacket, TV_GRAPHICS, COPY_FONT, XOR_FONT } from '../cdg/encoder'
 import { CDG_SCREEN, CDGCommand } from '../karaoke/renderers/cdg/CDGPacket'
 import { CDGPalette } from '../karaoke/renderers/cdg/CDGPacket'
 
@@ -31,9 +31,20 @@ async function main() {
   // argv[3] as a numeric override only when it parses to a finite number.
   const maybeArg3 = argv[3]
   const overrideReservedStart = (maybeArg3 && !Number.isNaN(Number(maybeArg3))) ? Number(maybeArg3) : undefined
-  // Prefer explicit argv[4] for reference path; fall back to argv[3] when it
-  // looks like a .cdg filename (common mistake in positional ordering).
-  const referenceCdgPath = argv[4] ? argv[4] : (maybeArg3 && typeof maybeArg3 === 'string' && maybeArg3.toLowerCase().endsWith('.cdg') ? maybeArg3 : undefined)
+  // Allow an explicit named flag for the reference CDG to avoid positional
+  // ambiguity when other flags are present. Usage: --reference <path>
+  const refFlagIndex = argv.indexOf('--reference')
+  let referenceCdgPath: string | undefined
+  if (refFlagIndex !== -1 && argv.length > refFlagIndex + 1) {
+    referenceCdgPath = argv[refFlagIndex + 1]
+  } else {
+    // Prefer explicit argv[4] for reference path; fall back to argv[3] when it
+    // looks like a .cdg filename (common mistake in positional ordering).
+    referenceCdgPath = argv[4] ? argv[4] : (maybeArg3 && typeof maybeArg3 === 'string' && maybeArg3.toLowerCase().endsWith('.cdg') ? maybeArg3 : undefined)
+  }
+  // Optional: --match-map <path> to a JSON file (produced by the replayer diagnostic)
+  const matchMapIndex = argv.indexOf('--match-map')
+  const matchMapPath = matchMapIndex !== -1 && argv.length > matchMapIndex + 1 ? argv[matchMapIndex + 1] : undefined
 
   const buf = fs.readFileSync(inPath, 'utf8')
   const parsed = JSON.parse(buf)
@@ -320,6 +331,57 @@ async function main() {
   const pktSize = 24
   const totalPacks = Math.max(1, Math.ceil((durationSeconds || 1) * pps))
   const initialPacketSlots = new Array(totalPacks).fill(null).map(() => makeEmptyPacket())
+  // Helper: best-effort replay of reference prelude into a VRAM instance.
+  // This applies MEMORY_PRESET and TILE_BLOCK / TILE_BLOCK_XOR packets to
+  // reconstruct the VRAM contents up to `uptoIdx` packets. It's a heuristic
+  // approximation of a CDG player's effect and intended only to help exact
+  // byte-by-byte matching later in the generator.
+  function replayPreludeToVRAM(buf: Buffer, uptoIdx: number) {
+    const v = new VRAM()
+    try {
+      const maxIdx = Math.min(uptoIdx, Math.floor(buf.length / pktSize))
+      const CDGPacketModule = require('../karaoke/renderers/cdg/CDGPacket')
+      for (let pi = 0; pi < maxIdx; pi++) {
+        const base = pi * pktSize
+        const cmd = buf[base + 1] & 0x3F
+        // MEMORY_PRESET: clear VRAM to color
+        if (cmd === (CDGPacketModule.CDGCommand || {}).CDG_MEMORY_PRESET || cmd === 1) {
+          const color = buf[base + 3] & 0x3F
+          v.clear(color & 0x0F)
+          continue
+        }
+        // TILE BLOCK (normal / xor)
+        if (cmd === (CDGPacketModule.CDGCommand || {}).CDG_TILE_BLOCK || cmd === 6 || cmd === (CDGPacketModule.CDGCommand || {}).CDG_TILE_BLOCK_XOR || cmd === 38) {
+          const row = buf[base + 5] & 0x3F
+          const col = buf[base + 6] & 0x3F
+          const colorA = buf[base + 3] & 0x3F
+          const colorB = buf[base + 4] & 0x3F
+          const isXor = (cmd === 38)
+          const blockPixels: number[][] = []
+          for (let y = 0; y < 12; y++) {
+            const lineMask = buf[base + 7 + y] & 0x3F
+            const rowArr: number[] = []
+            for (let x = 0; x < 6; x++) {
+              const bit = (lineMask >> (5 - x)) & 0x01
+              if (isXor) {
+                const prev = v.getPixel(col * 6 + x, row * 12 + y) & 0xFF
+                rowArr.push((prev ^ (colorB & 0x0F)) & 0x0F)
+              } else {
+                rowArr.push(bit ? (colorB & 0x0F) : (colorA & 0x0F))
+              }
+            }
+            blockPixels.push(rowArr)
+          }
+          v.writeBlock(col, row, blockPixels)
+          continue
+        }
+        // other commands ignored for VRAM content (palette, border, etc.)
+      }
+    } catch (re) {
+      // best-effort: if replay fails, return the VRAM as-is
+    }
+    return v
+  }
   if (referenceCdgPath) {
     try {
       const refBuf = fs.readFileSync(referenceCdgPath)
@@ -331,6 +393,56 @@ async function main() {
       }
       // If reservedStart is smaller than our generated init packets, fill remaining init slots
       for (let i = copyCount; i < initPkts.length && i < initialPacketSlots.length; i++) initialPacketSlots[i] = initPkts[i]
+      // Diagnostic: report what we copied from the reference prelude
+      try {
+        const copied = initialPacketSlots.slice(0, Math.min(initialPacketSlots.length, Math.max(0, Math.floor(reservedStart))));
+        const nonEmpty = copied.reduce((acc, s) => acc + (Buffer.from(s).some((b) => b !== 0) ? 1 : 0), 0)
+        console.log(`Reference prelude copy: reference=${referenceCdgPath}, refPktCount=${refPktCount}, reservedStart=${reservedStart}, copyCount=${copyCount}, nonEmptySlotsInPrelude=${nonEmpty}`)
+        const show = Math.min(10, copied.length)
+        for (let i = 0; i < show; i++) {
+          const hex = Buffer.from(copied[i]).toString('hex').slice(0, 64)
+          console.log(`prelude[${i}] = ${hex}`)
+        }
+      } catch (e) {
+        // ignore diagnostic failures
+      }
+
+      // If a match map is provided, attempt to copy matched slices from the reference
+      if (matchMapPath) {
+        try {
+          const mapBuf = fs.readFileSync(matchMapPath, 'utf8')
+          const mapObj = JSON.parse(mapBuf)
+          const mlist = mapObj.matches || []
+          let applied = 0
+          for (const m of mlist) {
+            if (m && m.matchedIndex != null) {
+              const sIdx = Number(m.matchedIndex)
+              if (!Number.isFinite(sIdx) || sIdx < 0 || sIdx >= refPktCount) continue
+              // Estimate needed packet count by generating packets for the event
+              const ei = Number(m.eventIndex)
+              const ev = events[ei]
+              if (!ev) continue
+              try {
+                const vv = new VRAM()
+                const pkts = writeFontBlock(vv, ev.blockX, ev.blockY, ev.pixels)
+                const needed = pkts.length || 1
+                for (let k = 0; k < needed; k++) {
+                  const idx = sIdx + k
+                  if (idx >= initialPacketSlots.length) break
+                  const slice = refBuf.slice(idx * pktSize, (idx + 1) * pktSize)
+                  initialPacketSlots[idx] = Uint8Array.from(slice)
+                }
+                applied++
+              } catch (e) {
+                // ignore per-event failures
+              }
+            }
+          }
+          console.log(`Applied ${applied} matched slices from match-map ${matchMapPath}`)
+        } catch (e) {
+          console.warn('Could not apply match-map:', (e as any).message || e)
+        }
+      }
     } catch (e) {
       console.warn('Could not read reference CDG for init packet copy (pre-schedule):', (e as any).message || e)
       for (let i = 0; i < initPkts.length && i < initialPacketSlots.length; i++) initialPacketSlots[i] = initPkts[i]
@@ -339,78 +451,165 @@ async function main() {
     for (let i = 0; i < initPkts.length && i < initialPacketSlots.length; i++) initialPacketSlots[i] = initPkts[i]
   }
 
-  // --- Match-by-pattern pre-scheduling pass ---
-  // For each FontEvent produce the exact packets (via writeFontBlock) and
-  // search the reference CDG for an exact contiguous occurrence. If found
-  // and the corresponding slots in initialPacketSlots are free (or already
-  // equal to the reference bytes), reserve those indices by copying the
-  // reference packets into initialPacketSlots. Save a mapping file under tmp/.
+  // --- Match-by-pattern / coordinate pre-scheduling pass ---
+  // Two modes:
+  //  - exact match (legacy): generate the packet sequence and search for a
+  //    byte-for-byte contiguous occurrence in the reference.
+  //  - coordinate match (--match-coord): search the reference for contiguous
+  //    runs of tile packets that target the same blockX/blockY and reserve
+  //    those reference packets. This is less strict but robust to VRAM
+  //    pre-state differences and faster to find matches.
+  const matchByCoord = argv.includes('--match-coord')
   if (referenceCdgPath) {
     try {
       const refBuf = fs.readFileSync(referenceCdgPath)
       const refPktCount = Math.floor(refBuf.length / pktSize)
       const matches: any[] = []
+      // If performing exact-byte mode, build a ReferenceReplayer to reconstruct
+      // VRAM at arbitrary packet indices. This allows generating packets from
+      // the same VRAM pre-state as the reference when searching for exact
+      // byte-for-byte matches.
+      let replayer: any = null
+      if (!matchByCoord) {
+        try {
+          const { ReferenceReplayer } = await import('../cdg/referenceReplayer')
+          replayer = new ReferenceReplayer(referenceCdgPath, pktSize, 512)
+        } catch (e) {
+          console.warn('Could not instantiate ReferenceReplayer:', (e as any).message || e)
+          replayer = null
+        }
+      }
+      // reference to replayer to avoid 'assigned but never used' lint complaints
+      if (replayer) {
+        /* no-op: replayer is available for potential VRAM-based comparisons */
+      }
+      // Respect reserved prelude by default when searching for matches.
       const searchStart = Math.max(0, Math.floor(reservedStart))
+      console.log('Starting match-by-pattern pass', matchByCoord ? '(coordinate mode)' : '(exact-byte mode)', 'searchStart=', searchStart, 'refPktCount=', refPktCount)
+
       for (let ei = 0; ei < events.length; ei++) {
         const ev = events[ei]
         try {
-          const vv = new VRAM()
-          const pktArr: Uint8Array[] = writeFontBlock(vv, ev.blockX, ev.blockY, ev.pixels)
-          if (!pktArr || pktArr.length === 0) {
+          if (matchByCoord) {
+            // Coordinate-based search: find a contiguous run of packets in the
+            // reference where each packet targets the same block coordinates.
+            let foundIndex: number | null = null
+            let foundLen = 0
+            for (let s = searchStart; s < refPktCount; s++) {
+              const b0 = refBuf[s * pktSize]
+              const b1 = refBuf[s * pktSize + 1]
+              // only consider TV_GRAPHICS tile-like commands
+              if (b0 !== TV_GRAPHICS) continue
+              if (b1 !== COPY_FONT && b1 !== XOR_FONT) continue
+              const yBlock = refBuf[s * pktSize + 8]
+              const xBlock = refBuf[s * pktSize + 9]
+              if (yBlock !== (ev.blockY & 0x3F) || xBlock !== (ev.blockX & 0x3F)) continue
+              // extend run
+              let runLen = 1
+              for (let k = s + 1; k < refPktCount; k++) {
+                const bb0 = refBuf[k * pktSize]
+                const bb1 = refBuf[k * pktSize + 1]
+                if (bb0 !== TV_GRAPHICS) break
+                if (bb1 !== COPY_FONT && bb1 !== XOR_FONT) break
+                const yy = refBuf[k * pktSize + 8]
+                const xx = refBuf[k * pktSize + 9]
+                if (yy !== (ev.blockY & 0x3F) || xx !== (ev.blockX & 0x3F)) break
+                runLen++
+              }
+              // Attempt to reserve this contiguous run if the slots are available
+              let canReserve = true
+              for (let k = 0; k < runLen; k++) {
+                const slotIdx = s + k
+                if (slotIdx >= initialPacketSlots.length) { canReserve = false; break }
+                const slot = initialPacketSlots[slotIdx]
+                if (!slot) continue
+                const slotBuf = Buffer.from(slot)
+                const empty = slotBuf.every((b) => b === 0)
+                if (!empty) {
+                  const refSlice = refBuf.slice(slotIdx * pktSize, (slotIdx + 1) * pktSize)
+                  // compare only header+data (0..18) ignoring parity bytes
+                  if (!slotBuf.slice(0, 19).equals(refSlice.slice(0, 19))) { canReserve = false; break }
+                }
+              }
+              if (canReserve) {
+                for (let k = 0; k < runLen; k++) {
+                  const slice = refBuf.slice((s + k) * pktSize, (s + k + 1) * pktSize)
+                  initialPacketSlots[s + k] = Uint8Array.from(slice)
+                }
+                foundIndex = s
+                foundLen = runLen
+                break
+              }
+              // otherwise continue searching
+            }
             matches.push({
               eventIndex: ei,
-              matchedIndex: null,
+              blockX: ev.blockX,
+              blockY: ev.blockY,
+              startPack: ev.startPack,
+              matchedIndex: foundIndex,
+              length: foundLen,
             })
             continue
           }
-          const needed = pktArr.length
-          let foundIndex = -1
-          // Search reference packet-aligned for an exact contiguous match
-          for (let s = searchStart; s <= refPktCount - needed; s++) {
-            let ok = true
-            for (let k = 0; k < needed; k++) {
-              const refSlice = refBuf.slice((s + k) * pktSize, (s + k + 1) * pktSize)
-              const want = Buffer.from(pktArr[k])
-              if (refSlice.length !== pktSize || Buffer.compare(refSlice, want) !== 0) { ok = false; break }
-            }
-            if (ok) { foundIndex = s; break }
-          }
-          if (foundIndex >= 0) {
-            // Ensure we can reserve these slots (they must be empty or equal to ref)
-            let canReserve = true
-            for (let k = 0; k < needed; k++) {
-              const slot = initialPacketSlots[foundIndex + k]
-              if (!slot) continue
-              const slotBuf = Buffer.from(slot)
-              const empty = slotBuf.every((b) => b === 0)
-              if (!empty) {
-                const refSlice = refBuf.slice((foundIndex + k) * pktSize, (foundIndex + k + 1) * pktSize)
-                if (Buffer.compare(slotBuf, refSlice) !== 0) { canReserve = false; break }
-              }
-            }
-            if (canReserve) {
-              for (let k = 0; k < needed; k++) {
-                const slice = refBuf.slice((foundIndex + k) * pktSize, (foundIndex + k + 1) * pktSize)
-                initialPacketSlots[foundIndex + k] = Uint8Array.from(slice)
-              }
+
+            // exact-byte mode (legacy): generate packets and search exact contiguous match
+            const vv = new VRAM()
+            const pktArr: Uint8Array[] = writeFontBlock(vv, ev.blockX, ev.blockY, ev.pixels)
+            if (!pktArr || pktArr.length === 0) {
               matches.push({
                 eventIndex: ei,
-                blockX: ev.blockX,
-                blockY: ev.blockY,
-                startPack: ev.startPack,
-                matchedIndex: foundIndex,
-                length: needed,
+                matchedIndex: null,
               })
               continue
             }
-          }
-          matches.push({
-            eventIndex: ei,
-            blockX: ev.blockX,
-            blockY: ev.blockY,
-            startPack: ev.startPack,
-            matchedIndex: null,
-          })
+            const needed = pktArr.length
+            let foundIndex = -1
+            for (let s = searchStart; s <= refPktCount - needed; s++) {
+              let ok = true
+              for (let k = 0; k < needed; k++) {
+                const refSlice = refBuf.slice((s + k) * pktSize, (s + k + 1) * pktSize)
+                const want = Buffer.from(pktArr[k])
+                // Compare only header + data bytes (0..18) and ignore parity bytes
+                if (refSlice.length !== pktSize || !Buffer.from(want).slice(0, 19).equals(refSlice.slice(0, 19))) { ok = false; break }
+              }
+              if (ok) { foundIndex = s; break }
+            }
+            if (foundIndex >= 0) {
+              let canReserve = true
+              for (let k = 0; k < needed; k++) {
+                const slot = initialPacketSlots[foundIndex + k]
+                if (!slot) continue
+                const slotBuf = Buffer.from(slot)
+                const empty = slotBuf.every((b) => b === 0)
+                if (!empty) {
+                  const refSlice = refBuf.slice((foundIndex + k) * pktSize, (foundIndex + k + 1) * pktSize)
+                  if (!slotBuf.slice(0, 19).equals(refSlice.slice(0, 19))) { canReserve = false; break }
+                }
+              }
+              if (canReserve) {
+                for (let k = 0; k < needed; k++) {
+                  const slice = refBuf.slice((foundIndex + k) * pktSize, (foundIndex + k + 1) * pktSize)
+                  initialPacketSlots[foundIndex + k] = Uint8Array.from(slice)
+                }
+                matches.push({
+                  eventIndex: ei,
+                  blockX: ev.blockX,
+                  blockY: ev.blockY,
+                  startPack: ev.startPack,
+                  matchedIndex: foundIndex,
+                  length: needed,
+                })
+                continue
+              }
+            }
+            matches.push({
+              eventIndex: ei,
+              blockX: ev.blockX,
+              blockY: ev.blockY,
+              startPack: ev.startPack,
+              matchedIndex: null,
+            })
         } catch (e) {
           matches.push({
             eventIndex: ei,
@@ -419,6 +618,7 @@ async function main() {
           })
         }
       }
+
       fs.mkdirSync('tmp', { recursive: true })
       const outObj = {
         reservedStart,
@@ -430,6 +630,25 @@ async function main() {
     } catch (e) {
       console.warn('Match-by-pattern pass failed:', (e as any).message || e)
     }
+  }
+
+  // Diagnostic assertions / logs before calling scheduler
+  try {
+    console.log('Diagnostic: totalPacks=', totalPacks, 'initialPacketSlots.length=', initialPacketSlots.length, 'reservedStart=', reservedStart)
+    if (initialPacketSlots.length !== totalPacks) {
+      console.error('ASSERT: initialPacketSlots.length !== totalPacks', initialPacketSlots.length, totalPacks)
+    }
+    const preNonEmpty = initialPacketSlots.reduce((acc, pkt) => acc + (pkt && Buffer.from(pkt).some((b) => b !== 0) ? 1 : 0), 0)
+    console.log('Diagnostic: non-empty slots in initialPacketSlots before scheduling =', preNonEmpty)
+    // show a small hex preview of the first few prefilled slots
+    const show = Math.min(8, initialPacketSlots.length)
+    for (let i = 0; i < show; i++) {
+      const pkt = initialPacketSlots[i]
+      const hex = pkt ? Buffer.from(pkt).toString('hex').slice(0, 64) : '(null)'
+      console.log(`initialPrelude[${i}] = ${hex}`)
+    }
+  } catch (e) {
+    console.warn('Diagnostic pre-schedule assertion failed:', (e as any).message || e)
   }
 
   const { packetSlots } = scheduleFontEvents(

@@ -33,6 +33,18 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
   const vram = new VRAM();
   const comp = new Compositor();
 
+  // Small helper to set a packet with a safety-assertion that we don't write
+  // into the reserved prelude. Declared at outer scope so all placement
+  // branches use the same protection.
+  function setPacketSafely(i: number, p: CDGPacket) {
+    if (i <= reservedStart) {
+      console.error(`ASSERT: attempted to write into reserved prelude at index=${i} (reservedStart=${reservedStart})`)
+      console.error(new Error().stack)
+      throw new Error(`Attempted write into reserved prelude at index=${i}`)
+    }
+    packetSlots[i] = p
+  }
+
   // Helper to place a packet at an index if empty; if not empty, find next empty within small window
   // Place a packet at or just after `index`. Returns [placedIndex, overwrittenFlag]
   function placePacketAt(index: number, pkt: CDGPacket, minIndex?: number, maxIndex?: number, allowOverwrite = false): [number, boolean] {
@@ -43,6 +55,7 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
 
   // Check the desired slot first
   const isEmpty = (i: number) => packetSlots[i] && packetSlots[i].every((b) => b === 0);
+  
   // If a targeted debug event is set, log probes
   const dbg = currentDebugEvent;
     // Determine search bounds and enforce reservedStart as a hard lower bound
@@ -57,7 +70,7 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
   // Never place before the effective start bound
   if (pos < effectiveStartBound) pos = effectiveStartBound;
     if (pos >= packetSlots.length) return [-1, true];
-  if (isEmpty(pos)) { if (dbg) console.log(`[TRACE] placePacketAt: target=${dbg.blockX},${dbg.blockY}@${dbg.startPack} placing at desired pos=${pos} (empty)`); packetSlots[pos] = pkt; return [pos, false]; }
+  if (isEmpty(pos)) { if (dbg) console.log(`[TRACE] placePacketAt: target=${dbg.blockX},${dbg.blockY}@${dbg.startPack} placing at desired pos=${pos} (empty)`); setPacketSafely(pos, pkt); return [pos, false]; }
 
     // Greedy alternating probe around `pos` within bounds: pos, pos+1, pos-1, pos+2, pos-2, ...
     // This tends to keep placements clustered near the desired index while reducing
@@ -71,12 +84,12 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
       if (forwardIdx <= probeEnd) {
         foundAny = true;
         if (dbg) console.log(`[TRACE] placePacketAt: probing forward idx=${forwardIdx} (empty=${isEmpty(forwardIdx)})`);
-        if (isEmpty(forwardIdx)) { packetSlots[forwardIdx] = pkt; if (dbg) console.log(`[TRACE] placePacketAt: target=${dbg.blockX},${dbg.blockY}@${dbg.startPack} placed at forwardIdx=${forwardIdx}`); return [forwardIdx, false]; }
+  if (isEmpty(forwardIdx)) { setPacketSafely(forwardIdx, pkt); if (dbg) console.log(`[TRACE] placePacketAt: target=${dbg.blockX},${dbg.blockY}@${dbg.startPack} placed at forwardIdx=${forwardIdx}`); return [forwardIdx, false]; }
       }
       if (backwardIdx >= probeStart) {
         foundAny = true;
         if (dbg) console.log(`[TRACE] placePacketAt: probing backward idx=${backwardIdx} (empty=${isEmpty(backwardIdx)})`);
-        if (isEmpty(backwardIdx)) { packetSlots[backwardIdx] = pkt; if (dbg) console.log(`[TRACE] placePacketAt: target=${dbg.blockX},${dbg.blockY}@${dbg.startPack} placed at backwardIdx=${backwardIdx}`); return [backwardIdx, false]; }
+  if (isEmpty(backwardIdx)) { setPacketSafely(backwardIdx, pkt); if (dbg) console.log(`[TRACE] placePacketAt: target=${dbg.blockX},${dbg.blockY}@${dbg.startPack} placed at backwardIdx=${backwardIdx}`); return [backwardIdx, false]; }
       }
       // If neither direction is still within bounds, stop probing
       if (!foundAny) break;
@@ -93,7 +106,7 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
     if (writePos >= packetSlots.length) return [-1, true];
     const wasEmpty = packetSlots[writePos] ? packetSlots[writePos].every((b) => b === 0) : true;
     if (dbg) console.log(`[TRACE] placePacketAt: overwriting at writePos=${writePos} (wasEmpty=${wasEmpty}) for target=${dbg.blockX},${dbg.blockY}@${dbg.startPack}`);
-    packetSlots[writePos] = pkt;
+    setPacketSafely(writePos, pkt);
     return [writePos, !wasEmpty];
   }
 
@@ -209,7 +222,7 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
           // the guard to be safe.
           continue;
         }
-        packetSlots[pos] = pkt;
+  setPacketSafely(pos, pkt);
         placedIndices.push(pos);
       }
     } else {
@@ -253,7 +266,7 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
           for (let i = 0; i < packets.length; i++) {
             const pos = globalFind + i;
             const pkt = packets[i];
-            packetSlots[pos] = pkt;
+            setPacketSafely(pos, pkt);
             placedIndices.push(pos);
           }
         } else {

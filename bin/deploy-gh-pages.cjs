@@ -13,7 +13,9 @@ Options:
   --dry-run  Do everything except push to remote
   --override-uncommitted  Proceed even with uncommitted changes
 */
-const { runCommand, git, readScriptMd } = require('../src/utils/bin-utils.cjs');
+const {
+ runCommand, git, readScriptMd 
+} = require('../src/utils/bin-utils.cjs');
 const fs = require('fs');
 const path = require('path');
 const ora = require('ora');
