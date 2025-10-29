@@ -1,4 +1,5 @@
-#!/usr/bin/env -S tsx
+#!/usr/bin/env -S npx tsx
+
 import path from 'path'
 import fs from 'fs'
 import { scheduleFontEvents } from '../cdg/scheduler'
@@ -61,9 +62,7 @@ async function run() {
         tiles.push(tile)
       }
     }
-    charBitmaps.push({
- tilesWide, tilesHigh, tiles 
-})
+    charBitmaps.push({ tilesWide, tilesHigh, tiles })
   }
 
   // Layout: place characters next to each other with 1 tile gap
@@ -86,9 +85,7 @@ async function run() {
       const ty = Math.floor(t / cb.tilesWide)
       const blockX = cursor + tx
       const blockY = topTileRow + ty
-      events.push({
- blockX, blockY, pixels: cb.tiles[t], startPack: 0, durationPacks: Math.ceil(durationSeconds * pps) 
-})
+      events.push({ blockX, blockY, pixels: cb.tiles[t], startPack: 0, durationPacks: Math.ceil(durationSeconds * pps) })
     }
     cursor += cb.tilesWide + 1
   }
@@ -98,9 +95,7 @@ async function run() {
   const memoryPkts = generateMemoryPresetPackets(0)
   const initPkts = [...palettePkts, ...borderPkts, ...memoryPkts]
 
-  const { packetSlots } = scheduleFontEvents(events, {
- durationSeconds, pps 
-}, initPkts.length)
+  const { packetSlots } = scheduleFontEvents(events, { durationSeconds, pps }, initPkts.length)
   for (let i = 0; i < initPkts.length && i < packetSlots.length; i++) packetSlots[i] = initPkts[i]
 
   // Repeat tiles every second
@@ -130,8 +125,8 @@ async function run() {
       const execSync = (cp as any).execSync
       const copies = Math.ceil(durationSeconds / 4)
       execSync(`ffmpeg -y -f concat -safe 0 -i <(for i in $(seq 1 ${copies}); do echo "file '${silence}'"; done) -c copy ${mp3dst}`, {
- stdio: 'ignore', shell: '/bin/bash' 
-})
+            stdio: 'ignore', shell: '/bin/bash' 
+           })
     } catch (e) {
       try { fs.copyFileSync(silence, mp3dst) } catch (e) { /* ignore */ }
     }

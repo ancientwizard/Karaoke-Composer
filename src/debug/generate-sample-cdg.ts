@@ -1,4 +1,5 @@
-#!/usr/bin/env -S tsx
+#!/usr/bin/env -S npx tsx
+
 import fs from 'fs'
 import { renderSimple } from '../cdg/renderer'
 import type { TileDraw } from '../cdg/types'
@@ -8,11 +9,9 @@ async function main() {
   // CDG tiles are 12 rows of 6 pixels; each element in `pixels` is a 6-bit row.
   const tile: TileDraw = {
     at: 0,
-    coord: {
- row: 8, col: 20 
-},
-  color0: 3,
-  color1: 8,
+    coord: { row: 8, col: 20 },
+    color0: 3,
+    color1: 8,
     pixels: [
       0x3f, 0x3f, 0x3f, // three filled rows at top of tile
       0x00, 0x00, 0x00, 0x00, 0x00,

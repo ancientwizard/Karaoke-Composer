@@ -1,3 +1,5 @@
+#!/usr/bin/env -S npx tsx
+
 /**
  * Enhanced TypeScript test runner for the Karaoke Timing Engine
  * Tests both metadata handling and real-time highlight simulation

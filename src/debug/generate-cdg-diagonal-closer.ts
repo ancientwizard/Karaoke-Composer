@@ -1,4 +1,5 @@
-#!/usr/bin/env -S tsx
+#!/usr/bin/env -S npx tsx
+
 import fs from 'fs'
 import path from 'path'
 import { scheduleFontEvents } from '@/cdg/scheduler'

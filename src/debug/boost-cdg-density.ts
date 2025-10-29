@@ -1,4 +1,5 @@
-#!/usr/bin/env -S tsx
+#!/usr/bin/env -S npx tsx
+
 import fs from 'fs'
 import path from 'path'
 import { CDG_PACKET_SIZE } from '@/cdg/constants'

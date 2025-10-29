@@ -1,4 +1,5 @@
-#!/usr/bin/env -S tsx
+#!/usr/bin/env -S npx tsx
+
 import fs from 'fs'
 import path from 'path'
 import { writeFontBlock, VRAM } from '../cdg/encoder'
@@ -17,6 +18,8 @@ const parsedPath = argv[0]
 const referencePath = argv[1]
 const startEvent = argv[2] ? Number(argv[2]) : 0
 const count = argv[3] ? Number(argv[3]) : 100
+// optional fifth arg: output path for matches (used by parallel runner)
+const outputPath = argv[4] || path.join('tmp', 'match_by_replayer_map.json')
 
 if (!fs.existsSync(parsedPath)) { console.error('Parsed JSON not found:', parsedPath); process.exit(2) }
 if (!fs.existsSync(referencePath)) { console.error('Reference CDG not found:', referencePath); process.exit(2) }
@@ -112,6 +115,6 @@ for (let ei = startEvent; ei < end; ei++) {
   outMatches.push({ eventIndex: ei, blockX: ev.blockX, blockY: ev.blockY, startPack: ev.startPack, matchedIndex: foundAt })
 }
 
-fs.mkdirSync('tmp', { recursive: true })
-fs.writeFileSync(path.join('tmp', 'match_by_replayer_map.json'), JSON.stringify({ reservedStart, matches: outMatches }, null, 2))
-console.log('Wrote tmp/match_by_replayer_map.json')
+fs.mkdirSync(path.dirname(outputPath), { recursive: true })
+fs.writeFileSync(outputPath, JSON.stringify({ reservedStart, matches: outMatches }, null, 2))
+console.log('Wrote', outputPath)

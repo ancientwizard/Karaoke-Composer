@@ -1,4 +1,5 @@
-#!/usr/bin/env -S tsx
+#!/usr/bin/env -S npx tsx
+
 import path from 'path'
 import fs from 'fs'
 import { scheduleFontEvents } from '../cdg/scheduler'
@@ -28,17 +29,16 @@ async function run() {
     const t = tiles[i]
     const startPack = Math.floor((i * totalPacks) / tiles.length)
     const durationPacks = Math.max(1, totalPacks - startPack)
-    events.push({
- blockX: t.col, blockY: t.row, pixels: t.tileData.map((b: number) => {
-      // tileData is 6-bit-per-row values; convert to 6-wide arrays of color indices (fg/bg)
-      const arr: number[] = []
-      for (let x = 0; x < 6; x++) {
-        const bit = (b >> (5 - x)) & 1
-        arr.push(bit ? fgColor : bgColor)
-      }
-      return arr
-    }), startPack, durationPacks 
-})
+    events.push({ blockX: t.col, blockY: t.row, pixels: t.tileData.map((b: number) => {
+        // tileData is 6-bit-per-row values; convert to 6-wide arrays of color indices (fg/bg)
+        const arr: number[] = []
+        for (let x = 0; x < 6; x++) {
+          const bit = (b >> (5 - x)) & 1
+          arr.push(bit ? fgColor : bgColor)
+        }
+        return arr
+      }), startPack, durationPacks 
+    })
   }
 
   const palettePkts = generatePaletteLoadPackets()
@@ -47,9 +47,7 @@ async function run() {
   const memoryPkts = generateMemoryPresetPackets(0)
   const initPkts = [...palettePkts, ...borderPkts, ...memoryPkts]
 
-  const { packetSlots } = scheduleFontEvents(events, {
- durationSeconds, pps 
-}, initPkts.length)
+  const { packetSlots } = scheduleFontEvents(events, { durationSeconds, pps }, initPkts.length)
   for (let i = 0; i < initPkts.length && i < packetSlots.length; i++) packetSlots[i] = initPkts[i]
 
   // Repeat tile packets every second and emit palette at start of each second
@@ -91,8 +89,8 @@ async function run() {
       const execSync = (cp as any).execSync
       const copies = Math.ceil(durationSeconds / 4)
       execSync(`ffmpeg -y -f concat -safe 0 -i <(for i in $(seq 1 ${copies}); do echo "file '${silence}'"; done) -c copy ${mp3dst}`, {
- stdio: 'ignore', shell: '/bin/bash' 
-})
+          stdio: 'ignore', shell: '/bin/bash' 
+         })
     } catch (e) {
       try { fs.copyFileSync(silence, mp3dst) } catch (e) { /* ignore */ }
     }

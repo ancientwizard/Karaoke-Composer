@@ -1,3 +1,5 @@
+#!/usr/bin/env -S npx tsx
+
 import { getCurrentPosition } from '../utils/lyricsParser'
 import { parseLyricsLine } from '../utils/lyricsParser'
 

@@ -1,3 +1,5 @@
+#!/usr/bin/env -S npx tsx
+
 /**
  * Test Script for Timing Overlap Analysis UI
  *

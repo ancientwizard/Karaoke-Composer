@@ -1,4 +1,5 @@
-#!/usr/bin/env -S tsx
+#!/usr/bin/env -S npx tsx
+
 import path from 'path'
 import fs from 'fs'
 import { scheduleFontEvents } from '../cdg/scheduler'
@@ -26,8 +27,8 @@ async function run() {
         pixels.push(row)
       }
       tileCoords.push({
- bx, by, pixels 
-})
+        bx, by, pixels 
+      })
     }
   }
 
@@ -35,14 +36,12 @@ async function run() {
   // schedule events spread across full window
   const events: any[] = []
   for (let i = 0; i < tileCoords.length; i++) {
-    const {
- bx, by, pixels 
-} = tileCoords[i]
+    const { bx, by, pixels } = tileCoords[i]
     const startPack = Math.floor((i * totalPacks) / tileCoords.length)
     const durationPacks = Math.max(1, totalPacks - startPack)
     events.push({
- blockX: bx, blockY: by, pixels, startPack, durationPacks 
-})
+      blockX: bx, blockY: by, pixels, startPack, durationPacks 
+    })
   }
 
   const palettePkts = generatePaletteLoadPackets()
@@ -50,9 +49,7 @@ async function run() {
   const memoryPkts = generateMemoryPresetPackets(1)
   const initPkts = [...palettePkts, ...borderPkts, ...memoryPkts]
 
-  const { packetSlots } = scheduleFontEvents(events, {
- durationSeconds, pps 
-}, initPkts.length)
+  const { packetSlots } = scheduleFontEvents(events, { durationSeconds, pps }, initPkts.length)
 
   // place initial packets at start
   for (let i = 0; i < initPkts.length && i < packetSlots.length; i++) packetSlots[i] = initPkts[i]

@@ -1,3 +1,5 @@
+#!/usr/bin/env -S npx tsx
+
 /**
  * Simple test runner for the Karaoke Timing Engine
  * Run this with: npx tsx src/debug/test-timing.ts

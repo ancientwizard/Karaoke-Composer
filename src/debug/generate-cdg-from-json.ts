@@ -1,4 +1,5 @@
-#!/usr/bin/env -S tsx
+#!/usr/bin/env -S npx tsx
+
 import fs from 'fs'
 import path from 'path'
 import { CDGTextRenderer } from '../karaoke/renderers/cdg/CDGFont'
@@ -154,8 +155,8 @@ async function main() {
             pixels.push(rowArr)
           }
           events.push({
- blockX: t.col, blockY: t.row, pixels, startPack, durationPacks 
-})
+            blockX: t.col, blockY: t.row, pixels, startPack, durationPacks 
+          })
         }
       }
       continue
@@ -169,11 +170,11 @@ async function main() {
         if (!bmpRel) continue
         // Try several fallbacks for BMP path: relative to JSON dir, basename in that dir,
         // and the reference sample files directory.
-  const candidates = []
-  const relNorm = bmpRel.replace(/\\/g, '/')
-  candidates.push(path.join(path.dirname(inPath), relNorm))
-  candidates.push(path.join(path.dirname(inPath), path.basename(relNorm)))
-  candidates.push(path.join('reference', 'cd+g-magic', 'Sample_Files', path.basename(relNorm)))
+        const candidates = []
+        const relNorm = bmpRel.replace(/\\/g, '/')
+        candidates.push(path.join(path.dirname(inPath), relNorm))
+        candidates.push(path.join(path.dirname(inPath), path.basename(relNorm)))
+        candidates.push(path.join('reference', 'cd+g-magic', 'Sample_Files', path.basename(relNorm)))
         let bmpPath: string | null = null
         for (const cand of candidates) {
           if (fs.existsSync(cand)) { bmpPath = cand; break }
@@ -212,8 +213,8 @@ async function main() {
             else evDurPacks = Math.ceil(pps * 2)
             const durationPacks = Math.max(1, evDurPacks)
               events.push({
- blockX: startCol + bx, blockY: startRow + by, pixels, startPack, durationPacks 
-})
+                blockX: startCol + bx, blockY: startRow + by, pixels, startPack, durationPacks 
+              })
             }
           }
         } catch (e) {

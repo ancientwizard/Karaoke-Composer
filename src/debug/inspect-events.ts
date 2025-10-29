@@ -1,4 +1,5 @@
-#!/usr/bin/env -S tsx
+#!/usr/bin/env -S npx tsx
+
 import fs from 'fs'
 import path from 'path'
 import { CDGTextRenderer } from '../karaoke/renderers/cdg/CDGFont'
@@ -44,9 +45,7 @@ function loadAndBuildEvents(inPath: string) {
             }
             pixels.push(rowArr)
           }
-          events.push({
- blockX: t.col, blockY: t.row, pixels, startPack, durationPacks 
-})
+          events.push({ blockX: t.col, blockY: t.row, pixels, startPack, durationPacks })
         }
       }
       continue

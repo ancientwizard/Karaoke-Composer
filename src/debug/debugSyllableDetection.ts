@@ -1,3 +1,5 @@
+#!/usr/bin/env -S npx tsx
+
 import { KaraokeTimingEngine } from '../models/KaraokeTimingEngine'
 import { parseLyricsLine } from '../utils/lyricsParser'
 

@@ -1,6 +1,6 @@
-#!/usr/bin/env -S tsx
+#!/usr/bin/env -S npx tsx
+
 import fs from 'fs'
-import path from 'path'
 import { VRAM, writeFontBlock } from '../cdg/encoder'
 import { CDGCommand } from '../karaoke/renderers/cdg/CDGPacket'
 

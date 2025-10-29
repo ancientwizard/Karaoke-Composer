@@ -1,4 +1,5 @@
-#!/usr/bin/env node
+#!/usr/bin/env -S npx tsx
+
 import { argv } from 'process';
 import path from 'path';
 import { VRAM, demoBlockPixels, writeFontBlock, writePacketsToFile } from '../cdg/encoder';

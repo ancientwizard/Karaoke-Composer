@@ -1,3 +1,5 @@
+#!/usr/bin/env -S npx tsx
+
 /**
  * Test Caption Display
  *

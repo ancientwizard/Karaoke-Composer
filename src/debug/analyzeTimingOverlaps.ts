@@ -1,3 +1,5 @@
+#!/usr/bin/env -S npx tsx
+
 import type { LyricLine, WordTiming } from '../types/karaoke'
 import { TIMING } from '@/models/TimingConstants'
 
