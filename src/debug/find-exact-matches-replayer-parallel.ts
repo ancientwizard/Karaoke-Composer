@@ -28,10 +28,11 @@ if (!fs.existsSync(referencePath)) { console.error('Reference CDG not found:', r
 const parsed = JSON.parse(fs.readFileSync(parsedPath, 'utf8'));
 const PPS = 75;
 // Recompute events similarly to the TS script so we can split by event index or by packet-range
+// Default to treating numeric times as milliseconds (consistent with the
+// main generator). If callers need pack units they should convert beforehand.
 function timeToPacks(val, pps = 75) {
   if (val == null) return 0;
-  if (val >= 1000) return Math.floor((val / 1000) * pps);
-  return Math.floor(val);
+  return Math.floor((val / 1000) * pps);
 }
 
 import { CDGTextRenderer } from '../karaoke/renderers/cdg/CDGFont';

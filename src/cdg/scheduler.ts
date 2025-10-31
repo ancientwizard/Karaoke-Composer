@@ -33,16 +33,42 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
   const vram = new VRAM();
   const comp = new Compositor();
 
+  // Compute a conservative placement cap: do not allow scheduler to place
+  // events arbitrarily far past the last intended event. This prevents
+  // long-running clips or collision-driven spill from writing into the
+  // far tail of an oversized output (e.g. when durationSeconds was set
+  // large for debugging). We allow a generous slack to accommodate
+  // natural placement spreads; increase if many forced-overwrites occur.
+  const maxIntendedPlacement = events.reduce((m, ev) => Math.max(m, (reservedStart || 0) + (ev.startPack || 0) + (ev.durationPacks || 0)), 0);
+  // Increase slack to 10 seconds (was 2s) to give the scheduler more headroom
+  // before it must start doing destructive overwrites in the file tail.
+  const placementSlack = (opts.pps || 75) * 10; // 10 seconds slack
+  const placementCap = Math.min(packetSlots.length - 1, Math.max(0, maxIntendedPlacement + placementSlack));
+
+  // Overwrite safety: don't allow destructive overwrites arbitrarily far
+  // forward. When we fall back to forced-overwrite we will cap how far
+  // forward we may push events. This can be tuned via options later.
+  const overwriteLimitSeconds = (opts as any).overwriteLimitSeconds ?? 2; // default 2s
+  const overwriteLimit = Math.max(1, Math.floor(overwriteLimitSeconds * pps));
+
   // Small helper to set a packet with a safety-assertion that we don't write
   // into the reserved prelude. Declared at outer scope so all placement
   // branches use the same protection.
-  function setPacketSafely(i: number, p: CDGPacket) {
+  function setPacketSafely(i: number, p: CDGPacket): boolean {
+    // Returns true if the write was performed, false if it was dropped.
     if (i <= reservedStart) {
       console.error(`ASSERT: attempted to write into reserved prelude at index=${i} (reservedStart=${reservedStart})`)
       console.error(new Error().stack)
+      // Treat prelude writes as fatal because they indicate a serious logic bug
       throw new Error(`Attempted write into reserved prelude at index=${i}`)
     }
+    if (i > placementCap) {
+      // Defensive: never write beyond the conservative placement cap.
+      console.warn(`Dropping write at index=${i} beyond placementCap=${placementCap}`)
+      return false
+    }
     packetSlots[i] = p
+    return true
   }
 
   // Helper to place a packet at an index if empty; if not empty, find next empty within small window
@@ -70,7 +96,12 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
   // Never place before the effective start bound
   if (pos < effectiveStartBound) pos = effectiveStartBound;
     if (pos >= packetSlots.length) return [-1, true];
-  if (isEmpty(pos)) { if (dbg) console.log(`[TRACE] placePacketAt: target=${dbg.blockX},${dbg.blockY}@${dbg.startPack} placing at desired pos=${pos} (empty)`); setPacketSafely(pos, pkt); return [pos, false]; }
+  if (isEmpty(pos)) {
+    if (dbg) console.log(`[TRACE] placePacketAt: target=${dbg.blockX},${dbg.blockY}@${dbg.startPack} placing at desired pos=${pos} (empty)`);
+    const ok = setPacketSafely(pos, pkt);
+    if (!ok) return [-1, false];
+    return [pos, false];
+  }
 
     // Greedy alternating probe around `pos` within bounds: pos, pos+1, pos-1, pos+2, pos-2, ...
     // This tends to keep placements clustered near the desired index while reducing
@@ -84,12 +115,18 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
       if (forwardIdx <= probeEnd) {
         foundAny = true;
         if (dbg) console.log(`[TRACE] placePacketAt: probing forward idx=${forwardIdx} (empty=${isEmpty(forwardIdx)})`);
-  if (isEmpty(forwardIdx)) { setPacketSafely(forwardIdx, pkt); if (dbg) console.log(`[TRACE] placePacketAt: target=${dbg.blockX},${dbg.blockY}@${dbg.startPack} placed at forwardIdx=${forwardIdx}`); return [forwardIdx, false]; }
+      if (isEmpty(forwardIdx)) {
+        const ok = setPacketSafely(forwardIdx, pkt);
+        if (!ok) { /* dropped due to cap */ } else { if (dbg) console.log(`[TRACE] placePacketAt: target=${dbg.blockX},${dbg.blockY}@${dbg.startPack} placed at forwardIdx=${forwardIdx}`); return [forwardIdx, false]; }
+      }
       }
       if (backwardIdx >= probeStart) {
         foundAny = true;
         if (dbg) console.log(`[TRACE] placePacketAt: probing backward idx=${backwardIdx} (empty=${isEmpty(backwardIdx)})`);
-  if (isEmpty(backwardIdx)) { setPacketSafely(backwardIdx, pkt); if (dbg) console.log(`[TRACE] placePacketAt: target=${dbg.blockX},${dbg.blockY}@${dbg.startPack} placed at backwardIdx=${backwardIdx}`); return [backwardIdx, false]; }
+      if (isEmpty(backwardIdx)) {
+        const ok = setPacketSafely(backwardIdx, pkt);
+        if (!ok) { /* dropped due to cap */ } else { if (dbg) console.log(`[TRACE] placePacketAt: target=${dbg.blockX},${dbg.blockY}@${dbg.startPack} placed at backwardIdx=${backwardIdx}`); return [backwardIdx, false]; }
+      }
       }
       // If neither direction is still within bounds, stop probing
       if (!foundAny) break;
@@ -106,7 +143,8 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
     if (writePos >= packetSlots.length) return [-1, true];
     const wasEmpty = packetSlots[writePos] ? packetSlots[writePos].every((b) => b === 0) : true;
     if (dbg) console.log(`[TRACE] placePacketAt: overwriting at writePos=${writePos} (wasEmpty=${wasEmpty}) for target=${dbg.blockX},${dbg.blockY}@${dbg.startPack}`);
-    setPacketSafely(writePos, pkt);
+    const ok = setPacketSafely(writePos, pkt);
+    if (!ok) return [-1, true];
     return [writePos, !wasEmpty];
   }
 
@@ -135,15 +173,48 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
   //   contiguous/multi-packet writes get allocated early.
   // - Tie-break by earlier startPack so timeline locality is still respected.
   // Prefer chronological ordering (by startPack) to better match CDGMagic
-  // output ordering. Heavier-first ordering was experimented with but
-  // tended to move blocks earlier than the reference; use timeline order
-  // as the default scheduling policy.
-  events.sort((a, b) => a.startPack - b.startPack);
+  // output ordering. However, when multiple events share the same startPack
+  // prefer the longer (multi-packet) events first so they acquire contiguous
+  // windows before many small events serialize the neighborhood. This is a
+  // conservative tie-breaker (only affects events with identical startPack)
+  // intended to reduce spills/overwrites for long text clips.
+  events.sort((a, b) => {
+    const byStart = (a.startPack || 0) - (b.startPack || 0);
+    if (byStart !== 0) return byStart;
+    return (b.durationPacks || 0) - (a.durationPacks || 0);
+  });
+
+  // Group events by startPack and precompute packet arrays so we can
+  // attempt to reserve a contiguous region for all events that share the
+  // same startPack. This reduces fragmentation when many small tiles are
+  // emitted for the same clip/time and increases the chance they are
+  // placed near their intended neighborhood.
+  const eventsByStart = new Map<number, FontEvent[]>();
+  for (const ev of events) {
+    const sp = ev.startPack || 0;
+    if (!eventsByStart.has(sp)) eventsByStart.set(sp, []);
+    eventsByStart.get(sp)!.push(ev);
+  }
+  // Precompute per-event packet arrays into a private slot so we don't need
+  // to regenerate packets during placement. Use fresh VRAM instances to
+  // avoid mutating the scheduler's main VRAM when probing.
+  for (const ev of events) {
+    try {
+      const tmpV = new VRAM();
+      // writeFontBlock may update VRAM; here we only need the packet bytes
+      // for placement sizing and copying later.
+      (ev as any).__probePackets = writeFontBlock(tmpV, ev.blockX, ev.blockY, ev.pixels, 0, comp as any);
+    } catch (e) {
+      (ev as any).__probePackets = [];
+    }
+  }
 
   let _debugLogCount = 0
   let _debugEventTrace = 0
+  let _expiredDroppedCount = 0
   // Track per-startPack offsets so events with identical startPack are serialized
   const startPackOffsets = new Map<number, number>();
+  const _handledEvents = new Set<FontEvent>();
 
   // A small mechanism to enable targeted tracing for a specific problematic event.
   // Change these constants to match the event you want to trace. Keep default
@@ -154,6 +225,7 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
   let currentDebugEvent: { blockX: number; blockY: number; startPack: number } | null = null;
 
   for (const ev of events) {
+    if (_handledEvents.has(ev)) continue;
     if (_debugEventTrace < 20) {
       console.log('schedule event debug:', ev.blockX, ev.blockY, 'startPack=', ev.startPack, 'durationPacks=', ev.durationPacks, 'reservedStart=', reservedStart)
       _debugEventTrace++
@@ -170,7 +242,10 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
       currentDebugEvent = null;
     }
     // Write the fontblock using existing encoder logic; encoder updates VRAM directly.
-    const packets = writeFontBlock(vram, ev.blockX, ev.blockY, ev.pixels, 0, comp as any);
+  // If a probe packet array was computed earlier, reuse it. Otherwise
+  // generate packets now (this will update VRAM as before).
+  const probe = (ev as any).__probePackets as Uint8Array[] | undefined;
+  let packets: Uint8Array[] = probe && probe.length ? probe : writeFontBlock(vram, ev.blockX, ev.blockY, ev.pixels, 0, comp as any);
     if (packets.length === 0) continue;
     if (_debugLogCount < 10) {
       console.log('scheduler: event', ev.blockX, ev.blockY, 'startPack', ev.startPack, 'produced', packets.length)
@@ -182,23 +257,93 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
     // interleaving and overwrites. This makes multi-packet font blocks occupy
     // adjacent packet indices, which tends to better match CDGMagic-generated
     // neighborhoods.
-    const allocatedRaw = Math.max(1, ev.durationPacks || 1);
+  const allocatedRaw = Math.max(1, ev.durationPacks || 1);
     const priorOffset = startPackOffsets.get(ev.startPack) || 0;
     const placedIdxBase = reservedStart + ev.startPack + priorOffset;
     const remainingAfterBase = Math.max(0, packetSlots.length - placedIdxBase);
     const needed = packets.length;
     const placedIndices: number[] = [];
 
+    // Group-placement optimization: if multiple events share the same startPack
+    // and we are the first of that group, attempt to reserve a single contiguous
+    // region large enough for the entire group's packets and place them there
+    // sequentially. This reduces fragmentation and avoids pushing tiles into
+    // the far tail.
+    const group = eventsByStart.get(ev.startPack || 0) || [];
+    if (group.length > 1 && group[0] === ev) {
+      // compute total needed
+      let totalNeeded = 0;
+      const groupPackets: Uint8Array[][] = [];
+      for (const gev of group) {
+        const gpk = (gev as any).__probePackets as Uint8Array[] | undefined;
+        const use = gpk && gpk.length ? gpk : writeFontBlock(new VRAM(), gev.blockX, gev.blockY, gev.pixels, 0, comp as any);
+        groupPackets.push(use);
+        totalNeeded += use.length || 1;
+      }
+      // Attempt to find a contiguous run for the whole group starting near placedIdxBase
+      const groupPlacedIdxBase = reservedStart + ev.startPack + (startPackOffsets.get(ev.startPack) || 0);
+      const groupSearchEnd = Math.min(packetSlots.length, groupPlacedIdxBase + Math.min(Math.max(4096, Math.floor((opts.pps || 75) * 8)), placementCap - groupPlacedIdxBase + 1));
+      const groupFind = findEmptyRun(groupPlacedIdxBase, groupSearchEnd, totalNeeded);
+      if (groupFind !== -1) {
+        // Place each event sequentially within the found region
+        let offset = 0;
+        for (let gi = 0; gi < group.length; gi++) {
+          const gev = group[gi];
+          const gpkts = groupPackets[gi];
+          const placedForThis: number[] = [];
+          for (let k = 0; k < gpkts.length; k++) {
+            const pos = groupFind + offset + k;
+            const pkt = gpkts[k];
+            if (pos <= reservedStart) continue;
+            setPacketSafely(pos, pkt);
+            placedForThis.push(pos);
+          }
+          ;(gev as any).__placedIndices = placedForThis;
+          _handledEvents.add(gev);
+          offset += Math.max(1, gpkts.length);
+        }
+        // Advance the startPack offset by totalNeeded so subsequent groups don't collide
+        startPackOffsets.set(ev.startPack, (startPackOffsets.get(ev.startPack) || 0) + Math.max(1, totalNeeded));
+        continue;
+      }
+      // if group reservation failed, fall through to per-event placement below
+    }
+
+    // If the event's natural placement base is already beyond the conservative
+    // placement cap, skip scheduling this event entirely rather than forcing
+    // destructive writes into the file tail. This avoids producing visible
+    // noise after the last intended event (e.g. after an END banner).
+    // Additionally, if the event's allowed window has already expired
+    // (i.e. its start+duration window ends before our placement base), treat
+    // it as expired and drop it early to avoid pointless tail writes.
+    const eventExpiryIdx = (reservedStart || 0) + (ev.startPack || 0) + (ev.durationPacks || 0) - 1;
+    if (placedIdxBase > eventExpiryIdx) {
+      if (_debugLogCount <= 10) console.log(`scheduler: EXPIRE event (${ev.blockX},${ev.blockY}) startPack=${ev.startPack} placedIdxBase=${placedIdxBase} > expiryIdx=${eventExpiryIdx}`)
+      ;(ev as any).__placedIndices = []
+      _expiredDroppedCount++
+      // Advance the per-startPack offset to avoid repeatedly attempting the same event
+      startPackOffsets.set(ev.startPack, (startPackOffsets.get(ev.startPack) || 0) + Math.max(1, packets.length));
+      continue;
+    }
+
+    if (placedIdxBase > placementCap) {
+      if (_debugLogCount <= 10) console.log(`scheduler: SKIP event (${ev.blockX},${ev.blockY}) startPack=${ev.startPack} placedIdxBase=${placedIdxBase} > placementCap=${placementCap}`)
+      ;(ev as any).__placedIndices = []
+      // Advance the per-startPack offset to avoid repeatedly attempting the same event
+      startPackOffsets.set(ev.startPack, (startPackOffsets.get(ev.startPack) || 0) + Math.max(1, packets.length));
+      continue;
+    }
+
 
     // Bound the primary search window to a reasonable forward region so we don't
     // scan the entire timeline for large files. Use remainingAfterBase as the
     // natural upper bound, but cap search width to e.g. 4096 slots for speed.
-  // Increase search cap: allow scanning the full remaining timeline rather
-  // than truncating to a small window. This is slower but reduces forced
-  // overwrites by finding farther empty contiguous runs. For offline
-  // generation this is acceptable; we can tune later if performance suffers.
-  const searchCap = packetSlots.length;
-    const searchEnd = Math.min(packetSlots.length, placedIdxBase + Math.min(remainingAfterBase, searchCap));
+  // Limit scanning for contiguous runs to a reasonable forward window so
+  // we don't place events arbitrarily far into the tail of the file. Use
+  // placementCap as an absolute upper bound and also cap by a moderate
+  // search window to preserve locality.
+  const maxForwardScan = Math.min(packetSlots.length, Math.max(4096, Math.floor((opts.pps || 75) * 8))); // at least ~8s or 4096 slots
+  const searchEnd = Math.min(packetSlots.length, placedIdxBase + Math.min(remainingAfterBase, maxForwardScan, placementCap - placedIdxBase + 1));
 
   const contiguousStart = findEmptyRun(placedIdxBase, searchEnd, needed);
     // If not found forward, do NOT search backward into the reserved prelude.
@@ -255,13 +400,15 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
       if (failedPlacement) {
         // Try to find any contiguous run in the timeline (>= reservedStart) that fits the whole block
         // Ensure any global search starts strictly after the reserved prelude.
-        const globalStart = Math.max(reservedStart + 1, placedIdxBase + allocated);
+  // Only try global forward placement up to the placement cap.
+  const globalStart = Math.max(reservedStart + 1, placedIdxBase + allocated);
+  const globalEnd = placementCap;
         // First try to find a contiguous run after the event's natural base.
         // Do NOT fall back to searching from `reservedStart` because that can
         // allow allocation into the reserved prelude. Only allow forward
-        // global placement (>= globalStart).
-        const globalFind = findEmptyRun(globalStart, packetSlots.length, needed);
-        if (globalFind !== -1) {
+  // global placement (>= globalStart) but constrained to placementCap.
+  const globalFind = findEmptyRun(globalStart, Math.min(packetSlots.length, globalEnd + 1), needed);
+          if (globalFind !== -1) {
           if (_debugLogCount <= 10) console.log(`scheduler: failed local placement; placing ${needed} packets contiguously for block (${ev.blockX},${ev.blockY}) at global start ${globalFind}`)
           for (let i = 0; i < packets.length; i++) {
             const pos = globalFind + i;
@@ -269,19 +416,55 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
             setPacketSafely(pos, pkt);
             placedIndices.push(pos);
           }
-        } else {
-          // As a last resort, allow overwrites but only beyond reservedStart; log this as destructive
-          if (_debugLogCount <= 10) console.log(`scheduler: WARNING: no empty local or global contiguous window found for block (${ev.blockX},${ev.blockY}); allowing overwrites`)
+          } else {
+          // As a last resort, try one more non-destructive strategy: search
+          // backward from the event base for an earlier empty contiguous run
+          // (but strictly after reservedStart). This prefers shifting earlier
+          // into unused slots instead of overwriting the far tail, which
+          // often produces visible noise after the END banner. Only if this
+          // earlier search fails do we allow destructive overwrites within
+          // the placementCap.
+          const earlySearchStart = Math.max(reservedStart + 1, Math.floor(reservedStart + 1));
+          const earlySearchEnd = Math.max(earlySearchStart, placedIdxBase - 1);
+          const earlyFind = (earlySearchEnd > earlySearchStart) ? findEmptyRun(earlySearchStart, Math.min(packetSlots.length, earlySearchEnd + 1), needed) : -1;
+          if (earlyFind !== -1) {
+            if (_debugLogCount <= 10) console.log(`scheduler: failed local/global placement; using earlier contiguous window for block (${ev.blockX},${ev.blockY}) at start ${earlyFind}`)
             for (let i = 0; i < packets.length; i++) {
-            const pkt = packets[i];
-            const rel = Math.floor((i * allocated) / packets.length);
-            let pos = placedIdxBase + rel;
-            // Never allow placement at or before reservedStart
-            if (pos <= reservedStart) pos = reservedStart + 1;
-            if (pos >= packetSlots.length) pos = packetSlots.length - 1;
-            const [placedIdx, overwritten] = placePacketAt(pos, pkt, reservedStart, packetSlots.length - 1, /*allowOverwrite*/ true);
-            placedIndices.push(placedIdx);
-            if (_debugLogCount <= 10) console.log(`scheduler: forced-overwrite placement for block (${ev.blockX},${ev.blockY}) at index ${placedIdx}${overwritten ? ' (overwritten)' : ''}`);
+              const pos = earlyFind + i;
+              const pkt = packets[i];
+              setPacketSafely(pos, pkt);
+              placedIndices.push(pos);
+            }
+          } else {
+            // As a last resort, allow overwrites but only within a bounded
+            // forward distance from the event's base. This prevents pushing
+            // packets arbitrarily far into the tail; if even bounded
+            // overwrite fails, mark the event expired and drop it.
+            const overwriteCap = Math.min(placementCap, placedIdxBase + overwriteLimit);
+            if (_debugLogCount <= 10) console.log(`scheduler: WARNING: no empty local/global contiguous window found for block (${ev.blockX},${ev.blockY}); attempting bounded overwrites up to ${overwriteCap}`)
+            let anyOverwriteSuccess = false;
+            for (let i = 0; i < packets.length; i++) {
+              const pkt = packets[i];
+              const rel = Math.floor((i * allocated) / packets.length);
+              let pos = placedIdxBase + rel;
+              // Never allow placement at or before reservedStart
+              if (pos <= reservedStart) pos = reservedStart + 1;
+              // Cap position to overwriteCap
+              if (pos > overwriteCap) pos = overwriteCap;
+              if (pos >= packetSlots.length) pos = packetSlots.length - 1;
+              const [placedIdx, overwritten] = placePacketAt(pos, pkt, reservedStart + 1, overwriteCap, /*allowOverwrite*/ true);
+              if (placedIdx >= 0) anyOverwriteSuccess = true;
+              placedIndices.push(placedIdx);
+              if (_debugLogCount <= 10) console.log(`scheduler: forced-overwrite placement for block (${ev.blockX},${ev.blockY}) at index ${placedIdx}${overwritten ? ' (overwritten)' : ''}`);
+            }
+            if (!anyOverwriteSuccess) {
+              // No bounded overwrite succeeded — treat as expired and drop
+              if (_debugLogCount <= 10) console.log(`scheduler: DROP event (${ev.blockX},${ev.blockY}) — bounded overwrite failed up to ${overwriteCap}`)
+              ;(ev as any).__placedIndices = []
+              _expiredDroppedCount++
+              startPackOffsets.set(ev.startPack, (startPackOffsets.get(ev.startPack) || 0) + Math.max(1, packets.length));
+              continue;
+            }
           }
         }
       }
@@ -347,6 +530,7 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
       occupancyPercent: occupancy,
       binSize,
       bins,
+      expiredDroppedCount: _expiredDroppedCount,
     };
     const outPath = './tmp/scheduler_stats.json';
     try { fs.mkdirSync('./tmp', { recursive: true }); } catch (e) { /* ignore */ }

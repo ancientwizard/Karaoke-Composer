@@ -24,10 +24,15 @@ const parsed = JSON.parse(fs.readFileSync(parsedPath, 'utf8'))
 import { CDGTextRenderer } from '../karaoke/renderers/cdg/CDGFont'
 import { CDG_SCREEN } from '../karaoke/renderers/cdg/CDGPacket'
 
+// Treat numeric times as milliseconds by default. Accept --times-in-packs to
+// opt into pack units. This matches the main generator behavior.
+const timesInPacksFlag = argv.includes('--times-in-packs')
+const timesInMsFlag = argv.includes('--times-in-ms')
+if (timesInPacksFlag && timesInMsFlag) console.warn('Both --times-in-packs and --times-in-ms provided; defaulting to --times-in-ms')
 function timeToPacks(val: number | undefined, pps = 75) {
   if (val == null) return 0
-  if (val >= 1000) return Math.floor((val / 1000) * pps)
-  return Math.floor(val)
+  if (timesInPacksFlag) return Math.floor(val)
+  return Math.floor((val / 1000) * pps)
 }
 
 const pps = 75

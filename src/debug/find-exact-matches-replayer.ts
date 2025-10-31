@@ -28,10 +28,17 @@ const parsed = JSON.parse(fs.readFileSync(parsedPath, 'utf8'))
 const pps = 75
 const textRenderer = new CDGTextRenderer()
 const events: any[] = []
+// Time units: treat numeric values as milliseconds by default. Use
+// --times-in-packs if the caller passes pack indices directly. This avoids
+// the previous brittle heuristic that flipped at >=1000.
+const timesInPacksFlag = argv.includes('--times-in-packs')
+const timesInMsFlag = argv.includes('--times-in-ms')
+if (timesInPacksFlag && timesInMsFlag) console.warn('Both --times-in-packs and --times-in-ms provided; defaulting to --times-in-ms')
 function timeToPacks(val: number | undefined, pps = 75) {
   if (val == null) return 0
-  if (val >= 1000) return Math.floor((val / 1000) * pps)
-  return Math.floor(val)
+  if (timesInPacksFlag) return Math.floor(val)
+  // default: milliseconds -> packs
+  return Math.floor((val / 1000) * pps)
 }
 
 for (const clip of parsed.clips || []) {

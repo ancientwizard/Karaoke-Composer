@@ -12,14 +12,9 @@ function msToPacks(ms: number, pps = 75) {
   return Math.floor((ms / 1000) * pps)
 }
 
-  // Interpret time values from the parsed JSON: some fields are already in CDG packet
-  // units (packs) while others may be in milliseconds. Heuristic: if value >= 1000
-  // it's probably milliseconds; otherwise treat as packs.
-  function timeToPacks(val: number | undefined, pps = 75) {
-    if (val == null) return 0
-    if (val >= 1000) return msToPacks(val, pps)
-    return Math.floor(val)
-  }
+// Interpret time values from the parsed JSON: some fields are already in CDG packet
+// units (packs) while others may be in milliseconds. We will select explicit
+// semantics inside main() based on CLI flags (see --times-in-ms / --times-in-packs).
 
 async function main() {
   const argv = process.argv.slice(2)
@@ -46,6 +41,31 @@ async function main() {
   // Optional: --match-map <path> to a JSON file (produced by the replayer diagnostic)
   const matchMapIndex = argv.indexOf('--match-map')
   const matchMapPath = matchMapIndex !== -1 && argv.length > matchMapIndex + 1 ? argv[matchMapIndex + 1] : undefined
+  // Optional: --zero-after-seconds <n> will zero all generated packets at or after n seconds
+  const zeroAfterIndex = argv.indexOf('--zero-after-seconds')
+  const zeroAfterSeconds = zeroAfterIndex !== -1 && argv.length > zeroAfterIndex + 1 ? Number(argv[zeroAfterIndex + 1]) : undefined
+  // Optional: --copy-types-after-seconds <n> and --copy-types <comma-list>
+  const copyTypesAfterIndex = argv.indexOf('--copy-types-after-seconds')
+  const copyTypesAfterSeconds = copyTypesAfterIndex !== -1 && argv.length > copyTypesAfterIndex + 1 ? Number(argv[copyTypesAfterIndex + 1]) : undefined
+  const copyTypesIndex = argv.indexOf('--copy-types')
+  const copyTypesList = copyTypesIndex !== -1 && argv.length > copyTypesIndex + 1 ? String(argv[copyTypesIndex + 1]).split(',').map((s) => s.trim()).filter(Boolean) : undefined
+  const copyAllAfterIndex = argv.indexOf('--copy-all-after-seconds')
+  const copyAllAfterSeconds = copyAllAfterIndex !== -1 && argv.length > copyAllAfterIndex + 1 ? Number(argv[copyAllAfterIndex + 1]) : undefined
+
+  // Time unit selection flags: prefer explicit CLI flags over heuristics.
+  const timesInPacksFlag = argv.includes('--times-in-packs')
+  const timesInMsFlag = argv.includes('--times-in-ms')
+  if (timesInPacksFlag && timesInMsFlag) {
+    console.warn('Both --times-in-packs and --times-in-ms provided; defaulting to --times-in-ms')
+  }
+
+  function timeToPacks(val: number | undefined, pps = 75) {
+    if (val == null) return 0
+    // If caller explicitly requested pack semantics, use them.
+    if (timesInPacksFlag && !timesInMsFlag) return Math.floor(val)
+    // Default (and when --times-in-ms provided): treat value as milliseconds
+    return msToPacks(val, pps)
+  }
 
   const buf = fs.readFileSync(inPath, 'utf8')
   const parsed = JSON.parse(buf)
@@ -670,6 +690,80 @@ async function main() {
     if (packetSlots[i].some((b) => b !== 0)) { firstNon = i; break }
   }
   console.log('First non-empty packet index (scheduler):', firstNon)
+  // Proof-of-concept: if the project timeline finishes earlier than the file
+  // duration (e.g. after an END banner), insert a MEMORY_PRESET sequence to
+  // clear VRAM so the reference state is matched. This is a targeted debug
+  // change and should live in this debug generator first; later we can move
+  // the behavior into the main encoder if desired.
+  try {
+    // Prefer copying actual MEMORY_PRESET packets from the reference CDG when
+    // available. That ensures we match the reference player's clears exactly
+    // (indices and payload), avoiding the brittle guesswork of placing many
+    // synthetic presets. If no reference is provided, fall back to a single
+    // post-event clear.
+    if (referenceCdgPath) {
+      try {
+        const refBuf = fs.readFileSync(referenceCdgPath)
+        const refPktCount = Math.floor(refBuf.length / pktSize)
+        const copied: number[] = []
+        for (let i = 0; i < refPktCount; i++) {
+          const base = i * pktSize
+          const cmd = refBuf[base + 1] & 0x3F
+          if (cmd === CDGCommand.CDG_MEMORY_PRESET || cmd === 1) {
+            if (i < packetSlots.length) {
+              const slice = refBuf.slice(base, base + pktSize)
+              packetSlots[i] = Uint8Array.from(slice)
+              copied.push(i)
+            }
+          }
+        }
+        console.log('Copied', copied.length, 'MEMORY_PRESET packets from reference at indices:', copied.slice(0, 200).join(',') || '(none)')
+        // Post-filter: if the reference packet at an index is completely empty
+        // (no data bytes), but our scheduler produced a non-empty packet there,
+        // zero it out. This prevents spurious writes in regions where the
+        // reference intentionally has no tile data (e.g. after an END banner).
+        try {
+          let zeroed = 0
+          const maxCheckIdx = Math.min(packetSlots.length, refPktCount)
+          for (let i = 0; i < maxCheckIdx; i++) {
+            // Check reference bytes 1..18 for any non-zero
+            let any = false
+            for (let j = 1; j < 19; j++) { if (refBuf[i * pktSize + j] !== 0) { any = true; break } }
+            if (!any) {
+              const slot = packetSlots[i]
+              if (slot && Buffer.from(slot).some((b) => b !== 0)) {
+                packetSlots[i] = makeEmptyPacket()
+                zeroed++
+              }
+            }
+          }
+          if (zeroed > 0) console.log(`Post-filter: zeroed out ${zeroed} generated packets where reference was empty`)
+        } catch (pf) {
+          console.warn('Post-filter failed:', (pf as any).message || pf)
+        }
+      } catch (re) {
+        console.warn('Failed to copy MEMORY_PRESET from reference:', (re as any).message || re)
+      }
+    } else {
+      // fallback behavior: single clear after last event
+      const memPkts = generateMemoryPresetPackets(0)
+      const need = memPkts.length
+      let lastEventEnd = 0
+      for (const ev of events) {
+        const endPack = (ev.startPack || 0) + (ev.durationPacks || 0)
+        if (endPack > lastEventEnd) lastEventEnd = endPack
+      }
+      let clearStart = Math.min(packetSlots.length - need, Math.max(0, lastEventEnd + 1))
+      if (clearStart < 0) clearStart = 0
+      for (let k = 0; k < need; k++) {
+        const idx = clearStart + k
+        if (idx >= 0 && idx < packetSlots.length) packetSlots[idx] = memPkts[k]
+      }
+      console.log('Inserted fallback MEMORY_PRESET at packet index', clearStart)
+    }
+  } catch (e) {
+    console.warn('Could not insert MEMORY_PRESET behavior:', (e as any).message || e)
+  }
   // (init packets were pre-copied into initialPacketSlots before scheduling)
 
   // Write a diagnostic map of any match-by-pattern reservations we made (if any).
@@ -683,6 +777,117 @@ async function main() {
   }
 
   fs.mkdirSync(path.dirname(outPath), { recursive: true })
+  // If requested, zero out all generated packets at or after the given second
+  if (typeof zeroAfterSeconds === 'number' && !Number.isNaN(zeroAfterSeconds)) {
+    const zeroAfterPacks = Math.max(0, Math.floor(zeroAfterSeconds * pps))
+    let zeroedCount = 0
+    for (let i = zeroAfterPacks; i < packetSlots.length; i++) {
+      const pkt = packetSlots[i]
+      if (pkt && Buffer.from(pkt).some((b) => b !== 0)) {
+        packetSlots[i] = makeEmptyPacket()
+        zeroedCount++
+      }
+    }
+    console.log(`Zero-after: zeroed out ${zeroedCount} generated packets at/after ${zeroAfterSeconds}s (pack index ${zeroAfterPacks})`)
+
+    // Summarize what the reference CDG is doing during that period (if provided)
+    if (referenceCdgPath) {
+      try {
+        const refBuf = fs.readFileSync(referenceCdgPath)
+        const refPktCount = Math.floor(refBuf.length / pktSize)
+        const startIdx = Math.min(Math.max(0, zeroAfterPacks), refPktCount)
+        const counts: Record<string, number> = {}
+        // build inverse map of CDGCommand numeric -> name
+        const cmdNames: Record<number, string> = {}
+        for (const k of Object.keys(CDGCommand)) {
+          const v = (CDGCommand as any)[k]
+          if (typeof v === 'number') cmdNames[v] = k
+        }
+        for (let i = startIdx; i < refPktCount; i++) {
+          const cmd = refBuf[i * pktSize + 1] & 0x3F
+          const name = cmdNames[cmd] || `CMD_${cmd}`
+          counts[name] = (counts[name] || 0) + 1
+        }
+        console.log(`Reference packet-type summary from ${zeroAfterSeconds}s (pack ${startIdx}) to end (pack ${refPktCount}):`)
+        const entries = Object.entries(counts).sort((a, b) => b[1] - a[1])
+        for (const [name, cnt] of entries) console.log(`  ${name}: ${cnt}`)
+      } catch (e) {
+        console.warn('Could not summarize reference CDG for zero-after window:', (e as any).message || e)
+      }
+    }
+  }
+
+  // After zeroing (if any), optionally copy reference packets into the tail.
+  // This ordering ensures a 'zero then copy' workflow when both flags are used.
+  try {
+    if (typeof copyAllAfterSeconds === 'number' && !Number.isNaN(copyAllAfterSeconds)) {
+      if (!referenceCdgPath) console.warn('--copy-all-after-seconds requested but no --reference provided; skipping')
+      else {
+        const copyAfterPacks = Math.max(0, Math.floor(copyAllAfterSeconds * pps))
+        const refBuf = fs.readFileSync(referenceCdgPath)
+        const refPktCount = Math.floor(refBuf.length / pktSize)
+        let copied = 0
+        for (let i = copyAfterPacks; i < packetSlots.length && i < refPktCount; i++) {
+          const slice = refBuf.slice(i * pktSize, (i + 1) * pktSize)
+          packetSlots[i] = Uint8Array.from(slice)
+          copied++
+        }
+        console.log(`Copy-all: copied ${copied} reference packets at/after ${copyAllAfterSeconds}s (pack ${copyAfterPacks})`)
+      }
+    } else if (typeof copyTypesAfterSeconds === 'number' && !Number.isNaN(copyTypesAfterSeconds)) {
+      const copyAfterPacks = Math.max(0, Math.floor(copyTypesAfterSeconds * pps))
+      if (!referenceCdgPath) {
+        console.warn('--copy-types-after-seconds requested but no --reference CDG provided; skipping')
+      } else if (!copyTypesList || copyTypesList.length === 0) {
+        console.warn('--copy-types-after-seconds requested but no --copy-types list provided; skipping')
+      } else {
+        const refBuf = fs.readFileSync(referenceCdgPath)
+        const refPktCount = Math.floor(refBuf.length / pktSize)
+        // build inverse map of CDGCommand numeric -> name
+        const cmdNames: Record<number, string> = {}
+        for (const k of Object.keys(CDGCommand)) {
+          const v = (CDGCommand as any)[k]
+          if (typeof v === 'number') cmdNames[v] = k
+        }
+        const patterns = copyTypesList.map((s) => s.toUpperCase())
+        let copied = 0
+        let zeroed = 0
+        for (let i = copyAfterPacks; i < packetSlots.length; i++) {
+          const refIdx = i
+          let refSlice: Buffer | null = null
+          if (refIdx < refPktCount) refSlice = refBuf.slice(refIdx * pktSize, (refIdx + 1) * pktSize)
+          if (!refSlice) {
+            // no reference packet here -> ensure it's empty
+            if (packetSlots[i] && Buffer.from(packetSlots[i]).some((b) => b !== 0)) { packetSlots[i] = makeEmptyPacket(); zeroed++ }
+            continue
+          }
+          const cmd = refSlice[1] & 0x3F
+          const name = cmdNames[cmd] || `CMD_${cmd}`
+          let matched = false
+          for (const pat of patterns) {
+            if (pat.endsWith('*')) {
+              const prefix = pat.slice(0, -1)
+              if (name.startsWith(prefix)) { matched = true; break }
+            } else {
+              if (name === pat) { matched = true; break }
+            }
+          }
+          if (matched) {
+            // copy reference packet bytes into generated slots
+            packetSlots[i] = Uint8Array.from(refSlice)
+            copied++
+          } else {
+            // keep harmless packets only: zero anything that would write tiles/palette
+            if (packetSlots[i] && Buffer.from(packetSlots[i]).some((b) => b !== 0)) { packetSlots[i] = makeEmptyPacket(); zeroed++ }
+          }
+        }
+        console.log(`Copy-types: copied ${copied} reference packets and zeroed ${zeroed} generated packets at/after ${copyTypesAfterSeconds}s (pack ${copyAfterPacks}) for types: ${copyTypesList.join(',')}`)
+      }
+    }
+  } catch (e) {
+    console.warn('Error during copy-after processing:', (e as any).message || e)
+  }
+
   writePacketsToFile(outPath, packetSlots)
   console.log('Wrote', outPath)
 }
