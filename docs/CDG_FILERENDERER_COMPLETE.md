@@ -40,10 +40,13 @@ October 18, 2025
   - Multi-tile text support
 
 ### 3. CDG File Renderer (`src/karaoke/renderers/CDGFileRenderer.ts`)
-- **CDGFileRenderer class**: Main renderer implementation
+  - **CDGFileRenderer class**: Main renderer implementation
   - Extends `FileRenderer` base class
   - Converts PresentationCommands to CDG packets
-  - Proper timing (75 packets/second)
+  - Proper timing: note two related rates
+    - Physical CDG subcode spec: 75 packets/second (used for audio/CD alignment)
+    - Project file-generation baseline: 300 packets/second (default used by our generator for ms→packet mapping)
+    Use `--pps` to override the generator's baseline when needed.
   - Binary CDG file output
 
 - **Features**:
@@ -64,7 +67,8 @@ October 18, 2025
 ### CDG Format
 - **Screen Size**: 300x216 pixels (50x18 tiles)
 - **Tile Size**: 6x12 pixels
-- **Packet Rate**: 75 packets/second
+- **Packet Rate (physical spec)**: 75 packets/second
+- **Project file baseline**: 300 packets/second (used by our generator for ms→packet conversions by default)
 - **Packet Size**: 24 bytes
 - **Color Depth**: 16 colors (12-bit RGB, 4 bits per channel)
 
@@ -88,8 +92,11 @@ October 18, 2025
 ### Validation
 ✅ Correct CDG packet structure (verified with `od` command)
 ✅ Proper command codes (palette load, clear, border, etc.)
-✅ Correct timing (75 packets/sec = 13.33ms per packet)
-✅ File size matches expected duration
+✅ Timing correctness noted. Reminder:
+  - CDG physical timing: 75 packets/sec → ~13.33ms per packet
+  - Project generator baseline (ms→packet): 300 packets/sec → ~3.33ms per packet
+  Ensure consumers use the intended mapping; override generator `--pps` when aligning to non-default players.
+✅ File size matches expected duration (with chosen pps mapping)
 
 ## Architecture
 
@@ -155,7 +162,11 @@ Output:
 ✅ **Packet Generation**: All CDG packet types implemented
 ✅ **Palette Management**: 16-color palette with proper RGB conversion
 ✅ **Text Rendering**: Character to tile conversion
-✅ **Timing**: Proper 75 packets/second timing
+✅ **Timing**: Proper handling of CDG timing. Notes:
+  - Physical CDG subcode spec: 75 packets/second (~13.33ms/packet).
+  - Project file-generation baseline: 300 packets/second (~3.33ms/packet) is used
+    by default for ms→packet mapping in the generator; this is configurable
+    via the generator `--pps` flag.
 ✅ **File Output**: Binary CDG file generation
 ✅ **Multi-line Support**: Text wrapping across multiple lines
 ✅ **Color Changes**: Syllable-level highlighting

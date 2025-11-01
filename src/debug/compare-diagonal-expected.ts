@@ -3,7 +3,7 @@
 import fs from 'fs'
 import { CDG_PACKET_SIZE } from '@/cdg/constants'
 
-function analyze(cdgPath: string, durationSeconds = 60, pps = 75) {
+function analyze(cdgPath: string, durationSeconds = 60, pps = 300) {
   const buf = fs.readFileSync(cdgPath)
   const packets = Math.floor(buf.length / CDG_PACKET_SIZE)
   const totalPacks = Math.ceil(durationSeconds * pps)

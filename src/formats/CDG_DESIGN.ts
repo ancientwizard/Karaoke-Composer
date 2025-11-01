@@ -7,7 +7,7 @@
  * and graphics alongside audio. It was created in the 1980s for CD+G discs.
  *
  * Technical Specifications:
- * - 24-byte packets (subchannel data, 75 packets per second)
+ * - 24-byte packets (subchannel data, 300 packets per second)
  * - 300x216 pixel display (12x18 tiles of 6x12 pixels each)
  * - 16-color palette (limited but sufficient for text)
  * - Simple command set: clear screen, draw tiles, set palette, etc.
@@ -124,7 +124,7 @@
  *    - Our simpler design needs fewer colors (advantage!)
  *
  * 3. Timing Precision
- *    - 75 packets/second = ~13.33ms per packet
+ *    - 300 packets/second = ~3.33ms per packet
  *    - Must convert our millisecond timing to packet indices
  *    - Small jitter is acceptable (humans won't notice <50ms)
  *    - Our syllable data provides precise timing information
@@ -197,7 +197,7 @@
  *   - Metadata (title, artist/author, captions)
  *
  * Process:
- *   1. Calculate packet timing (ms → packet index at 75 packets/sec)
+ *   1. Calculate packet timing (ms → packet index at 300 packets/sec)
  *   2. Layout text on screen (positioning, multi-position support)
  *   3. Render text to tiles (character → 6x12 pixel tiles)
  *   4. Generate intro/outro screens
@@ -208,7 +208,7 @@
  * Output: Binary CDG file
  *   - Stream of 24-byte packets
  *   - Must be synchronized with audio
- *   - Plays at exactly 75 packets/second
+ *   - Plays at the project's file baseline (300 packets/second)
  *
  * ARCHITECTURE: SEPARATION OF CONCERNS
  * =====================================
@@ -240,7 +240,7 @@
  *    - PowerShellRenderer class - Converts presentation to PowerShell/Windows console
  *    - HTMLRenderer class - (Future) Converts to web-based preview
  *    - Each encoder handles its format's specifics:
- *      * CDG: Tile-based graphics, 16-color palette, 75 packets/sec
+ *      * CDG: Tile-based graphics, 16-color palette, 300 packets/sec
  *      * Terminal: ANSI escape codes, UTF-8 text, cursor positioning
  *      * PowerShell: Console API, colored text
  *

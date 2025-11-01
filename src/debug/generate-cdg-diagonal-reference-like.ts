@@ -3,6 +3,7 @@
 import path from 'path'
 import fs from 'fs'
 import { scheduleFontEvents } from '../cdg/scheduler'
+import { CDG_PPS } from '../cdg/constants'
 import { writePacketsToFile, generatePaletteLoadPackets, generateBorderPacket, generateMemoryPresetPackets, makeEmptyPacket } from '../cdg/encoder'
 
 async function run() {
@@ -10,7 +11,7 @@ async function run() {
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true })
 
   const durationSeconds = 60
-  const pps = 75
+  const pps = CDG_PPS
   const totalPacks = Math.ceil(durationSeconds * pps)
 
   const cols = 50

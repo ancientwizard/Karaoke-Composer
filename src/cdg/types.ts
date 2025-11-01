@@ -5,7 +5,7 @@ export type Time = number // seconds
 
 export interface RenderOptions {
   durationSeconds?: number // total render duration (seconds)
-  packetsPerSecond?: number // default 75
+  packetsPerSecond?: number // default 300
 }
 
 export interface RenderResult {

@@ -3,6 +3,7 @@
 import path from 'path'
 import fs from 'fs'
 import { scheduleFontEvents } from '../cdg/scheduler'
+import { CDG_PPS } from '../cdg/constants'
 import { writePacketsToFile, generatePaletteLoadPackets, generateBorderPacket, generateMemoryPresetPackets } from '../cdg/encoder'
 
 // Generate longer duration CDGs (20s and 30s) to observe player behavior over time.
@@ -15,7 +16,7 @@ async function run() {
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true })
 
   const durations = [20, 30]
-  const pps = 75
+  const pps = CDG_PPS
 
   for (const dur of durations) {
     // common tile region
@@ -89,7 +90,7 @@ async function run() {
       for (let i = 0; i < initPkts.length && i < packetSlots.length; i++) packetSlots[i] = initPkts[i]
 
       // repeat tile packets every 1s and emit palette at each second
-      const INTERVAL = 75
+  const INTERVAL = pps
       for (let idx = 0; idx < packetSlots.length; idx++) {
         const pkt = packetSlots[idx]
         if (!pkt || pkt.every((b) => b === 0)) continue

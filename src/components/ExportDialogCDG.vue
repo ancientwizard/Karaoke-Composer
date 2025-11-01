@@ -69,7 +69,7 @@
         <p class="mb-1"><strong>Format:</strong> CD+G Binary</p>
         <p class="mb-1"><strong>Estimated size:</strong> {{ estimatedCDGSize }} KB</p>
         <p class="mb-1"><strong>Resolution:</strong> 288×192 pixels (6-bit color)</p>
-        <p class="mb-0"><strong>Packet rate:</strong> 75 packets/second</p>
+  <p class="mb-0"><strong>Packet rate:</strong> 300 packets/second (project baseline)</p>
       </div>
     </div>
 
@@ -126,6 +126,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
+import { CDG_PPS } from '@/cdg/constants'
 import type { KaraokeProject        } from '@/types/karaoke'
 import { getProjectStats            } from '@/services/projectExportService'
 import { KaraokePresentationEngine  } from '@/karaoke/presentation/KaraokePresentationEngine'
@@ -223,7 +224,7 @@ const stats = computed(() => getProjectStats(props.project))
 
 const estimatedCDGSize = computed(() => {
   const duration = stats.value.duration
-  const packets = Math.ceil(duration * 75)
+  const packets = Math.ceil(duration * CDG_PPS)
   const bytes = packets * 24
   return Math.ceil(bytes / 1024)
 })
@@ -261,8 +262,8 @@ async function exportCDG() {
     progress.value = {
       commandsProcessed: 0,
       totalCommands: script.commands.length,
-      packets: 0,
-      totalPackets: Math.max(1, Math.floor((script.durationMs / 1000) * 75))
+  packets: 0,
+  totalPackets: Math.max(1, Math.floor((script.durationMs / 1000) * CDG_PPS))
     }
     progressPercent.value = 0
 
@@ -279,7 +280,7 @@ async function exportCDG() {
         // totalPackets when it agrees with our duration-based estimate; if it's an
         // outlier (very different), fall back to the duration estimate so the UI
         // isn't held back by anomalous totals.
-        const estTotal = Math.max(1, Math.floor((script.durationMs / 1000) * 75))
+  const estTotal = Math.max(1, Math.floor((script.durationMs / 1000) * CDG_PPS))
         let denom = estTotal
         if (p.totalPackets && p.totalPackets > 0) {
           const diff = Math.abs(p.totalPackets - estTotal) / estTotal

@@ -3,9 +3,10 @@
 import path from 'path'
 import fs from 'fs'
 import { scheduleFontEvents } from '../cdg/scheduler'
+import { CDG_PPS } from '../cdg/constants'
 import { writePacketsToFile, generatePaletteLoadPackets, generateBorderPacket, generateMemoryPresetPackets } from '../cdg/encoder'
 
-// Generate a CDG where tile packets are repeated every second (75 packets) to ensure
+// Generate a CDG where tile packets are repeated every second (pps packets) to ensure
 // players that sample intermittently continue to show tiles over the full duration.
 
 async function run() {
@@ -13,7 +14,7 @@ async function run() {
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true })
 
   const durationSeconds = 4
-  const pps = 75
+  const pps = CDG_PPS
 
   // Reuse the same rectangle as the text demo but compact: cols 10..22, rows 5..11
   const tileCoords: { bx: number; by: number; pixels: number[][] }[] = []
@@ -54,8 +55,8 @@ async function run() {
   // place initial packets at start
   for (let i = 0; i < initPkts.length && i < packetSlots.length; i++) packetSlots[i] = initPkts[i]
 
-  // Identify tile packets (cmd 6 or 38) and repeat them every 75 packets
-  const INTERVAL = 75
+  // Identify tile packets (cmd 6 or 38) and repeat them every pps packets
+  const INTERVAL = pps
   const tileCmds = new Set([6, 38])
   for (let idx = 0; idx < packetSlots.length; idx++) {
     const pkt = packetSlots[idx]

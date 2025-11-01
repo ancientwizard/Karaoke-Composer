@@ -3,7 +3,7 @@
  *
  * CDG (Compact Disc + Graphics) Format Specifications:
  * - 24 bytes per packet
- * - 75 packets per second (synchronized with audio CD)
+ * - 300 packets per second (used as file playback baseline in this project)
  * - Packet structure: Command (1 byte) + Instruction (1 byte) + Data (16 bytes) + Parity (4 bytes)
  */
 
@@ -36,7 +36,7 @@ export const CDG_SCREEN = {
   BORDER_HEIGHT: 12,   // Border tiles on top/bottom
   VISIBLE_COLS: 48,    // Visible columns (excluding borders)
   VISIBLE_ROWS: 16,    // Visible rows (excluding borders)
-  PACKETS_PER_SECOND: 75 // CDG timing: 75 packets/second
+  PACKETS_PER_SECOND: 300 // CDG timing baseline for file playback in this project
 } as const
 
 /**

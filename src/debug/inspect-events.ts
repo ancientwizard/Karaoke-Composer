@@ -6,14 +6,14 @@ import { CDGTextRenderer } from '../karaoke/renderers/cdg/CDGFont'
 import { CDGPalette } from '../karaoke/renderers/cdg/CDGPacket'
 import { CDG_SCREEN } from '../karaoke/renderers/cdg/CDGPacket'
 
-function msToPacks(ms: number, pps = 75) {
+function msToPacks(ms: number, pps = 300) {
   return Math.floor((ms / 1000) * pps)
 }
 
 function loadAndBuildEvents(inPath: string) {
   const buf = fs.readFileSync(inPath, 'utf8')
   const parsed = JSON.parse(buf)
-  const pps = 75
+  const pps = 300
   const textRenderer = new CDGTextRenderer()
   const palette = new CDGPalette()
   const paletteColors = palette.getColors()

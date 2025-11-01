@@ -14,7 +14,7 @@ async function run() {
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true })
 
   const durationSeconds = 4
-  const pps = 75
+  const pps = CDG_PPS
 
   // Build tile blocks: each event writes a single 6x12 block of a uniform color or simple stripe
   const tileCoords: { bx: number; by: number; pixels: number[][] }[] = []

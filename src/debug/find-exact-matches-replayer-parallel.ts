@@ -26,11 +26,12 @@ if (!fs.existsSync(parsedPath)) { console.error('Parsed JSON not found:', parsed
 if (!fs.existsSync(referencePath)) { console.error('Reference CDG not found:', referencePath); process.exit(2) }
 
 const parsed = JSON.parse(fs.readFileSync(parsedPath, 'utf8'));
-const PPS = 75;
+import { CDG_PPS } from '../cdg/constants';
+const PPS = CDG_PPS;
 // Recompute events similarly to the TS script so we can split by event index or by packet-range
 // Default to treating numeric times as milliseconds (consistent with the
 // main generator). If callers need pack units they should convert beforehand.
-function timeToPacks(val, pps = 75) {
+function timeToPacks(val, pps = CDG_PPS) {
   if (val == null) return 0;
   return Math.floor((val / 1000) * pps);
 }

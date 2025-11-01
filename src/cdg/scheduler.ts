@@ -14,15 +14,31 @@ export interface FontEvent {
 export interface ScheduleOptions {
   durationSeconds: number;
   pps?: number;
+  // How many seconds forward we allow destructive overwrites when forced.
+  overwriteLimitSeconds?: number;
+  // How many seconds of slack to allow beyond the max intended placement
+  // before refusing placements into the tail.
+  placementSlackSeconds?: number;
+  // Diagnostics and tracing options. When present and enabled the scheduler
+  // will write per-event placement and stats files to the provided outDir.
+  diagnostics?: {
+    enabled?: boolean;
+    outDir?: string; // default: './tmp'
+    writeEventPlacements?: boolean;
+    writeStats?: boolean;
+    // Optional targeted trace event to enable verbose tracing for a specific event
+    traceEvent?: { blockX: number; blockY: number; startPack: number } | null;
+  };
 }
 
 // Minimal scheduler: allocate packetSlots = duration * pps and place packets
 // For each FontEvent, call an encoder-like writer and place returned packets spread across duration.
 import { writeFontBlock, generateMemoryPresetPackets, generatePaletteLoadPackets, generateBorderPacket } from './encoder';
+import { CDG_PPS } from './constants';
 import * as fs from 'fs';
 
 export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, reservedStart = 0, initialPacketSlots?: CDGPacket[]) {
-  const pps = opts.pps || 75;
+  const pps = (opts && typeof opts.pps === 'number') ? opts.pps : CDG_PPS;
   const totalPacks = Math.max(1, Math.ceil((opts.durationSeconds || 1) * pps));
   // If caller provided an initial packetSlots array (e.g. copied from a reference prelude),
   // use it as the working slots (clone safety: assume caller won't reuse the same array afterwards).
@@ -40,16 +56,24 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
   // large for debugging). We allow a generous slack to accommodate
   // natural placement spreads; increase if many forced-overwrites occur.
   const maxIntendedPlacement = events.reduce((m, ev) => Math.max(m, (reservedStart || 0) + (ev.startPack || 0) + (ev.durationPacks || 0)), 0);
-  // Increase slack to 10 seconds (was 2s) to give the scheduler more headroom
-  // before it must start doing destructive overwrites in the file tail.
-  const placementSlack = (opts.pps || 75) * 10; // 10 seconds slack
+  // Increase slack to a configurable default (10 seconds) to give the scheduler
+  // more headroom before it must start doing destructive overwrites in the file tail.
+  const placementSlackSeconds = (opts as any).placementSlackSeconds ?? 10;
+  const placementSlack = pps * (placementSlackSeconds || 0);
   const placementCap = Math.min(packetSlots.length - 1, Math.max(0, maxIntendedPlacement + placementSlack));
 
   // Overwrite safety: don't allow destructive overwrites arbitrarily far
   // forward. When we fall back to forced-overwrite we will cap how far
-  // forward we may push events. This can be tuned via options later.
-  const overwriteLimitSeconds = (opts as any).overwriteLimitSeconds ?? 2; // default 2s
+  // forward we may push events. This is configurable via ScheduleOptions.
+  const overwriteLimitSeconds = (opts as any).overwriteLimitSeconds ?? 5; // default 5s (chosen baseline)
   const overwriteLimit = Math.max(1, Math.floor(overwriteLimitSeconds * pps));
+
+  const diagnostics = (opts as any).diagnostics || {};
+  const diagEnabled = !!diagnostics.enabled;
+  const diagOutDir = diagnostics.outDir || './tmp';
+  const diagWriteEventPlacements = diagnostics.writeEventPlacements !== false; // default true
+  const diagWriteStats = diagnostics.writeStats !== false; // default true
+  const diagTraceEvent = diagnostics.traceEvent || null;
 
   // Small helper to set a packet with a safety-assertion that we don't write
   // into the reserved prelude. Declared at outer scope so all placement
@@ -64,7 +88,7 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
     }
     if (i > placementCap) {
       // Defensive: never write beyond the conservative placement cap.
-      console.warn(`Dropping write at index=${i} beyond placementCap=${placementCap}`)
+      if (diagEnabled) console.warn(`Dropping write at index=${i} beyond placementCap=${placementCap}`)
       return false
     }
     packetSlots[i] = p
@@ -216,38 +240,41 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
   const startPackOffsets = new Map<number, number>();
   const _handledEvents = new Set<FontEvent>();
 
-  // A small mechanism to enable targeted tracing for a specific problematic event.
-  // Change these constants to match the event you want to trace. Keep default
-  // values aligned with the current investigation (blockX=94, blockY=2, startPack=792).
-  const TRACE_BLOCK_X = 94;
-  const TRACE_BLOCK_Y = 2;
-  const TRACE_START_PACK = 792;
+  // Tracing: optionally enable a targeted event trace via ScheduleOptions.diagnostics.traceEvent
   let currentDebugEvent: { blockX: number; blockY: number; startPack: number } | null = null;
+  if (diagTraceEvent && typeof diagTraceEvent === 'object') {
+    currentDebugEvent = {
+      blockX: diagTraceEvent.blockX,
+      blockY: diagTraceEvent.blockY,
+      startPack: diagTraceEvent.startPack,
+    };
+  }
 
   for (const ev of events) {
     if (_handledEvents.has(ev)) continue;
-    if (_debugEventTrace < 20) {
+    if (_debugEventTrace < 20 && diagEnabled) {
       console.log('schedule event debug:', ev.blockX, ev.blockY, 'startPack=', ev.startPack, 'durationPacks=', ev.durationPacks, 'reservedStart=', reservedStart)
       _debugEventTrace++
     }
     // set debug flag when this is the interesting event
-    if (ev.blockX === TRACE_BLOCK_X && ev.blockY === TRACE_BLOCK_Y && ev.startPack === TRACE_START_PACK) {
+    // If diagnostics.traceEvent wasn't set globally, allow per-event enabling
+    // by checking an optional __trace flag on the event (debug harness may set this).
+    if (!currentDebugEvent && (ev as any).__trace) {
+      const t = (ev as any).__trace;
       currentDebugEvent = {
-        blockX: ev.blockX,
-        blockY: ev.blockY,
-        startPack: ev.startPack,
+        blockX: t.blockX,
+        blockY: t.blockY,
+        startPack: t.startPack,
       };
-      console.log(`[TRACE] Starting detailed trace for event (${ev.blockX},${ev.blockY}) startPack=${ev.startPack}`);
-    } else {
-      currentDebugEvent = null;
+      if (diagEnabled) console.log(`[TRACE] Starting detailed trace for event (${currentDebugEvent.blockX},${currentDebugEvent.blockY}) startPack=${currentDebugEvent.startPack}`);
     }
     // Write the fontblock using existing encoder logic; encoder updates VRAM directly.
   // If a probe packet array was computed earlier, reuse it. Otherwise
   // generate packets now (this will update VRAM as before).
   const probe = (ev as any).__probePackets as Uint8Array[] | undefined;
-  let packets: Uint8Array[] = probe && probe.length ? probe : writeFontBlock(vram, ev.blockX, ev.blockY, ev.pixels, 0, comp as any);
+  const packets: Uint8Array[] = probe && probe.length ? probe : writeFontBlock(vram, ev.blockX, ev.blockY, ev.pixels, 0, comp as any);
     if (packets.length === 0) continue;
-    if (_debugLogCount < 10) {
+    if (_debugLogCount < 10 && diagEnabled) {
       console.log('scheduler: event', ev.blockX, ev.blockY, 'startPack', ev.startPack, 'produced', packets.length)
       _debugLogCount++
     }
@@ -282,7 +309,7 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
       }
       // Attempt to find a contiguous run for the whole group starting near placedIdxBase
       const groupPlacedIdxBase = reservedStart + ev.startPack + (startPackOffsets.get(ev.startPack) || 0);
-      const groupSearchEnd = Math.min(packetSlots.length, groupPlacedIdxBase + Math.min(Math.max(4096, Math.floor((opts.pps || 75) * 8)), placementCap - groupPlacedIdxBase + 1));
+        const groupSearchEnd = Math.min(packetSlots.length, groupPlacedIdxBase + Math.min(Math.max(4096, Math.floor(pps * 8)), placementCap - groupPlacedIdxBase + 1));
       const groupFind = findEmptyRun(groupPlacedIdxBase, groupSearchEnd, totalNeeded);
       if (groupFind !== -1) {
         // Place each event sequentially within the found region
@@ -318,7 +345,7 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
     // it as expired and drop it early to avoid pointless tail writes.
     const eventExpiryIdx = (reservedStart || 0) + (ev.startPack || 0) + (ev.durationPacks || 0) - 1;
     if (placedIdxBase > eventExpiryIdx) {
-      if (_debugLogCount <= 10) console.log(`scheduler: EXPIRE event (${ev.blockX},${ev.blockY}) startPack=${ev.startPack} placedIdxBase=${placedIdxBase} > expiryIdx=${eventExpiryIdx}`)
+      if (_debugLogCount <= 10 && diagEnabled) console.log(`scheduler: EXPIRE event (${ev.blockX},${ev.blockY}) startPack=${ev.startPack} placedIdxBase=${placedIdxBase} > expiryIdx=${eventExpiryIdx}`)
       ;(ev as any).__placedIndices = []
       _expiredDroppedCount++
       // Advance the per-startPack offset to avoid repeatedly attempting the same event
@@ -327,7 +354,7 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
     }
 
     if (placedIdxBase > placementCap) {
-      if (_debugLogCount <= 10) console.log(`scheduler: SKIP event (${ev.blockX},${ev.blockY}) startPack=${ev.startPack} placedIdxBase=${placedIdxBase} > placementCap=${placementCap}`)
+      if (_debugLogCount <= 10 && diagEnabled) console.log(`scheduler: SKIP event (${ev.blockX},${ev.blockY}) startPack=${ev.startPack} placedIdxBase=${placedIdxBase} > placementCap=${placementCap}`)
       ;(ev as any).__placedIndices = []
       // Advance the per-startPack offset to avoid repeatedly attempting the same event
       startPackOffsets.set(ev.startPack, (startPackOffsets.get(ev.startPack) || 0) + Math.max(1, packets.length));
@@ -342,7 +369,7 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
   // we don't place events arbitrarily far into the tail of the file. Use
   // placementCap as an absolute upper bound and also cap by a moderate
   // search window to preserve locality.
-  const maxForwardScan = Math.min(packetSlots.length, Math.max(4096, Math.floor((opts.pps || 75) * 8))); // at least ~8s or 4096 slots
+  const maxForwardScan = Math.min(packetSlots.length, Math.max(4096, Math.floor(pps * 8))); // at least ~8s or 4096 slots
   const searchEnd = Math.min(packetSlots.length, placedIdxBase + Math.min(remainingAfterBase, maxForwardScan, placementCap - placedIdxBase + 1));
 
   const contiguousStart = findEmptyRun(placedIdxBase, searchEnd, needed);
@@ -488,21 +515,24 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
   try {
     // Dump per-event placement info for deeper diagnostics (event -> placed indices)
     try {
-      const perEvent: any[] = [];
-      for (const ev of events) {
-        perEvent.push({
-          blockX: ev.blockX,
-          blockY: ev.blockY,
-          startPack: ev.startPack,
-          durationPacks: ev.durationPacks,
-          placed: (ev as any).__placedIndices || [],
-        });
+      if (diagEnabled && diagWriteEventPlacements) {
+        const perEvent: any[] = [];
+        for (const ev of events) {
+          perEvent.push({
+            blockX: ev.blockX,
+            blockY: ev.blockY,
+            startPack: ev.startPack,
+            durationPacks: ev.durationPacks,
+            placed: (ev as any).__placedIndices || [],
+          });
+        }
+        try { fs.mkdirSync(diagOutDir, { recursive: true }); } catch (e) { /* ignore */ }
+        const outPath = `${diagOutDir.replace(/\/+$/, '')}/scheduler_event_placements.json`;
+        fs.writeFileSync(outPath, JSON.stringify({ events: perEvent }, null, 2));
+        console.log(`scheduler: wrote per-event placements to ${outPath}`);
       }
-      try { fs.mkdirSync('./tmp', { recursive: true }); } catch (e) { /* ignore */ }
-      fs.writeFileSync('./tmp/scheduler_event_placements.json', JSON.stringify({ events: perEvent }, null, 2));
-      console.log('scheduler: wrote per-event placements to ./tmp/scheduler_event_placements.json');
     } catch (e) {
-      console.warn('scheduler: failed to write per-event placements', e);
+      if (diagEnabled) console.warn('scheduler: failed to write per-event placements', e);
     }
     const nonEmptyIndices: number[] = [];
     for (let i = 0; i < packetSlots.length; i++) {
@@ -514,7 +544,7 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
     const totalNonEmpty = nonEmptyIndices.length;
     const occupancy = Math.round((totalNonEmpty / packetSlots.length) * 10000) / 100; // percent with 2 decimals
 
-    const binSize = 75; // 1-second bins at 75 pps
+  const binSize = pps; // 1-second bins at pps
     const binCount = Math.max(1, Math.ceil(packetSlots.length / binSize));
     const bins: number[] = new Array(binCount).fill(0);
     for (const idx of nonEmptyIndices) {
@@ -532,10 +562,12 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
       bins,
       expiredDroppedCount: _expiredDroppedCount,
     };
-    const outPath = './tmp/scheduler_stats.json';
-    try { fs.mkdirSync('./tmp', { recursive: true }); } catch (e) { /* ignore */ }
-    fs.writeFileSync(outPath, JSON.stringify(stats, null, 2));
-    console.log(`scheduler: wrote stats to ${outPath} — non-empty ${totalNonEmpty}/${totalPacks} (${occupancy}%) first=${firstNonEmpty} last=${lastNonEmpty}`);
+    if (diagEnabled && diagWriteStats) {
+      const outPath = `${diagOutDir.replace(/\/+$/, '')}/scheduler_stats.json`;
+      try { fs.mkdirSync(diagOutDir, { recursive: true }); } catch (e) { /* ignore */ }
+      fs.writeFileSync(outPath, JSON.stringify(stats, null, 2));
+      console.log(`scheduler: wrote stats to ${outPath} — non-empty ${totalNonEmpty}/${totalPacks} (${occupancy}%) first=${firstNonEmpty} last=${lastNonEmpty}`);
+    }
   } catch (e) {
     console.warn('scheduler: failed to write stats', e);
   }
@@ -565,7 +597,7 @@ export function scheduleAndWriteDemo(outPath: string, durationSeconds = 4) {
       blockY: 4,
       pixels: demoPixels,
       startPack: 0,
-      durationPacks: Math.ceil(durationSeconds * 75),
+      durationPacks: Math.ceil(durationSeconds * CDG_PPS),
     },
   ];
 
@@ -578,7 +610,7 @@ export function scheduleAndWriteDemo(outPath: string, durationSeconds = 4) {
 
   const { packetSlots } = scheduleFontEvents(events, {
     durationSeconds,
-    pps: 75,
+    pps: CDG_PPS,
   }, initPkts.length);
 
   // Place initial packets into the reserved start slots

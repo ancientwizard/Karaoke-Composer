@@ -56,7 +56,8 @@ const { metadata, lines } = LRCParser.parse(lrcContent)
 
 **What is CDG?**
 - Binary format for karaoke machines
-- 24-byte packets at 75 packets/second
+- 24-byte packets per subcode packet. Note: the CDG physical spec operates at 75 packets/second (aligned to audio CD frames),
+  but this project uses a file-generation baseline of 300 packets/second for ms→packet mapping unless overridden. See `CDG_PPS`.
 - 300x216 pixel display (tile-based)
 - 16-color palette
 - Simple command set

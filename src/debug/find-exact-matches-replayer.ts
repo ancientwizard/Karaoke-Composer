@@ -5,6 +5,7 @@ import path from 'path'
 import { writeFontBlock, VRAM } from '../cdg/encoder'
 import ReferenceReplayer from '../cdg/referenceReplayer'
 import { CDG_SCREEN } from '../karaoke/renderers/cdg/CDGPacket'
+import { CDG_PPS } from '../cdg/constants'
 import { CDGTextRenderer } from '../karaoke/renderers/cdg/CDGFont'
 
 function usage() {
@@ -25,7 +26,7 @@ if (!fs.existsSync(parsedPath)) { console.error('Parsed JSON not found:', parsed
 if (!fs.existsSync(referencePath)) { console.error('Reference CDG not found:', referencePath); process.exit(2) }
 
 const parsed = JSON.parse(fs.readFileSync(parsedPath, 'utf8'))
-const pps = 75
+const pps = CDG_PPS
 const textRenderer = new CDGTextRenderer()
 const events: any[] = []
 // Time units: treat numeric values as milliseconds by default. Use
@@ -34,7 +35,7 @@ const events: any[] = []
 const timesInPacksFlag = argv.includes('--times-in-packs')
 const timesInMsFlag = argv.includes('--times-in-ms')
 if (timesInPacksFlag && timesInMsFlag) console.warn('Both --times-in-packs and --times-in-ms provided; defaulting to --times-in-ms')
-function timeToPacks(val: number | undefined, pps = 75) {
+function timeToPacks(val: number | undefined, pps = CDG_PPS) {
   if (val == null) return 0
   if (timesInPacksFlag) return Math.floor(val)
   // default: milliseconds -> packs

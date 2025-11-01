@@ -23,19 +23,20 @@ const parsed = JSON.parse(fs.readFileSync(parsedPath, 'utf8'))
 // Reconstruct events similar to generate-cdg-from-json.ts (TextClip/BMPClip handling simplified)
 import { CDGTextRenderer } from '../karaoke/renderers/cdg/CDGFont'
 import { CDG_SCREEN } from '../karaoke/renderers/cdg/CDGPacket'
+import { CDG_PPS } from '../cdg/constants'
 
 // Treat numeric times as milliseconds by default. Accept --times-in-packs to
 // opt into pack units. This matches the main generator behavior.
 const timesInPacksFlag = argv.includes('--times-in-packs')
 const timesInMsFlag = argv.includes('--times-in-ms')
 if (timesInPacksFlag && timesInMsFlag) console.warn('Both --times-in-packs and --times-in-ms provided; defaulting to --times-in-ms')
-function timeToPacks(val: number | undefined, pps = 75) {
+function timeToPacks(val: number | undefined, pps = CDG_PPS) {
   if (val == null) return 0
   if (timesInPacksFlag) return Math.floor(val)
   return Math.floor((val / 1000) * pps)
 }
 
-const pps = 75
+const pps = CDG_PPS
 const textRenderer = new CDGTextRenderer()
 const events: any[] = []
 for (const clip of parsed.clips || []) {

@@ -3,6 +3,7 @@
 import path from 'path'
 import fs from 'fs'
 import { scheduleFontEvents } from '../cdg/scheduler'
+import { CDG_PPS } from '../cdg/constants'
 import { writePacketsToFile, generatePaletteLoadPackets, generateBorderPacket, generateMemoryPresetPackets } from '../cdg/encoder'
 import { CDGFont } from '../karaoke/renderers/cdg/CDGFont'
 
@@ -15,7 +16,7 @@ async function run() {
 
   const word = process.argv[2] || 'WORKS'
   const durationSeconds = 30
-  const pps = 75
+  const pps = CDG_PPS
 
   const font = new CDGFont()
 
@@ -99,7 +100,7 @@ async function run() {
   for (let i = 0; i < initPkts.length && i < packetSlots.length; i++) packetSlots[i] = initPkts[i]
 
   // Repeat tiles every second
-  const INTERVAL = 75
+  const INTERVAL = pps
   for (let idx = 0; idx < packetSlots.length; idx++) {
     const pkt = packetSlots[idx]
     if (!pkt || pkt.every((b) => b === 0)) continue

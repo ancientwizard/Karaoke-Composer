@@ -6,12 +6,13 @@ import { scheduleFontEvents, FontEvent } from '../cdg/scheduler'
 import { makeEmptyPacket, writePacketsToFile, generatePaletteLoadPackets, generateBorderPacket, generateMemoryPresetPackets, demoBlockPixels } from '../cdg/encoder'
 
 // Generate several CDG variants to test player heuristics (memory preset 0..7 and an early-palette variant)
+import { CDG_PPS } from '../cdg/constants'
 async function run() {
   const outDir = path.join(process.cwd(), 'diag')
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true })
 
   const durationSeconds = 4
-  const pps = 75
+  const pps = CDG_PPS
 
   // demo event (single block) matching scheduler.demo
   const demoPixels = demoBlockPixels()

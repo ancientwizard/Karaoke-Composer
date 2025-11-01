@@ -246,7 +246,10 @@ src/formats/
 ## Next Steps
 
 ### Immediate: CDG FileRenderer
-1. Study SubCode packet format (24 bytes, 75 packets/second)
+1. Study SubCode packet format (24 bytes). Physical CDG timing is 75 packets/second
+  (audio/CD alignment); this project uses a 300 packets/second baseline for
+  file-generation ms→packet mapping by default. Be explicit about which
+  mapping you're using when computing durations/indices.
 2. Implement tile-based graphics (6x12 pixel tiles)
 3. Color palette management (16 colors)
 4. Command buffering for smooth playback

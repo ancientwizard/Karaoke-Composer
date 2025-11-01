@@ -7,10 +7,7 @@ import { scheduleFontEvents } from '../cdg/scheduler'
 import { writePacketsToFile, generatePaletteLoadPackets, generateBorderPacket, generateMemoryPresetPackets, writeFontBlock, VRAM, makeEmptyPacket, TV_GRAPHICS, COPY_FONT, XOR_FONT } from '../cdg/encoder'
 import { CDG_SCREEN, CDGCommand } from '../karaoke/renderers/cdg/CDGPacket'
 import { CDGPalette } from '../karaoke/renderers/cdg/CDGPacket'
-
-function msToPacks(ms: number, pps = 75) {
-  return Math.floor((ms / 1000) * pps)
-}
+import { msToPacks, timeToPacks, computeDurationSecondsFromParsedJson } from '../cdg/utils'
 
 // Interpret time values from the parsed JSON: some fields are already in CDG packet
 // units (packs) while others may be in milliseconds. We will select explicit
@@ -18,10 +15,27 @@ function msToPacks(ms: number, pps = 75) {
 
 async function main() {
   const argv = process.argv.slice(2)
-  if (argv.length < 1) { console.error('Usage: npx tsx src/debug/generate-cdg-from-json.ts <parsed.json> [out.cdg]'); process.exit(2) }
+  if (argv.length < 1) { console.error('Usage: npx tsx src/debug/generate-cdg-from-json.ts <parsed.json> [out.cdg] [--duration-seconds N] [--pps N] [--reference <path>]'); process.exit(2) }
   const inPath = argv[0]
   const outPath = argv[1] || path.join('diag', path.basename(inPath, path.extname(inPath)) + '.generated.cdg')
-  const overrideDuration = argv[2] ? Number(argv[2]) : undefined
+  // Duration: prefer explicit named flag --duration-seconds N. For backward
+  // compatibility we still accept a third positional numeric arg (deprecated)
+  // but recommend using the named flag. When absent the duration is computed
+  // from the presentation and the configured `pps`.
+  let overrideDuration: number | undefined = undefined
+  const durationFlagIndex = argv.indexOf('--duration-seconds')
+  if (durationFlagIndex !== -1 && argv.length > durationFlagIndex + 1) {
+    const v = Number(argv[durationFlagIndex + 1])
+    if (!Number.isNaN(v) && v > 0) overrideDuration = v
+  } else if (argv[2] && !String(argv[2]).startsWith('-')) {
+    // Backwards-compatible positional numeric (deprecated)
+    const v = Number(argv[2])
+    if (!Number.isNaN(v) && v > 0) {
+      overrideDuration = v
+      console.warn('DEPRECATION: positional duration arg is deprecated; use --duration-seconds N')
+    }
+  }
+
   // argv[3] may be either an numeric overrideReservedStart or the reference
   // CDG path depending on how the script is invoked. Be permissive and treat
   // argv[3] as a numeric override only when it parses to a finite number.
@@ -59,18 +73,29 @@ async function main() {
     console.warn('Both --times-in-packs and --times-in-ms provided; defaulting to --times-in-ms')
   }
 
-  function timeToPacks(val: number | undefined, pps = 75) {
-    if (val == null) return 0
-    // If caller explicitly requested pack semantics, use them.
-    if (timesInPacksFlag && !timesInMsFlag) return Math.floor(val)
-    // Default (and when --times-in-ms provided): treat value as milliseconds
-    return msToPacks(val, pps)
-  }
+  // Allow disabling prelude copy when users want a strict, scheduler-only
+  // generation (useful when specifying an explicit --duration-seconds and
+  // the reference prelude is long enough to consume most of the timeline).
+  const noPreludeCopyFlag = argv.includes('--no-prelude-copy')
+
+  // Use shared helper: pass the CLI flags through to the utility so it knows
+  // whether to interpret values as ms or pack counts.
 
   const buf = fs.readFileSync(inPath, 'utf8')
   const parsed = JSON.parse(buf)
 
-  const pps = 75
+  // Default packets-per-second for file-based CDG outputs. Historically
+  // we used 75 (CD audio frames/sec having 1 bit each), but players operating on CDG files
+  // ALWAYS expect a higher CDG packet rate when mapping packet indices
+  // to wall-clock time. Default to 300pps for file generation. A user can
+  // override with the --pps <value> CLI flag.
+  const ppsIndex = argv.indexOf('--pps')
+  let pps = 300
+  if (ppsIndex !== -1 && argv.length > ppsIndex + 1) {
+    const maybe = Number(argv[ppsIndex + 1])
+    if (Number.isFinite(maybe) && maybe > 0) pps = maybe
+    else console.warn('Invalid --pps value; falling back to default 300')
+  }
 
   // Determine total duration in packet units from clips. The JSON times may be
   // expressed either as milliseconds or already in pack units; use timeToPacks
@@ -86,10 +111,37 @@ async function main() {
       clipMaxEventEnd = Math.max(clipMaxEventEnd, evEnd)
     }
     const clipEnd = (clipStart || 0) + Math.max(clipMaxEventEnd, clip.duration || 0)
-    const clipEndPacks = timeToPacks(clipEnd, pps)
+    const clipEndPacks = timeToPacks(clipEnd, pps, timesInMsFlag, timesInPacksFlag)
     maxEndPacks = Math.max(maxEndPacks, clipEndPacks)
   }
-  const durationSeconds = overrideDuration || (Math.ceil((maxEndPacks || 75) / pps) + 1)
+  // Small helper to compute the output duration (seconds) from the parsed
+  // JSON timeline. Behavior:
+  //  - If the JSON provides an explicit top-level duration (seconds or ms),
+  //    prefer that value exactly.
+  //  - Otherwise, convert the computed `maxEndPacksEstimate` to seconds using
+  //    the supplied `pps` and add a one-second padding.
+  //  - If we cannot determine a duration (no explicit field and no timeline
+  //    events), fall back to a conservative 20-second default to avoid
+  //    producing empty/invalid outputs.
+  // Use shared computeDurationSecondsFromParsedJson from utils (keeps same semantics)
+  // Compute output duration (seconds).
+  // Priority: explicit override (--duration-seconds or deprecated positional) ->
+  // otherwise derive duration from the parsed JSON timeline (maxEndPacks) and
+  // the configured `pps`. Even when a reference CDG is supplied we prefer the
+  // JSON timeline as the authoritative source of presentation duration; the
+  // reference is used only for prelude copying / diagnostics.
+  let durationSeconds: number
+  if (overrideDuration && Number.isFinite(overrideDuration) && overrideDuration > 0) {
+    durationSeconds = overrideDuration
+  } else {
+    // Compute duration from the JSON timeline (authoritative). This returns
+    // exactly what the JSON indicates when available. If the timeline cannot be
+    // computed (malformed/empty JSON), fall back to 20s to avoid producing a
+    // very short/empty file. Users can override with --duration-seconds.
+    durationSeconds = computeDurationSecondsFromParsedJson(parsed, maxEndPacks, pps, 20)
+    if (referenceCdgPath) console.log(`Reference provided (${referenceCdgPath}) — duration computed from JSON timeline: maxEndPacks=${maxEndPacks} -> ${durationSeconds}s at ${pps}pps`)
+    else console.log(`Duration computed from JSON timeline: maxEndPacks=${maxEndPacks} -> ${durationSeconds}s at ${pps}pps`)
+  }
 
   // Build FontEvents from TextClips only (BMP clips not handled here)
   const textRenderer = new CDGTextRenderer()
@@ -148,14 +200,14 @@ async function main() {
       for (const ev of clip.events || []) {
         const evOff = ev.clip_time_offset || 0
         // clip.start and clip_time_offset may already be expressed in packet units in the JSON
-        const startPack = timeToPacks((clipStart || 0) + (evOff || 0), pps)
+  const startPack = timeToPacks((clipStart || 0) + (evOff || 0), pps, timesInMsFlag, timesInPacksFlag)
         // Prefer explicit event/clip durations when available. Fall back to a small
         // default (2s) rather than reserving the remainder of the entire timeline,
         // which spreads packets across too large a window and makes placements
         // diverge from the reference neighborhood.
         let evDurPacks = 0
-        if (ev.clip_time_duration != null) evDurPacks = timeToPacks(ev.clip_time_duration, pps)
-        else if (clip.duration != null) evDurPacks = timeToPacks(clip.duration, pps)
+  if (ev.clip_time_duration != null) evDurPacks = timeToPacks(ev.clip_time_duration, pps, timesInMsFlag, timesInPacksFlag)
+  else if (clip.duration != null) evDurPacks = timeToPacks(clip.duration, pps, timesInMsFlag, timesInPacksFlag)
         else evDurPacks = Math.ceil(pps * 2) // default to 2 seconds
         const durationPacks = Math.max(1, evDurPacks)
 
@@ -226,10 +278,10 @@ async function main() {
                 }
                 pixels.push(rowArr)
               }
-            const startPack = timeToPacks((clipStart || 0) + (ev.clip_time_offset || 0), pps)
+            const startPack = timeToPacks((clipStart || 0) + (ev.clip_time_offset || 0), pps, timesInMsFlag, timesInPacksFlag)
             let evDurPacks = 0
-            if (ev.clip_time_duration != null) evDurPacks = timeToPacks(ev.clip_time_duration, pps)
-            else if (clip.duration != null) evDurPacks = timeToPacks(clip.duration, pps)
+            if (ev.clip_time_duration != null) evDurPacks = timeToPacks(ev.clip_time_duration, pps, timesInMsFlag, timesInPacksFlag)
+            else if (clip.duration != null) evDurPacks = timeToPacks(clip.duration, pps, timesInMsFlag, timesInPacksFlag)
             else evDurPacks = Math.ceil(pps * 2)
             const durationPacks = Math.max(1, evDurPacks)
               events.push({
@@ -352,67 +404,43 @@ async function main() {
   const pktSize = 24
   const totalPacks = Math.max(1, Math.ceil((durationSeconds || 1) * pps))
   const initialPacketSlots = new Array(totalPacks).fill(null).map(() => makeEmptyPacket())
-  // Helper: best-effort replay of reference prelude into a VRAM instance.
-  // This applies MEMORY_PRESET and TILE_BLOCK / TILE_BLOCK_XOR packets to
-  // reconstruct the VRAM contents up to `uptoIdx` packets. It's a heuristic
-  // approximation of a CDG player's effect and intended only to help exact
-  // byte-by-byte matching later in the generator.
-  function replayPreludeToVRAM(buf: Buffer, uptoIdx: number) {
-    const v = new VRAM()
-    try {
-      const maxIdx = Math.min(uptoIdx, Math.floor(buf.length / pktSize))
-      const CDGPacketModule = require('../karaoke/renderers/cdg/CDGPacket')
-      for (let pi = 0; pi < maxIdx; pi++) {
-        const base = pi * pktSize
-        const cmd = buf[base + 1] & 0x3F
-        // MEMORY_PRESET: clear VRAM to color
-        if (cmd === (CDGPacketModule.CDGCommand || {}).CDG_MEMORY_PRESET || cmd === 1) {
-          const color = buf[base + 3] & 0x3F
-          v.clear(color & 0x0F)
-          continue
-        }
-        // TILE BLOCK (normal / xor)
-        if (cmd === (CDGPacketModule.CDGCommand || {}).CDG_TILE_BLOCK || cmd === 6 || cmd === (CDGPacketModule.CDGCommand || {}).CDG_TILE_BLOCK_XOR || cmd === 38) {
-          const row = buf[base + 5] & 0x3F
-          const col = buf[base + 6] & 0x3F
-          const colorA = buf[base + 3] & 0x3F
-          const colorB = buf[base + 4] & 0x3F
-          const isXor = (cmd === 38)
-          const blockPixels: number[][] = []
-          for (let y = 0; y < 12; y++) {
-            const lineMask = buf[base + 7 + y] & 0x3F
-            const rowArr: number[] = []
-            for (let x = 0; x < 6; x++) {
-              const bit = (lineMask >> (5 - x)) & 0x01
-              if (isXor) {
-                const prev = v.getPixel(col * 6 + x, row * 12 + y) & 0xFF
-                rowArr.push((prev ^ (colorB & 0x0F)) & 0x0F)
-              } else {
-                rowArr.push(bit ? (colorB & 0x0F) : (colorA & 0x0F))
-              }
-            }
-            blockPixels.push(rowArr)
-          }
-          v.writeBlock(col, row, blockPixels)
-          continue
-        }
-        // other commands ignored for VRAM content (palette, border, etc.)
-      }
-    } catch (re) {
-      // best-effort: if replay fails, return the VRAM as-is
+  // Ensure reservedStart does not reserve the entire output. If the reference
+  // prelude is longer than the target duration we must shrink reservedStart so
+  // the scheduler can still place font packets. Leave at least one writable
+  // slot (preferably two) at the tail so placements can occur. This avoids a
+  // pathological case where reservedStart === packetSlots.length-1 which
+  // effectively blocks all writes.
+  if (reservedStart >= initialPacketSlots.length - 1) {
+    const old = reservedStart
+    if (initialPacketSlots.length <= 2) {
+      reservedStart = 0
+    } else {
+      reservedStart = initialPacketSlots.length - 2
     }
-    return v
+    console.warn('Adjusted reservedStart from', old, 'to', reservedStart, 'to leave room for placements (totalPacks=', initialPacketSlots.length, ')')
   }
+  // NOTE: do not alter reservedStart further here. Explicit duration should
+  // only affect the computed output duration; it must not silently change
+  // how much of the reference prelude we copy. Users may opt out of copying
+  // the prelude entirely with --no-prelude-copy.
+  // replayPreludeToVRAM helper removed — it was unused and triggered linter
+  // warnings. If VRAM replay diagnostics are needed in future we can
+  // reintroduce a trimmed helper behind a diagnostics flag.
   if (referenceCdgPath) {
     try {
       const refBuf = fs.readFileSync(referenceCdgPath)
       const refPktCount = Math.floor(refBuf.length / pktSize)
-      const copyCount = Math.min(Math.max(0, Math.floor(reservedStart)), refPktCount)
+      if (noPreludeCopyFlag) {
+        console.log('--no-prelude-copy set: skipping copying reference prelude and using only generated init packets')
+      }
+      const copyCount = noPreludeCopyFlag ? 0 : Math.min(Math.max(0, Math.floor(reservedStart)), refPktCount)
       for (let i = 0; i < copyCount; i++) {
         const slice = refBuf.slice(i * pktSize, (i + 1) * pktSize)
         initialPacketSlots[i] = Uint8Array.from(slice)
       }
-      // If reservedStart is smaller than our generated init packets, fill remaining init slots
+      // If reservedStart/copyCount is smaller than our generated init packets,
+      // fill remaining init slots from the synthetic init packets so the file
+      // still contains palette/border/memory presets.
       for (let i = copyCount; i < initPkts.length && i < initialPacketSlots.length; i++) initialPacketSlots[i] = initPkts[i]
       // Diagnostic: report what we copied from the reference prelude
       try {
@@ -428,8 +456,9 @@ async function main() {
         // ignore diagnostic failures
       }
 
-      // If a match map is provided, attempt to copy matched slices from the reference
-      if (matchMapPath) {
+  // If a match map is provided, attempt to copy matched slices from the reference
+  // unless the user explicitly disabled prelude copying.
+  if (!noPreludeCopyFlag && matchMapPath) {
         try {
           const mapBuf = fs.readFileSync(matchMapPath, 'utf8')
           const mapObj = JSON.parse(mapBuf)
@@ -889,6 +918,8 @@ async function main() {
   }
 
   writePacketsToFile(outPath, packetSlots)
+
+  console.log(`Duration timeline: maxEndPacks=${maxEndPacks} -> ${durationSeconds}s at ${pps}pps`)
   console.log('Wrote', outPath)
 }
 

@@ -3,6 +3,7 @@
 import fs from 'fs'
 import path from 'path'
 import { scheduleFontEvents } from '@/cdg/scheduler'
+import { CDG_PPS } from '@/cdg/constants'
 import { writePacketsToFile, makeEmptyPacket } from '@/cdg/encoder'
 import { CDG_PACKET_SIZE } from '@/cdg/constants'
 
@@ -38,7 +39,7 @@ async function run() {
   const refBorder = findFirstOfCmd(refPkts, 2)
 
   const durationSeconds = 60
-  const pps = 75
+  const pps = CDG_PPS
   const totalPacks = Math.ceil(durationSeconds * pps)
 
   const cols = 50

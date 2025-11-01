@@ -3,6 +3,7 @@
 import fs from 'fs'
 import path from 'path'
 import { scheduleFontEvents } from '@/cdg/scheduler'
+import { CDG_PPS } from '@/cdg/constants'
 import { writePacketsToFile, makeEmptyPacket } from '@/cdg/encoder'
 import { CDG_PACKET_SIZE } from '@/cdg/constants'
 
@@ -40,7 +41,7 @@ async function run() {
   if (!palLo || !palHi) throw new Error('Could not extract palette packets from sample')
 
   const durationSeconds = parseInt(process.env.DURATION_SECONDS || '60', 10)
-  const pps = 75
+  const pps = CDG_PPS
   const totalPacks = Math.ceil(durationSeconds * pps)
 
   const cols = 50
