@@ -7,7 +7,8 @@ import { scheduleFontEvents } from '../cdg/scheduler'
 import { writePacketsToFile, generatePaletteLoadPackets, generateBorderPacket, generateMemoryPresetPackets, writeFontBlock, VRAM, makeEmptyPacket, TV_GRAPHICS, COPY_FONT, XOR_FONT } from '../cdg/encoder'
 import { CDG_SCREEN, CDGCommand } from '../karaoke/renderers/cdg/CDGPacket'
 import { CDGPalette } from '../karaoke/renderers/cdg/CDGPacket'
-import { msToPacks, timeToPacks, computeDurationSecondsFromParsedJson } from '../cdg/utils'
+import { timeToPacks, computeDurationSecondsFromParsedJson } from '../cdg/utils'
+import synthesizePrelude from '../cdg/prelude'
 
 // Interpret time values from the parsed JSON: some fields are already in CDG packet
 // units (packs) while others may be in milliseconds. We will select explicit
@@ -15,7 +16,29 @@ import { msToPacks, timeToPacks, computeDurationSecondsFromParsedJson } from '..
 
 async function main() {
   const argv = process.argv.slice(2)
-  if (argv.length < 1) { console.error('Usage: npx tsx src/debug/generate-cdg-from-json.ts <parsed.json> [out.cdg] [--duration-seconds N] [--pps N] [--reference <path>]'); process.exit(2) }
+
+  function printHelp() {
+    console.log('Usage: npx tsx src/debug/generate-cdg-from-json.ts <parsed.json> [out.cdg] [options]')
+    console.log('\nMost useful options:')
+    console.log('  --duration-seconds N     Force output length in seconds (controls total packets = ceil(N * PPS))')
+    console.log('  --pps N                  Packets-per-second mapping (default 300)')
+    console.log('  --reference <path>       Reference .cdg to copy prelude and apply post-filters')
+    console.log('  --use-prelude            Use deterministic synthesized prelude (continues scheduling)')
+    console.log('  --prelude-mode <mode>    Prelude synthesizer mode: minimal|aggressive (default: minimal)')
+    console.log('  --prelude-copy-tiles     Selectively copy tile/palette/memory/border packets from reference prelude')
+    console.log('  --no-prelude-copy        When using --reference, skip copying its prelude')
+    console.log('  --zero-after-seconds N   Zero generated packets at/after N seconds (mimic END/clear)')
+    console.log('\nNotes:')
+    console.log('  Do NOT use --synthesize-prelude-only if you want a full playable CDG;')
+    console.log('  that flag writes only the synthesized prelude and exits (tiny file).')
+    console.log('\nExample (full-length generation matching canonical length):')
+    console.log('  npx tsx src/debug/generate-cdg-from-json.ts diag/sample_project_04.json diag/gen_full_playback.cdg --duration-seconds 60 --pps 300 --reference diag/sample_project_04.canonical.cdg')
+  }
+
+  if (argv.includes('--help') || argv.length < 1) {
+    printHelp()
+    process.exit(0)
+  }
   const inPath = argv[0]
   const outPath = argv[1] || path.join('diag', path.basename(inPath, path.extname(inPath)) + '.generated.cdg')
   // Duration: prefer explicit named flag --duration-seconds N. For backward
@@ -48,9 +71,31 @@ async function main() {
   if (refFlagIndex !== -1 && argv.length > refFlagIndex + 1) {
     referenceCdgPath = argv[refFlagIndex + 1]
   } else {
-    // Prefer explicit argv[4] for reference path; fall back to argv[3] when it
-    // looks like a .cdg filename (common mistake in positional ordering).
-    referenceCdgPath = argv[4] ? argv[4] : (maybeArg3 && typeof maybeArg3 === 'string' && maybeArg3.toLowerCase().endsWith('.cdg') ? maybeArg3 : undefined)
+    // Prefer explicit argv[4] for reference path; otherwise try to find a
+    // non-flag token that looks like a .cdg path. Search the argv slice
+    // after the input/out positional args to avoid treating flags like
+    // `--pps` as a path (this previously caused ENOENT when a flag was
+    // parsed as the reference path).
+    if (argv[4] && typeof argv[4] === 'string' && !argv[4].startsWith('-')) {
+      referenceCdgPath = argv[4]
+    } else {
+      const candidates = argv.slice(2) // after inPath and outPath
+      // Prefer an existing file on disk first
+      for (const a of candidates) {
+        if (typeof a !== 'string') continue
+        if (a.startsWith('-')) continue
+        if (!a.toLowerCase().endsWith('.cdg')) continue
+        if (fs.existsSync(a)) { referenceCdgPath = a; break }
+      }
+      // If none exist on disk, accept the first non-flag token that endsWith .cdg
+      if (!referenceCdgPath) {
+        for (const a of candidates) {
+          if (typeof a !== 'string') continue
+          if (a.startsWith('-')) continue
+          if (a.toLowerCase().endsWith('.cdg')) { referenceCdgPath = a; break }
+        }
+      }
+    }
   }
   // Optional: --match-map <path> to a JSON file (produced by the replayer diagnostic)
   const matchMapIndex = argv.indexOf('--match-map')
@@ -77,6 +122,23 @@ async function main() {
   // generation (useful when specifying an explicit --duration-seconds and
   // the reference prelude is long enough to consume most of the timeline).
   const noPreludeCopyFlag = argv.includes('--no-prelude-copy')
+  // Optional: use the synthesized deterministic prelude instead of copying
+  // from a reference CDG. This is off by default; pass --use-prelude to
+  // enable the synthesized prelude (experimental).
+  const usePreludeFlag = argv.includes('--use-prelude')
+  const preludeMaxIdx = argv.indexOf('--prelude-max-packets')
+  const preludeMaxPackets = (preludeMaxIdx !== -1 && argv.length > preludeMaxIdx + 1) ? Number(argv[preludeMaxIdx + 1]) : undefined
+  const synthOnlyFlag = argv.includes('--synthesize-prelude-only')
+  const preludeModeIdx = argv.indexOf('--prelude-mode')
+  const preludeMode = (preludeModeIdx !== -1 && argv.length > preludeModeIdx + 1) ? String(argv[preludeModeIdx + 1]) : undefined
+  const preludePersistIdx = argv.indexOf('--prelude-persist-seconds')
+  const preludePersistSeconds = (preludePersistIdx !== -1 && argv.length > preludePersistIdx + 1) ? Number(argv[preludePersistIdx + 1]) : undefined
+
+  // Optional: selectively copy tile/palette/memory packets from the reference
+  // into the prelude region instead of copying the whole prelude.
+  const preludeCopyTilesFlag = argv.includes('--prelude-copy-tiles')
+  const preludeCopyTilesMaxIdx = argv.indexOf('--prelude-copy-tiles-max-packets')
+  const preludeCopyTilesMaxPackets = (preludeCopyTilesMaxIdx !== -1 && argv.length > preludeCopyTilesMaxIdx + 1) ? Number(argv[preludeCopyTilesMaxIdx + 1]) : 20000
 
   // Use shared helper: pass the CLI flags through to the utility so it knows
   // whether to interpret values as ms or pack counts.
@@ -328,10 +390,45 @@ async function main() {
   }
 
   // initial packets
-  const palettePkts = generatePaletteLoadPackets()
-  const borderPkts = generateBorderPacket(0)
-  const memoryPkts = generateMemoryPresetPackets(1)
-  const initPkts = [...palettePkts, ...borderPkts, ...memoryPkts]
+  let initPkts: Uint8Array[] = []
+  if (usePreludeFlag) {
+    try {
+  const synthOpts: any = {}
+  synthOpts.pps = pps
+  synthOpts.preludeMaxPackets = preludeMaxPackets
+  if (referenceCdgPath) synthOpts.referenceCdgPath = referenceCdgPath
+  if (preludeMode) synthOpts.mode = preludeMode
+  if (typeof preludePersistSeconds === 'number' && !Number.isNaN(preludePersistSeconds)) synthOpts.persistentDurationSeconds = preludePersistSeconds
+  const synth = synthesizePrelude(parsed, synthOpts)
+      initPkts = synth as any
+      console.log(`--use-prelude: synthesized prelude with ${initPkts.length} packets`)
+    } catch (e) {
+      console.warn('Failed to synthesize prelude, falling back to encoder defaults:', (e as any).message || e)
+      const palettePkts = generatePaletteLoadPackets()
+      const borderPkts = generateBorderPacket(0)
+      const memoryPkts = generateMemoryPresetPackets(1)
+      initPkts = [...palettePkts, ...borderPkts, ...memoryPkts]
+    }
+  } else {
+    const palettePkts = generatePaletteLoadPackets()
+    const borderPkts = generateBorderPacket(0)
+    const memoryPkts = generateMemoryPresetPackets(1)
+    initPkts = [...palettePkts, ...borderPkts, ...memoryPkts]
+  }
+
+  // If requested, write only the synthesized prelude and exit. This helps
+  // visually inspect the prelude independently from scheduling.
+  if (synthOnlyFlag && usePreludeFlag) {
+    try {
+      // Ensure outPath directory exists
+      fs.mkdirSync(path.dirname(outPath), { recursive: true })
+      writePacketsToFile(outPath, initPkts.map((p) => (p instanceof Uint8Array ? p : Uint8Array.from(p))))
+      console.log('Wrote synthesized prelude only to', outPath)
+      return
+    } catch (e) {
+      console.warn('Failed to write synthesized prelude-only file:', (e as any).message || e)
+    }
+  }
 
   // Determine reservedStart: allow an override but fall back to initPkts.length
   let reservedStart = overrideReservedStart != null ? overrideReservedStart : initPkts.length
@@ -345,7 +442,7 @@ async function main() {
   // index as the reservedStart so our placed font packets land in the same
   // neighborhood as the reference. This avoids collisions when the reference
   // has a long prelude of palette/memory/border packets.
-  if (referenceCdgPath) {
+  if (referenceCdgPath && !usePreludeFlag) {
     try {
       const refBuf = fs.readFileSync(referenceCdgPath)
       const pktSize = 24
@@ -426,17 +523,41 @@ async function main() {
   // replayPreludeToVRAM helper removed — it was unused and triggered linter
   // warnings. If VRAM replay diagnostics are needed in future we can
   // reintroduce a trimmed helper behind a diagnostics flag.
-  if (referenceCdgPath) {
+  if (usePreludeFlag) {
+    // use synthesized prelude: copy initPkts into start of packetSlots
+    for (let i = 0; i < initPkts.length && i < initialPacketSlots.length; i++) initialPacketSlots[i] = initPkts[i]
+  } else if (referenceCdgPath) {
     try {
       const refBuf = fs.readFileSync(referenceCdgPath)
       const refPktCount = Math.floor(refBuf.length / pktSize)
       if (noPreludeCopyFlag) {
         console.log('--no-prelude-copy set: skipping copying reference prelude and using only generated init packets')
       }
-      const copyCount = noPreludeCopyFlag ? 0 : Math.min(Math.max(0, Math.floor(reservedStart)), refPktCount)
-      for (let i = 0; i < copyCount; i++) {
-        const slice = refBuf.slice(i * pktSize, (i + 1) * pktSize)
-        initialPacketSlots[i] = Uint8Array.from(slice)
+      let copyCount = noPreludeCopyFlag ? 0 : Math.min(Math.max(0, Math.floor(reservedStart)), refPktCount)
+      // If requested, perform a selective copy of tile/palette/memory packets
+      // from the reference prelude instead of copying the entire prelude.
+      if (!noPreludeCopyFlag && preludeCopyTilesFlag) {
+        const desiredPackets = (typeof preludePersistSeconds === 'number' && !Number.isNaN(preludePersistSeconds)) ? Math.min(refPktCount, Math.floor(preludePersistSeconds * pps)) : Math.min(refPktCount, Math.floor(reservedStart))
+        const maxToScan = Math.min(refPktCount, Math.max(1, Math.min(preludeCopyTilesMaxPackets || refPktCount, desiredPackets)))
+        let selectiveCopied = 0
+        for (let i = 0; i < maxToScan; i++) {
+          const base = i * pktSize
+          const cmd = refBuf[base + 1] & 0x3F
+          // copy tile/palette/memory/border packets only
+          if (cmd === CDGCommand.CDG_TILE_BLOCK || cmd === CDGCommand.CDG_TILE_BLOCK_XOR || cmd === CDGCommand.CDG_MEMORY_PRESET || cmd === CDGCommand.CDG_BORDER_PRESET || cmd === CDGCommand.CDG_LOAD_COLOR_TABLE_LOW || cmd === CDGCommand.CDG_LOAD_COLOR_TABLE_HIGH) {
+            const slice = refBuf.slice(base, base + pktSize)
+            initialPacketSlots[i] = Uint8Array.from(slice)
+            selectiveCopied++
+          }
+        }
+        // Report the actual number of slots we copied during the selective pass
+        copyCount = selectiveCopied
+        console.log(`Selective prelude copy: scanned ${maxToScan} reference packets, copied ${selectiveCopied} tile/palette/memory packets (maxPackets=${preludeCopyTilesMaxPackets})`)
+      } else {
+        for (let i = 0; i < copyCount; i++) {
+          const slice = refBuf.slice(i * pktSize, (i + 1) * pktSize)
+          initialPacketSlots[i] = Uint8Array.from(slice)
+        }
       }
       // If reservedStart/copyCount is smaller than our generated init packets,
       // fill remaining init slots from the synthetic init packets so the file
@@ -510,7 +631,7 @@ async function main() {
   //    those reference packets. This is less strict but robust to VRAM
   //    pre-state differences and faster to find matches.
   const matchByCoord = argv.includes('--match-coord')
-  if (referenceCdgPath) {
+  if (referenceCdgPath && !usePreludeFlag) {
     try {
       const refBuf = fs.readFileSync(referenceCdgPath)
       const refPktCount = Math.floor(refBuf.length / pktSize)

@@ -83,3 +83,52 @@ schedOpts.diagnostics = { enabled: true, outDir: './tmp', writeEventPlacements: 
 
 If you want this doc moved, renamed, or expanded into repository docs/README,
 let me know and I will update accordingly.
+
+Suggested CLI switches (quick)
+
+Below are the small set of flags from `src/debug/generate-cdg-from-json.ts` that
+you will most likely use during normal generation runs. The script supports
+additional diagnostic flags (match-map, match-coord, synth-only, etc.) which
+are useful when debugging—those are deliberately omitted here.
+
+- --duration-seconds N
+  - Force the output length in seconds (controls total packet count = ceil(N * PPS)).
+
+- --pps N
+  - Packets-per-second used to map timeline -> packet indices. Default: 300.
+
+- --reference <path>
+  - Path to a canonical/reference `.cdg` file used for prelude copying and tail
+    post-filters. Use this to keep generated prelude semantics aligned with a
+    known-good file.
+
+- --use-prelude
+  - Use the deterministic synthesized prelude (from `src/cdg/prelude.ts`) and
+    then continue scheduling the full timeline. DO NOT pair this with
+    `--synthesize-prelude-only` unless you only want the tiny prelude file for
+    inspection.
+
+- --prelude-mode <minimal|aggressive>
+  - Controls how aggressive the synthesized prelude is. `minimal` is usually
+    sufficient (palette/memory/border), `aggressive` writes more tiles.
+
+- --prelude-copy-tiles
+  - Selectively copy only tile/palette/memory/border packets from the
+    reference prelude instead of copying the entire prelude. Handy when you
+    want to preserve init state without duplicating whole prelude semantics.
+
+- --no-prelude-copy
+  - When a `--reference` is supplied, skip copying its prelude entirely and
+    rely on the synthesized or generated `initPkts` instead.
+
+- --zero-after-seconds N
+  - Zero out all generated packets at/after N seconds. Useful to mimic an
+    END/clear behavior from the reference and avoid spurious late writes.
+
+Typical quick command (full-length generation matching canonical length):
+
+```bash
+npx tsx src/debug/generate-cdg-from-json.ts diag/sample_project_04.json diag/gen_full_playback.cdg \
+  --duration-seconds 60 --pps 300 --reference diag/sample_project_04.canonical.cdg
+```
+
