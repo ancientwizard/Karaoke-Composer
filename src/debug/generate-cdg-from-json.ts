@@ -9,6 +9,7 @@ import { CDG_SCREEN, CDGCommand } from '../karaoke/renderers/cdg/CDGPacket'
 import { CDGPalette } from '../karaoke/renderers/cdg/CDGPacket'
 import { timeToPacks, computeDurationSecondsFromParsedJson } from '../cdg/utils'
 import synthesizePrelude from '../cdg/prelude'
+import { PaletteScheduler } from '../karaoke/renderers/cdg/PaletteScheduler'
 
 // Interpret time values from the parsed JSON: some fields are already in CDG packet
 // units (packs) while others may be in milliseconds. We will select explicit
@@ -27,12 +28,14 @@ async function main() {
     console.log('  --prelude-mode <mode>    Prelude synthesizer mode: minimal|aggressive (default: minimal)')
     console.log('  --prelude-copy-tiles     Selectively copy tile/palette/memory/border packets from reference prelude')
     console.log('  --no-prelude-copy        When using --reference, skip copying its prelude')
+  console.log('  --allow-prelude-overwrite  Opt-in: allow scheduler to overwrite synthesized/pre-filled prelude slots')
     console.log('  --zero-after-seconds N   Zero generated packets at/after N seconds (mimic END/clear)')
     console.log('\nNotes:')
     console.log('  Do NOT use --synthesize-prelude-only if you want a full playable CDG;')
     console.log('  that flag writes only the synthesized prelude and exits (tiny file).')
     console.log('\nExample (full-length generation matching canonical length):')
-    console.log('  npx tsx src/debug/generate-cdg-from-json.ts diag/sample_project_04.json diag/gen_full_playback.cdg --duration-seconds 60 --pps 300 --reference diag/sample_project_04.canonical.cdg')
+    console.log('  npx tsx src/debug/generate-cdg-from-json.ts diag/sample_project_04.json diag/gen_full_playback.cdg --duration-seconds 60 '
+       + '--reference reference/cd+g-magic/Sample_Files/sample_project_04.cdg')
   }
 
   if (argv.includes('--help') || argv.length < 1) {
@@ -140,6 +143,11 @@ async function main() {
   const preludeCopyTilesMaxIdx = argv.indexOf('--prelude-copy-tiles-max-packets')
   const preludeCopyTilesMaxPackets = (preludeCopyTilesMaxIdx !== -1 && argv.length > preludeCopyTilesMaxIdx + 1) ? Number(argv[preludeCopyTilesMaxIdx + 1]) : 20000
 
+  // Opt-in hybrid mode: allow the scheduler to overwrite prefilled/synthesized
+  // prelude slots. This is conservative and disabled by default to avoid
+  // accidental destructive overwrites when using synthesized preludes.
+  const allowPreludeOverwriteFlag = argv.includes('--allow-prelude-overwrite')
+
   // Use shared helper: pass the CLI flags through to the utility so it knows
   // whether to interpret values as ms or pack counts.
 
@@ -187,28 +195,44 @@ async function main() {
   //    producing empty/invalid outputs.
   // Use shared computeDurationSecondsFromParsedJson from utils (keeps same semantics)
   // Compute output duration (seconds).
-  // Priority: explicit override (--duration-seconds or deprecated positional) ->
-  // otherwise derive duration from the parsed JSON timeline (maxEndPacks) and
-  // the configured `pps`. Even when a reference CDG is supplied we prefer the
-  // JSON timeline as the authoritative source of presentation duration; the
-  // reference is used only for prelude copying / diagnostics.
+  // Priority: explicit override (--duration-seconds) ->
+  // duration field in JSON (duration_seconds or duration_ms) ->
+  // otherwise derive duration from the parsed JSON timeline (maxEndPacks) and add padding.
+  // Note: Reference CDG is NOT used for duration; it's only for validation/comparison.
+  //       Our project timings come from the JSON, not from reference implementations.
   let durationSeconds: number
   if (overrideDuration && Number.isFinite(overrideDuration) && overrideDuration > 0) {
     durationSeconds = overrideDuration
+    console.log(`Using explicit --duration-seconds override: ${durationSeconds}s`)
   } else {
-    // Compute duration from the JSON timeline (authoritative). This returns
-    // exactly what the JSON indicates when available. If the timeline cannot be
-    // computed (malformed/empty JSON), fall back to 20s to avoid producing a
-    // very short/empty file. Users can override with --duration-seconds.
-    durationSeconds = computeDurationSecondsFromParsedJson(parsed, maxEndPacks, pps, 20)
-    if (referenceCdgPath) console.log(`Reference provided (${referenceCdgPath}) — duration computed from JSON timeline: maxEndPacks=${maxEndPacks} -> ${durationSeconds}s at ${pps}pps`)
-    else console.log(`Duration computed from JSON timeline: maxEndPacks=${maxEndPacks} -> ${durationSeconds}s at ${pps}pps`)
+    // First, try to get explicit duration from JSON
+    let jsonExplicitDuration = 0
+    if (parsed.duration_seconds && Number.isFinite(parsed.duration_seconds) && parsed.duration_seconds > 0) {
+      jsonExplicitDuration = Math.ceil(parsed.duration_seconds)
+    } else if (parsed.duration_ms && Number.isFinite(parsed.duration_ms) && parsed.duration_ms > 0) {
+      jsonExplicitDuration = Math.ceil(parsed.duration_ms / 1000)
+    }
+    
+    if (jsonExplicitDuration > 0) {
+      durationSeconds = jsonExplicitDuration
+      console.log(`Duration from JSON: ${durationSeconds}s`)
+    } else {
+      // No explicit duration in JSON: compute from timeline with padding
+      durationSeconds = computeDurationSecondsFromParsedJson(parsed, maxEndPacks, pps, 20)
+      console.log(`Duration computed from JSON timeline: maxEndPacks=${maxEndPacks} -> ${durationSeconds}s at ${pps}pps`)
+    }
   }
 
   // Build FontEvents from TextClips only (BMP clips not handled here)
   const textRenderer = new CDGTextRenderer()
   const palette = new CDGPalette()
   const paletteColors = palette.getColors()
+
+  // Initialize PaletteScheduler to track color assignments and schedule LOAD packets
+  // Start with the CDGPalette colors from the project (if available) so we can schedule
+  // palette changes when rendering encounters new colors.
+  const paletteScheduler = new PaletteScheduler(paletteColors)
+  const paletteScheduleHistory: Array<{ packIndex: number; packets: Uint8Array[] }> = []
 
   async function loadImage(filePath: string) {
     // Dynamically import Jimp to avoid ESM import shape issues in typings.
@@ -237,23 +261,16 @@ async function main() {
   }
 
   function findNearestPaletteIndex(r: number, g: number, b: number) {
-    let best = 0
-    let bestDist = Infinity
-    for (let i = 0; i < paletteColors.length; i++) {
-      const col = paletteColors[i] || 0
-      const pr = (col >> 8) & 0x0F
-      const pg = (col >> 4) & 0x0F
-      const pb = col & 0x0F
-      const sr = pr * 17
-      const sg = pg * 17
-      const sb = pb * 17
-      const d = (sr - r) * (sr - r) + (sg - g) * (sg - g) + (sb - b) * (sb - b)
-      if (d < bestDist) { bestDist = d; best = i }
-    }
-    return best
+    const cdgColor = PaletteScheduler.rgbToCDG(r, g, b)
+    // Try to find or allocate a slot for this color
+    const slot = paletteScheduler.findOrAllocateSlot(cdgColor)
+    return slot
   }
 
   const events: any[] = []
+  // Track when palette needs LOAD packets so we can inject them at appropriate positions
+  const uniqueColors = new Set<number>()
+  
   for (const clip of parsed.clips || []) {
     if (clip.type === 'TextClip') {
       const clipStart = clip.start || 0
@@ -284,7 +301,13 @@ async function main() {
             const rowArr: number[] = []
             for (let c = 0; c < 6; c++) {
               const bit = (rowbits >> (5 - c)) & 1
-              rowArr.push(bit ? fg : bg)
+              const colorIdx = bit ? fg : bg
+              rowArr.push(colorIdx)
+              // Track color usage for palette scheduling
+              if (colorIdx >= 0 && colorIdx < paletteColors.length) {
+                const cdgColor = paletteColors[colorIdx] & 0x0FFF
+                uniqueColors.add(cdgColor)
+              }
             }
             pixels.push(rowArr)
           }
@@ -335,6 +358,9 @@ async function main() {
                     const g = bmp.pixels[off + 1]
                     const bcol = bmp.pixels[off + 2]
                     idx = findNearestPaletteIndex(r, g, bcol)
+                    // Track that we used this color
+                    const cdgColor = PaletteScheduler.rgbToCDG(r, g, bcol)
+                    uniqueColors.add(cdgColor)
                   }
                   rowArr.push(idx)
                 }
@@ -398,6 +424,7 @@ async function main() {
   synthOpts.preludeMaxPackets = preludeMaxPackets
   if (referenceCdgPath) synthOpts.referenceCdgPath = referenceCdgPath
   if (preludeMode) synthOpts.mode = preludeMode
+  else synthOpts.mode = 'minimal'
   if (typeof preludePersistSeconds === 'number' && !Number.isNaN(preludePersistSeconds)) synthOpts.persistentDurationSeconds = preludePersistSeconds
   const synth = synthesizePrelude(parsed, synthOpts)
       initPkts = synth as any
@@ -430,13 +457,16 @@ async function main() {
     }
   }
 
-  // Determine reservedStart: allow an override but fall back to initPkts.length
-  let reservedStart = overrideReservedStart != null ? overrideReservedStart : initPkts.length
-  if (!Number.isFinite(reservedStart)) {
+  // Determine reservedStart as a COUNT of reserved slots: allow an override
+  // but fall back to initPkts.length (number of prelude packets). Later
+  // we convert this count into an index (last reserved index) before
+  // passing it to the scheduler which expects the last reserved index.
+  let reservedCount = overrideReservedStart != null ? overrideReservedStart : initPkts.length
+  if (!Number.isFinite(reservedCount)) {
     console.warn('Invalid reservedStart (not a finite number); falling back to initPkts.length')
-    reservedStart = initPkts.length
+    reservedCount = initPkts.length
   }
-  console.log('Reserved start slots:', reservedStart, '(initPkts.length=', initPkts.length, ')')
+  console.log('Reserved prelude slot COUNT:', reservedCount, '(initPkts.length=', initPkts.length, ')')
   // If a reference CDG is provided and we can read it, detect where the
   // first tile packets (COPY/XOR) begin in the reference stream. Use that
   // index as the reservedStart so our placed font packets land in the same
@@ -479,15 +509,15 @@ async function main() {
       // placements start after the reference's first meaningful packet. Use
       // firstNonEmptyIdx+1 to include that packet in the copied prelude.
       if (firstNonEmptyIdx != null) {
-        if (overrideReservedStart == null) reservedStart = firstNonEmptyIdx + 1
+        if (overrideReservedStart == null) reservedCount = firstNonEmptyIdx + 1
       } else if (firstTileIdx != null) {
-        if (overrideReservedStart == null) reservedStart = firstTileIdx
+        if (overrideReservedStart == null) reservedCount = firstTileIdx
       } else {
-        console.log('Reference CDG contains no meaningful packets; leaving reservedStart =', reservedStart)
+        console.log('Reference CDG contains no meaningful packets; leaving reservedCount =', reservedCount)
       }
       // Ensure we reserve/copy through any init packets (palette/memory/border)
       if (lastInitIdx != null && overrideReservedStart == null) {
-        reservedStart = Math.max(reservedStart, lastInitIdx + 1)
+        reservedCount = Math.max(reservedCount, lastInitIdx + 1)
       }
     } catch (e) {
       console.warn('Could not read reference CDG to detect tile start:', (e as any).message || e)
@@ -507,14 +537,14 @@ async function main() {
   // slot (preferably two) at the tail so placements can occur. This avoids a
   // pathological case where reservedStart === packetSlots.length-1 which
   // effectively blocks all writes.
-  if (reservedStart >= initialPacketSlots.length - 1) {
-    const old = reservedStart
+  if (reservedCount >= initialPacketSlots.length - 1) {
+    const old = reservedCount
     if (initialPacketSlots.length <= 2) {
-      reservedStart = 0
+      reservedCount = 0
     } else {
-      reservedStart = initialPacketSlots.length - 2
+      reservedCount = initialPacketSlots.length - 2
     }
-    console.warn('Adjusted reservedStart from', old, 'to', reservedStart, 'to leave room for placements (totalPacks=', initialPacketSlots.length, ')')
+    console.warn('Adjusted reservedCount from', old, 'to', reservedCount, 'to leave room for placements (totalPacks=', initialPacketSlots.length, ')')
   }
   // NOTE: do not alter reservedStart further here. Explicit duration should
   // only affect the computed output duration; it must not silently change
@@ -533,11 +563,11 @@ async function main() {
       if (noPreludeCopyFlag) {
         console.log('--no-prelude-copy set: skipping copying reference prelude and using only generated init packets')
       }
-      let copyCount = noPreludeCopyFlag ? 0 : Math.min(Math.max(0, Math.floor(reservedStart)), refPktCount)
+  let copyCount = noPreludeCopyFlag ? 0 : Math.min(Math.max(0, Math.floor(reservedCount)), refPktCount)
       // If requested, perform a selective copy of tile/palette/memory packets
       // from the reference prelude instead of copying the entire prelude.
       if (!noPreludeCopyFlag && preludeCopyTilesFlag) {
-        const desiredPackets = (typeof preludePersistSeconds === 'number' && !Number.isNaN(preludePersistSeconds)) ? Math.min(refPktCount, Math.floor(preludePersistSeconds * pps)) : Math.min(refPktCount, Math.floor(reservedStart))
+  const desiredPackets = (typeof preludePersistSeconds === 'number' && !Number.isNaN(preludePersistSeconds)) ? Math.min(refPktCount, Math.floor(preludePersistSeconds * pps)) : Math.min(refPktCount, Math.floor(reservedCount))
         const maxToScan = Math.min(refPktCount, Math.max(1, Math.min(preludeCopyTilesMaxPackets || refPktCount, desiredPackets)))
         let selectiveCopied = 0
         for (let i = 0; i < maxToScan; i++) {
@@ -565,9 +595,9 @@ async function main() {
       for (let i = copyCount; i < initPkts.length && i < initialPacketSlots.length; i++) initialPacketSlots[i] = initPkts[i]
       // Diagnostic: report what we copied from the reference prelude
       try {
-        const copied = initialPacketSlots.slice(0, Math.min(initialPacketSlots.length, Math.max(0, Math.floor(reservedStart))));
-        const nonEmpty = copied.reduce((acc, s) => acc + (Buffer.from(s).some((b) => b !== 0) ? 1 : 0), 0)
-        console.log(`Reference prelude copy: reference=${referenceCdgPath}, refPktCount=${refPktCount}, reservedStart=${reservedStart}, copyCount=${copyCount}, nonEmptySlotsInPrelude=${nonEmpty}`)
+    const copied = initialPacketSlots.slice(0, Math.min(initialPacketSlots.length, Math.max(0, Math.floor(reservedCount))));
+    const nonEmpty = copied.reduce((acc, s) => acc + (Buffer.from(s).some((b) => b !== 0) ? 1 : 0), 0)
+    console.log(`Reference prelude copy: reference=${referenceCdgPath}, refPktCount=${refPktCount}, reservedCount=${reservedCount}, copyCount=${copyCount}, nonEmptySlotsInPrelude=${nonEmpty}`)
         const show = Math.min(10, copied.length)
         for (let i = 0; i < show; i++) {
           const hex = Buffer.from(copied[i]).toString('hex').slice(0, 64)
@@ -654,8 +684,11 @@ async function main() {
       if (replayer) {
         /* no-op: replayer is available for potential VRAM-based comparisons */
       }
-      // Respect reserved prelude by default when searching for matches.
-      const searchStart = Math.max(0, Math.floor(reservedStart))
+  // Respect reserved prelude by default when searching for matches.
+  // Use the reserved COUNT (reservedCount) we computed earlier. The
+  // scheduler expects an index later; here we only need a safe start
+  // index for scanning the reference.
+  const searchStart = Math.max(0, Math.floor(reservedCount))
       console.log('Starting match-by-pattern pass', matchByCoord ? '(coordinate mode)' : '(exact-byte mode)', 'searchStart=', searchStart, 'refPktCount=', refPktCount)
 
       for (let ei = 0; ei < events.length; ei++) {
@@ -792,20 +825,29 @@ async function main() {
 
       fs.mkdirSync('tmp', { recursive: true })
       const outObj = {
-        reservedStart,
+        // Keep the legacy key name `reservedStart` but store the COUNT of
+        // reserved prelude slots so other tools that consume this file keep
+        // their expected semantics.
+        reservedStart: reservedCount,
         matches,
       }
       fs.writeFileSync(path.join('tmp', 'match_by_pattern_map.json'), JSON.stringify(outObj, null, 2))
-      const reservedCount = matches.filter((m) => m.matchedIndex != null).length
-      console.log('Match-by-pattern pass complete. Reserved matches:', reservedCount)
+      const reservedMatches = matches.filter((m) => m.matchedIndex != null).length
+      console.log('Match-by-pattern pass complete. Reserved matches:', reservedMatches)
     } catch (e) {
       console.warn('Match-by-pattern pass failed:', (e as any).message || e)
     }
   }
 
+  // Convert the reservedCount (number of reserved prelude slots) into the
+  // scheduler's expected reserved index (last reserved slot index). The
+  // scheduler treats `reservedStart` as an inclusive last index, so we map
+  // reservedCount -> reservedStartIndex = reservedCount - 1.
+  const reservedStartIndex = Math.max(0, Math.min(initialPacketSlots.length - 1, Math.floor(reservedCount) - 1))
+
   // Diagnostic assertions / logs before calling scheduler
   try {
-    console.log('Diagnostic: totalPacks=', totalPacks, 'initialPacketSlots.length=', initialPacketSlots.length, 'reservedStart=', reservedStart)
+    console.log('Diagnostic: totalPacks=', totalPacks, 'initialPacketSlots.length=', initialPacketSlots.length, 'reservedCount=', reservedCount, 'reservedStartIndex=', reservedStartIndex)
     if (initialPacketSlots.length !== totalPacks) {
       console.error('ASSERT: initialPacketSlots.length !== totalPacks', initialPacketSlots.length, totalPacks)
     }
@@ -822,13 +864,48 @@ async function main() {
     console.warn('Diagnostic pre-schedule assertion failed:', (e as any).message || e)
   }
 
+  // --- Palette Scheduling Pass ---
+  // Now that we've discovered all unique colors from rendering, generate LOAD packets
+  // to schedule them into the prelude. This ensures palette colors are loaded before
+  // any tile packets reference them.
+  console.log('Palette scheduling: discovered', uniqueColors.size, 'unique colors')
+  if (uniqueColors.size > 0) {
+    // Mark all unique colors in the scheduler for LOAD packet generation
+    for (const cdgColor of uniqueColors) {
+      paletteScheduler.findOrAllocateSlot(cdgColor)
+    }
+
+    // Generate LOAD packets for all needed colors
+    const loadPackets = paletteScheduler.generateLoadPackets()
+    console.log('Generated', loadPackets.length, 'palette LOAD packets')
+
+    // Inject LOAD packets right after the prelude (at the end of reserved slots)
+    // This ensures palettes are set up before tile rendering begins
+    if (loadPackets.length > 0 && initPkts.length < initialPacketSlots.length) {
+      let injectIdx = Math.max(initPkts.length, reservedCount)
+      for (const loadPkt of loadPackets) {
+        if (injectIdx < initialPacketSlots.length) {
+          initialPacketSlots[injectIdx] = loadPkt
+          injectIdx++
+        }
+      }
+      console.log('Injected', loadPackets.length, 'palette LOAD packets into prelude at index', Math.max(initPkts.length, reservedCount))
+    }
+
+    // Log the final palette for diagnostics
+    const finalPalette = paletteScheduler.getPalette()
+    console.log('Final palette (16 colors):', finalPalette.map((c) => '0x' + c.toString(16).padStart(3, '0')).join(', '))
+  }
+
   const { packetSlots } = scheduleFontEvents(
     events,
     {
       durationSeconds,
-      pps
+      pps,
+      // Pass-through opt-in overwrite flag into scheduler
+      allowOverwritePrefilled: Boolean(allowPreludeOverwriteFlag)
     },
-    reservedStart,
+    reservedStartIndex,
     initialPacketSlots
   )
   // Debug: count non-empty packet slots produced by scheduler before we place init packets

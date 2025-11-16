@@ -333,6 +333,31 @@ export function generateBorderPacket(colorIndex: number): CDGPacket[] {
   return [new Uint8Array(packet.toBuffer())];
 }
 
+/**
+ * Generate a scroll packet. By default this produces a CDG_SCROLL_COPY
+ * packet with zero offsets and copy flag set (matches the example packet
+ * that appears as a no-op scroll). Caller can specify small offsets and
+ * directions per CDG spec (hOffset 0..5, vOffset 0..11, hDir/ vDir 0..3).
+ */
+export function generateScrollPacket(
+  colorIndex: number = 0,
+  hField: number = 0,
+  vField: number = 0,
+  useCopyVariant: boolean = true
+): CDGPacket[] {
+  const packet = new CDGPacketClass();
+  // Choose command: SCROLL_COPY (24) or SCROLL_PRESET (20)
+  const cmd = useCopyVariant ? CDGCommand.CDG_SCROLL_COPY : CDGCommand.CDG_SCROLL_PRESET;
+  packet.setCommand(cmd, 0);
+  const data = new Array(16).fill(0);
+  data[0] = colorIndex & 0x3F;
+  // hField and vField should already encode offset and direction bits per spec
+  data[1] = hField & 0x3F;
+  data[2] = vField & 0x3F;
+  packet.setData(data);
+  return [new Uint8Array(packet.toBuffer())];
+}
+
 export function generatePaletteLoadPackets(palette?: CDGPalette): CDGPacket[] {
   const pal = palette || new CDGPalette();
   const pkts: CDGPacket[] = [];
@@ -347,11 +372,30 @@ export function generatePaletteLoadPackets(palette?: CDGPalette): CDGPacket[] {
     for (let pal_inc = 0; pal_inc < 8; pal_inc++) {
       const actual_idx = pal_inc + pal_offset;
       const temp = colors[actual_idx] || 0; // stored as 12-bit r4/g4/b4
-      const r4 = (temp >> 8) & 0x0F;
+      const r4 = (temp >> 8) & 0x1F;
       const g4 = (temp >> 4) & 0x0F;
       const b4 = temp & 0x0F;
-      data[pal_inc * 2 + 0] = ((r4 & 0x0F) << 2) | ((g4 & 0x0F) >> 2);
-      data[pal_inc * 2 + 1] = (((g4 & 0x03) << 4) | (b4 & 0x0F)) & 0x3F;
+
+      const byte1 = ((r4 & 0x1f) << 2) | ((g4 & 0x1f) >> 2)
+      const byte2 = ((g4 & 0x03) << 4) | (b4 & 0x0f)
+
+      // POORLY SHIFTED!
+      // const byte1 = ((r4 & 0x1f) << 2) | ((g4 & 0x1f) >> 2)
+      // const byte2 = ((g4 & 0x03) << 4) | (b4 & 0x0f)
+
+      // SWAPPED GREEN bits
+      // const byte1 = (r4 << 2) | (g4 & 0x03) // (g4 >> 2)
+      // const byte2 = ((g4 & 0x0A) << 4) | (b4 << 2)
+
+      // SWAPPED GREEN && BLUE bits
+      // const byte1 = (r4 << 2) | (b4 >> 2)
+      // const byte2 = ((b4 & 0x03) << 6) | ((g4 & 0x0C) << 2)
+
+      if (hi === 1 && pal_inc === 3)
+        console.log(`encoder: ${hi?"HI":"LO"}`, pal_inc, ' B1:', byte1.toString(2).padStart(8, '0'), ' B2:', byte2.toString(2).padStart(8, '0'))
+
+      data[pal_inc * 2 + 0] = byte1; (( r4 & 0x0F) << 2) | ((g4 & 0x0F) >> 2);
+      data[pal_inc * 2 + 1] = byte2; (((g4 & 0x03) << 4) | ( b4 & 0x0F)) & 0x3F;
     }
     packet.setData(data);
     pkts.push(new Uint8Array(packet.toBuffer()));

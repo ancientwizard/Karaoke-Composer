@@ -10,13 +10,17 @@ export function msToPacks(ms: number, pps = 300): number {
 /**
  * Convert a time value from parsed JSON into CDG packet units.
  *
- * The parsed JSON may express times either in packet counts or in
- * milliseconds. This helper accepts explicit flags to control the
- * interpretation rather than relying on ambient globals.
+ * The parsed JSON expresses times in PACKET UNITS at 300 packets per second (default).
+ * This matches the reference CDG Magic format where start/duration are packet counts.
+ * This helper accepts explicit flags to control the interpretation:
+ *  - timesInMs=false, timesInPacks=false (default): value is already in packet units, return as-is
+ *  - timesInMs=true, timesInPacks=false: value is in milliseconds, convert to packs
+ *  - timesInMs=false, timesInPacks=true: value is already in pack units, explicit flag (same as default)
  */
 export function timeToPacks(value: number | undefined, pps = 300, timesInMs = false, timesInPacks = false): number {
   if (value == null) return 0
-  if (timesInMs && !timesInPacks) return msToPacks(value, pps)
+  if (timesInMs) return msToPacks(value, pps)
+  // Default: value is already in packet units, return as-is
   return Math.floor(value)
 }
 

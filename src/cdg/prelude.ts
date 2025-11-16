@@ -38,7 +38,9 @@ export function synthesizePrelude(parsed: any, opts: PreludeOptions = {}) {
   const borderPkts = generateBorderPacket(borderIndex)
 
   // Memory preset color: prefer BMPClip.fill_index or TextClip.fill_index
-  let memColor = 0
+  // Default to 1 to match the non-synthesized generator default (helps
+  // ensure synthesized preludes use a visible background color by default).
+  let memColor = 1
   try {
     for (const c of parsed.clips || []) {
       if (c.type === 'BMPClip') {

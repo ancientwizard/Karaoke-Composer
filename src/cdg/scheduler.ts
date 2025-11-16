@@ -14,6 +14,12 @@ export interface FontEvent {
 export interface ScheduleOptions {
   durationSeconds: number;
   pps?: number;
+  // When true the scheduler is allowed to overwrite slots that were
+  // prefilled by the caller (e.g. a synthesized prelude). This is
+  // intentionally opt-in because overwriting a caller-provided prelude
+  // can be destructive; only enable when you explicitly want the
+  // scheduler to take ownership of prelude indices.
+  allowOverwritePrefilled?: boolean;
   // How many seconds forward we allow destructive overwrites when forced.
   overwriteLimitSeconds?: number;
   // How many seconds of slack to allow beyond the max intended placement
@@ -45,6 +51,13 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
   const packetSlots: CDGPacket[] = initialPacketSlots && initialPacketSlots.length === totalPacks
     ? initialPacketSlots
     : new Array(totalPacks).fill(null).map(() => makeEmptyPacket());
+
+  // Record which slots were prefilled by the caller (e.g. a synthesized or
+  // copied prelude). Prefilled slots should be treated as immutable: the
+  // scheduler will not overwrite them. If the caller did not provide an
+  // initialPacketSlots array, this mask will be all-false and behavior is
+  // unchanged.
+  const initialPrefilledMask: boolean[] = packetSlots.map((pkt) => !(pkt.every((b) => b === 0)));
 
   const vram = new VRAM();
   const comp = new Compositor();
@@ -89,6 +102,15 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
     if (i > placementCap) {
       // Defensive: never write beyond the conservative placement cap.
       if (diagEnabled) console.warn(`Dropping write at index=${i} beyond placementCap=${placementCap}`)
+      return false
+    }
+    // Respect caller-provided prefilled slots. By default we refuse to
+    // overwrite them; when opts.allowOverwritePrefilled is true we permit
+    // the write (still subject to placementCap). This lets callers opt
+    // into hybrid behavior where an aggressive synthesized prelude can be
+    // updated by the scheduler.
+    if (initialPrefilledMask[i] && !(opts as any).allowOverwritePrefilled) {
+      if (diagEnabled) console.warn(`Dropping write at index=${i} because slot was prefilled by caller and is immutable`)
       return false
     }
     packetSlots[i] = p
@@ -162,14 +184,56 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
     if (!allowOverwrite) {
       return [-1, false];
     }
+
+    // When overwriting is permitted, prefer to find a writable slot that
+    // was NOT prefilled by the caller. We will probe forward from the
+    // desired position up to the endBound (and backward within bounds) to
+    // locate a candidate. If none exists, we must fail rather than
+    // overwriting caller-provided prefilled slots.
     let writePos = pos;
     if (writePos < effectiveStartBound) writePos = effectiveStartBound;
     if (writePos >= packetSlots.length) return [-1, true];
-    const wasEmpty = packetSlots[writePos] ? packetSlots[writePos].every((b) => b === 0) : true;
-    if (dbg) console.log(`[TRACE] placePacketAt: overwriting at writePos=${writePos} (wasEmpty=${wasEmpty}) for target=${dbg.blockX},${dbg.blockY}@${dbg.startPack}`);
-    const ok = setPacketSafely(writePos, pkt);
-    if (!ok) return [-1, true];
-    return [writePos, !wasEmpty];
+
+    // Try a bounded probe for a non-prefilled slot to overwrite.
+    const candidateEnd = endBound;
+    const candidateStart = effectiveStartBound;
+    let chosen = -1;
+    // Check the initial writePos first
+    for (let step = 0; step <= Math.max(candidateEnd - writePos, writePos - candidateStart); step++) {
+      const f = writePos + step;
+      const b = writePos - step;
+      if (f <= candidateEnd) {
+        if (!initialPrefilledMask[f]) { chosen = f; break }
+      }
+      if (b >= candidateStart) {
+        if (!initialPrefilledMask[b]) { chosen = b; break }
+      }
+    }
+    if (chosen === -1) {
+      // No non-prefilled slot found within bounds. If the caller explicitly
+      // allowed overwriting prefilled slots, pick the nearest candidate even
+      // if it was prefilled (we'll still respect placementCap / effective
+      // bounds). Otherwise refuse to overwrite.
+      if ((opts as any).allowOverwritePrefilled) {
+        // Find nearest candidate position (forward/backward) within bounds
+        for (let step = 0; step <= Math.max(candidateEnd - writePos, writePos - candidateStart); step++) {
+          const f = writePos + step;
+          const b = writePos - step;
+          if (f <= candidateEnd) { chosen = f; break }
+          if (b >= candidateStart) { chosen = b; break }
+        }
+      }
+      if (chosen === -1) {
+        if (dbg) console.log(`[TRACE] placePacketAt: no non-prefilled overwrite candidate found for target=${dbg.blockX},${dbg.blockY}@${dbg.startPack}`);
+        return [-1, false];
+      }
+    }
+
+    const wasEmpty = packetSlots[chosen] ? packetSlots[chosen].every((b) => b === 0) : true;
+    if (dbg) console.log(`[TRACE] placePacketAt: overwriting at writePos=${chosen} (wasEmpty=${wasEmpty}) for target=${dbg.blockX},${dbg.blockY}@${dbg.startPack}`);
+    const ok2 = setPacketSafely(chosen, pkt);
+    if (!ok2) return [-1, true];
+    return [chosen, !wasEmpty];
   }
 
   // Helper: search for an empty contiguous run of length `neededLen` starting
@@ -274,6 +338,10 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
   const probe = (ev as any).__probePackets as Uint8Array[] | undefined;
   const packets: Uint8Array[] = probe && probe.length ? probe : writeFontBlock(vram, ev.blockX, ev.blockY, ev.pixels, 0, comp as any);
     if (packets.length === 0) continue;
+    // CRITICAL: Update VRAM after successful write so subsequent blocks
+    // can use tile comparison optimization. This is what fixes the file size
+    // from 11,126 packets to ~5,500.
+    vram.writeBlock(ev.blockX, ev.blockY, ev.pixels);
     if (_debugLogCount < 10 && diagEnabled) {
       console.log('scheduler: event', ev.blockX, ev.blockY, 'startPack', ev.startPack, 'produced', packets.length)
       _debugLogCount++
@@ -303,7 +371,9 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
       const groupPackets: Uint8Array[][] = [];
       for (const gev of group) {
         const gpk = (gev as any).__probePackets as Uint8Array[] | undefined;
-        const use = gpk && gpk.length ? gpk : writeFontBlock(new VRAM(), gev.blockX, gev.blockY, gev.pixels, 0, comp as any);
+        // CRITICAL FIX: Use persistent vram instead of new VRAM()
+        // This ensures group packets see the real VRAM state
+        const use = gpk && gpk.length ? gpk : writeFontBlock(vram, gev.blockX, gev.blockY, gev.pixels, 0, comp as any);
         groupPackets.push(use);
         totalNeeded += use.length || 1;
       }
@@ -327,6 +397,8 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
           }
           ;(gev as any).__placedIndices = placedForThis;
           _handledEvents.add(gev);
+          // Update VRAM after placing this group event
+          vram.writeBlock(gev.blockX, gev.blockY, gev.pixels);
           offset += Math.max(1, gpkts.length);
         }
         // Advance the startPack offset by totalNeeded so subsequent groups don't collide

@@ -1,58 +1,52 @@
-# CD+G / CDG Reference & RFCs
-```markdown
-# CD+G (CDG) reference — concise facts for encoder/scheduler
+# 🎼 CD+G Packet Format and Encoding Summary
 
-This page captures the essential, authoritative facts we rely on while building a byte-for-byte compatible CDG generator and diagnosing rendering/length issues.
+## 📦 CD+G Packet Structure
 
-Core facts
-----------
-- Packet unit: 24 bytes per CD+G subcode packet. This is the canonical packet size that players and `.cdg` files use.
--- Rate (physical CDG spec): 75 packets per second (packets/sec). Convert packets -> seconds with `seconds = packets / 75` when aligning to audio/CD timing.
-	- Project note: this repository uses a file-generation baseline of 300 packets/second for ms→packet conversions by default. When using the project's tooling, convert packets -> seconds with `seconds = packets / 300` unless you explicitly set a different `pps`.
-- File format: A `.cdg` file is a linear stream of 24‑byte packets. Players consume this stream and update VRAM according to packet commands.
+A **CD+G packet** is a fixed-length 24-byte structure used to encode graphical instructions alongside audio data on CD+G discs. Each packet consists of:
 
-Common confusion (96 bytes / grouped buffers)
---------------------------------------------
-- Some tools or burning/transport layers group several 24‑byte packets into larger buffers (common grouping: 4 × 24 = 96 bytes) for sector/subcode framing or I/O efficiency. That is a transport/buffering detail and not a change to the canonical 24‑byte CDG packet unit.
+- **Byte 0**: Command (e.g., tile block, color table, scroll)
+- **Byte 1**: Instruction (subtype of command)
+- **Bytes 2–3**: Parity (error correction)
+- **Bytes 4–19**: Payload (typically 16 bytes of graphics data)
+- **Bytes 20–23**: Additional parity
 
-Why generated files sometimes appear 1/4 the expected length
------------------------------------------------------------
--- If a script or tool computes packet count using 96 instead of 24 (e.g. `packets = buf.length / 96`), it will report 1/4 the true number of packets. If you then compute duration using an incorrect `pps` (for example `packets / 75` when your tooling expects 300), the reported duration will be wrong (often 4× off). Always ensure you know which `pps` value is being assumed: the physical CDG spec is 75 pps, this repo's generator defaults to 300 pps for ms→packet mapping.
-- Other causes to check:
-	- File truncation (the `.cdg` file was cut off during write).
-	- Incorrect slicing of the buffer when extracting packets (using a wrong divisor or offset).
-	- Missing reserved prelude packets (palette/memory/border) which can shift or shorten visible output in players.
+These packets encode low-resolution visuals such as 12×6 pixel tiles, palette changes, and scrolling effects. The format is defined by the CD+G specification, an extension of the Red Book audio CD standard.
 
-Why generated `.cdg` files might not render correctly
-----------------------------------------------------
-- Byte-level differences matter: palette packing (RGB→4-bit), CLUT ordering, tile bitplane packing, COPY vs XOR choice, and packet header bytes must match expected values.
-- Packet ordering & timing: initialization (palette, border, memory preset) is expected at particular indices; mismatches cause wrong colors or empty VRAM.
-- VRAM semantics: incorrect tile packing or wrong tile command codes will yield wrong pixels.
+## 🔗 CD+G Encoding via Subchannels
 
-Practical checklist to debug & fix parity
-----------------------------------------
-1. Treat the packet unit as 24 bytes everywhere. Search for hard-coded `24` or local `PACKET_SIZE` values and consolidate.
-2. Verify duration calculations use the intended mapping: `seconds = packets / <pps>` where `<pps>` is either the physical spec (75) when aligning to audio/CD frames, or the project's file baseline (300) when using the generator's default behavior. Prefer reading `CDG_PPS` from the codebase or using the tool's `--pps` flag to avoid ambiguity.
-3. Ensure reserved prelude (palette/memory/border) is emitted at the same indices as the reference when attempting byte-for-byte parity.
-4. Port the reference encoder's `write_fontblock` and related packet-packing logic exactly (bit packing, packet ordering, COPY/XOR heuristics).
-5. Add regression tests that extract packets from a reference `.cdg` and assert exact byte-for-byte equality for the same event window.
+CD+G data is embedded into the **R–W subchannels** of the audio CD format. These are six 1-bit channels (R, S, T, U, V, W) available in each CD frame. While the main channel carries 2,352 bytes of audio, the subchannels provide a narrow auxiliary stream:
 
-Quick diagnostics (from repo root)
-```bash
-# find files with packet-size math or local PACKET_SIZE
-rg "PACKET_SIZE|packetSize|/ 96|/96|packets per second|75 packets" || true
+- **6 bits per frame** (1 bit from each of R–W)
+- CD+G packets are serialized across **32 consecutive frames**, yielding:
 
-# compute packets and seconds for a .cdg by filename
-node -e "const fs=require('fs');const p=fs.readFileSync(process.argv[1]);console.log('bytes',p.length,'packets',p.length/24,'seconds_spec75',p.length/24/75,'seconds_proj300',p.length/24/300)" sample.cdg
-```
+  \[
+  32 \text{ frames} \times 6 \text{ bits} = 192 \text{ bits} = 24 \text{ bytes}
+  \]
 
-Authoritative references
-------------------------
-- CD+G technical overview: https://cdgfix.com/help/3.x/Technical_information/The_CDG_graphics_format.htm
-- File extension / high level: https://filext.com/file-extension/CDG
-- Wikipedia summary: https://en.wikipedia.org/wiki/CD%2BG
+Thus, each CD+G packet is spread across 32 frames, and the effective bandwidth is limited by the audio CD’s frame rate. This results in approximately **2.34 CD+G packets per second**, constraining visual update speed and resolution.
 
+## 💾 .CDG Files and Playback Versatility
 
-End of concise reference.
+A **.cdg file** is a raw dump of CD+G packets, typically used in karaoke playback software. These files contain only the graphics data — no audio — and are structured as a continuous stream of 24-byte packets.
 
-```
+Unlike CD+G discs, .cdg files are not bound by subchannel bandwidth. They are often encoded or interpreted at **300 packets per second**, providing:
+
+- **Higher temporal resolution**
+- **Smoother visual transitions**
+- **More flexible playback and editing**
+
+This decoupling from physical disc constraints allows .cdg files to serve as a more versatile format for karaoke and CD+G emulation. However, the shared structure — the 24-byte packet — is the **only commonality** between CD+G discs and .cdg files.
+
+## 📌 Summary
+
++-----------------+-------------------+------------------------+
+| Feature         | CD+G Disc         | .CDG File              |
++-----------------+-------------------+------------------------+
+| Packet Format   | 24 bytes          | 24 bytes               |
+| Encoding Medium | R–W subchannels   | Raw file               |
+| Bandwidth       | ~2.34 packets/sec | 300 packets/sec        |
+| Audio Included  | Yes               | No                     |
+| Flexibility     | Limited by disc   | High (software-driven) |
++-----------------+-------------------+------------------------+
+
+This distinction is critical when designing playback systems, encoders, or renderers that aim to support both formats. CD+G’s subchannel encoding is a clever use of otherwise unused bandwidth, but .cdg files unlock the fuller potential of the packet format.

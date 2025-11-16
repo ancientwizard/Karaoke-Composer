@@ -75,9 +75,9 @@ export class CDGPacket {
     // Simple parity calculation (XOR of all data bits)
     // CDG spec defines specific parity, but many players ignore it
     let parity = 0
-    for (let i = 1; i < 19; i++) {
+    for (let i = 1; i < 19; i++)
       parity ^= this.buffer[i]
-    }
+
     this.buffer[19] = parity & 0x3F
     this.buffer[20] = parity & 0x3F
     this.buffer[21] = parity & 0x3F
@@ -167,8 +167,18 @@ export class CDGPacket {
       const r4 = (color >> 8) & 0x0F
       const g4 = (color >> 4) & 0x0F
       const b4 = color & 0x0F
-      data[pal_inc * 2 + 0] = ((r4 & 0x0F) << 2) | ((g4 & 0x0F) >> 2)
-      data[pal_inc * 2 + 1] = (((g4 & 0x03) << 4) | (b4 & 0x0F)) & 0x3F
+
+      const byte1 = (r4 << 2) | (g4 >> 2)
+      const byte2 = ((g4 & 0x03) << 4) | b4
+
+      // console.log('CDGPacket: B1:', byte1.toString(2).padStart(8, '0'), ' B2:', byte2.toString(2).padStart(8, '0'))
+
+      data[pal_inc * 2 + 0] = byte1; // ((r4 & 0x0F) << 2) | ((g4 & 0x0F) >> 2)
+      data[pal_inc * 2 + 1] = byte2; //(((g4 & 0x03) << 4) | (b4 & 0x0F)) & 0x3F
+
+      // SWAP GREEN to test for encoding issue I'm seeing
+      // data[pal_inc * 2 + 0] = ((r4 & 0x0F) << 2) | ((g4 & 0x03) << 4)
+      // data[pal_inc * 2 + 1] = (((g4 & 0x02) >> 2) | (b4 & 0x0F)) & 0x3F
     }
 
     packet.setData(data)
@@ -231,9 +241,7 @@ export class CDGPalette {
     const g4 = Math.floor(g / 17) & 0x0F
     const b4 = Math.floor(b / 17) & 0x0F
 
-    // Pack into 12-bit CDG format (stored as 16-bit)
-    // Format: [0 0 R3 R2 R1 R0 G3 G2] [0 0 G1 G0 B3 B2 B1 B0]
-    return ((r4 << 8) | (g4 << 4) | b4) & 0x0FFF
+    return ((r4 << 8) | (g4 << 4) | b4) & 0x0FFF   // ORIGINAL
   }
 
   /**
