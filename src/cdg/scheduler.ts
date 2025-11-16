@@ -741,7 +741,6 @@ export function scheduleAndWriteDemo(outPath: string, durationSeconds = 4) {
 
   // write to file
   writePacketsToFile(outPath, packetSlots);
-  console.log(`Scheduler packet statistics: COPY=${copyPacketsGenerated} XOR=${xorPacketsGenerated} total=${copyPacketsGenerated + xorPacketsGenerated}`);
   return {
     outPath,
     count: packetSlots.length,

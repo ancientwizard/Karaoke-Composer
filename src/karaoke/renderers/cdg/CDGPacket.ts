@@ -11,15 +11,15 @@
  * CDG Command codes (first byte of packet)
  */
 export enum CDGCommand {
-  CDG_MEMORY_PRESET = 1,      // Clear screen with color
-  CDG_BORDER_PRESET = 2,      // Set border to color
-  CDG_TILE_BLOCK = 6,         // Draw tile block (normal)
-  CDG_SCROLL_PRESET = 20,     // Scroll screen
-  CDG_SCROLL_COPY = 24,       // Scroll screen with copy
-  CDG_DEFINE_TRANSPARENT = 28, // Define transparent color
-  CDG_LOAD_COLOR_TABLE_LOW = 30,  // Load color table (colors 0-7)
-  CDG_LOAD_COLOR_TABLE_HIGH = 31, // Load color table (colors 8-15)
-  CDG_TILE_BLOCK_XOR = 38     // Draw tile block (XOR mode)
+  CDG_MEMORY_PRESET = 0x08,            // Clear screen with color
+  CDG_BORDER_PRESET = 0x0C,            // Set border to color
+  CDG_TILE_BLOCK = 0x06,               // Draw tile block (normal)
+  CDG_SCROLL_PRESET = 0x14,            // Scroll screen
+  CDG_SCROLL_COPY = 0x18,              // Scroll screen with copy
+  CDG_DEFINE_TRANSPARENT = 0x1C,       // Define transparent color
+  CDG_LOAD_COLOR_TABLE_LOW = 0x1E,     // Load color table (colors 0-7)
+  CDG_LOAD_COLOR_TABLE_HIGH = 0x1F,    // Load color table (colors 8-15)
+  CDG_TILE_BLOCK_XOR = 0x26            // Draw tile block (XOR mode)
 }
 
 /**
@@ -227,7 +227,7 @@ export class CDGPalette {
       this.rgbToCDG(0, 255, 255),    // 12: Cyan
       this.rgbToCDG(255, 128, 0),    // 13: Orange
       this.rgbToCDG(128, 0, 128),    // 14: Purple
-      this.rgbToCDG(0, 128, 0)       // 15: Dark green
+      this.rgbToCDG(255, 255, 0)     // 15: BRIGHT YELLOW (test color)
     ]
   }
 
