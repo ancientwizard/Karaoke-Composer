@@ -60,11 +60,10 @@ export class PaletteScheduler {
       return this.colorToSlot.get(color)!
     }
 
-    // Find an unused slot (slot with color 0x000 that isn't already in use)
-    // For simplicity, we scan for the first slot that doesn't map to another color
-    // In a real scenario, you might want a more sophisticated allocation strategy
+    // Find an unused slot: iterate through slots and find one that NO color maps to
+    const usedSlots = new Set(Array.from(this.colorToSlot.values()))
     for (let i = 0; i < 16; i++) {
-      if (!Array.from(this.colorToSlot.values()).includes(i)) {
+      if (!usedSlots.has(i)) {
         this.setColor(i, color)
         return i
       }

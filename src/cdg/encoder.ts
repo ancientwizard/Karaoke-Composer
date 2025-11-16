@@ -57,17 +57,17 @@ export class VRAM {
 
 // Helper: build a CDG packet with TV_GRAPHICS, instruction, and header data[0..3]
 export function buildHeaderPacket(instruction: number, colorOn: number, colorOff: number, yBlock: number, xBlock: number): CDGPacket {
-  const p = makeEmptyPacket();
+  const p = makeEmptyPacket()
   p[0] = TV_GRAPHICS; // command
-  p[1] = instruction & 0x3F;
+  p[1] = instruction & 0x3F
+  // Packet layout: [0]=0x09, [1]=cmd, [2-3]=parity Q, [4-19]=data, [20-23]=parity P
   // data[0] = colorOn | ((channel << 2) & 0x30) -- we use channel 0
-  p[4] = colorOn & 0x3F;
-  p[5] = colorOff & 0x3F;
-  // data[2] = y_block, data[3] = x_block stored at p[6], p[7] considering header offset
-  // Our layout: p[4]..p[19] correspond to data[0..15]
-  p[8] = yBlock & 0x3F; // data[2]
-  p[9] = xBlock & 0x3F; // data[3]
-  return p;
+  p[4] = colorOn & 0x3F  // data[0]
+  p[5] = colorOff & 0x3F  // data[1]
+  // data[2] = y_block, data[3] = x_block
+  p[8] = yBlock & 0x3F  // data[2]
+  p[9] = xBlock & 0x3F  // data[3]
+  return p
 }
 
 // (inline fill handled in makePacket)
@@ -392,23 +392,11 @@ export function generatePaletteLoadPackets(palette?: CDGPalette): CDGPacket[] {
       const byte1 = ((r4 & 0x1f) << 2) | ((g4 & 0x1f) >> 2)
       const byte2 = ((g4 & 0x03) << 4) | (b4 & 0x0f)
 
-      // POORLY SHIFTED!
-      // const byte1 = ((r4 & 0x1f) << 2) | ((g4 & 0x1f) >> 2)
-      // const byte2 = ((g4 & 0x03) << 4) | (b4 & 0x0f)
-
-      // SWAPPED GREEN bits
-      // const byte1 = (r4 << 2) | (g4 & 0x03) // (g4 >> 2)
-      // const byte2 = ((g4 & 0x0A) << 4) | (b4 << 2)
-
-      // SWAPPED GREEN && BLUE bits
-      // const byte1 = (r4 << 2) | (b4 >> 2)
-      // const byte2 = ((b4 & 0x03) << 6) | ((g4 & 0x0C) << 2)
-
       if (hi === 1 && pal_inc === 3)
         console.log(`encoder: ${hi?"HI":"LO"}`, pal_inc, ' B1:', byte1.toString(2).padStart(8, '0'), ' B2:', byte2.toString(2).padStart(8, '0'))
 
-      data[pal_inc * 2 + 0] = byte1; (( r4 & 0x0F) << 2) | ((g4 & 0x0F) >> 2);
-      data[pal_inc * 2 + 1] = byte2; (((g4 & 0x03) << 4) | ( b4 & 0x0F)) & 0x3F;
+      data[pal_inc * 2 + 0] = byte1 & 0x3F
+      data[pal_inc * 2 + 1] = byte2 & 0x3F
     }
     packet.setData(data);
     pkts.push(new Uint8Array(packet.toBuffer()));

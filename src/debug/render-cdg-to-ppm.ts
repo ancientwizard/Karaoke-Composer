@@ -55,7 +55,7 @@ function render(filePath: string) {
   const off = i * CDG_PACKET_SIZE
   const pkt = buf.slice(off, off + CDG_PACKET_SIZE)
     const cmd = pkt[1] & 0x3F
-    // data bytes start at offset 3
+    // data bytes start at offset 3 (CD+G Magic encoding)
     const data = pkt.slice(3, 19)
     switch (cmd) {
       case 30: // load color table low

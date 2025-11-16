@@ -47,41 +47,48 @@ export class CDGPacket {
 
   constructor() {
     this.buffer = new Uint8Array(24)
-    // First byte is always CDG subchannel code (0x09)
+    // Packet structure (24 bytes total):
+    // [0] = 0x09 (CDG subcode)
+    // [1] = command
+    // [2] = instruction (param)
+    // [3-18] = data (16 bytes) - matches CD+G Magic framing
+    // [19-23] = parity/padding
     this.buffer[0] = 0x09
   }
 
   /**
    * Set command and instruction
+   * Command goes in buffer[1], instruction in buffer[2]
    */
   setCommand(command: CDGCommand, instruction: number = 0): void {
-    this.buffer[1] = command & 0x3F  // Command (mask to 6 bits)
-    this.buffer[2] = instruction & 0x3F  // Instruction (mask to 6 bits)
+    this.buffer[1] = command & 0x3F  // Command at [1] (mask to 6 bits)
+    this.buffer[2] = instruction & 0x3F  // Instruction at [2] (mask to 6 bits) - part of parity Q
   }
 
   /**
    * Set data bytes (16 bytes max)
+   * Data starts at buffer[3] per CD+G Magic encoding (our reference)
    */
   setData(data: number[]): void {
     for (let i = 0; i < Math.min(data.length, 16); i++) {
-      this.buffer[3 + i] = data[i] & 0x3F  // Data bytes (mask to 6 bits each)
+      this.buffer[3 + i] = data[i] & 0x3F  // Data bytes start at [3] (mask to 6 bits each)
     }
   }
 
   /**
-   * Calculate and set parity bits (optional, often ignored by players)
+   * Set parity bytes
+   * Following CD+G Magic and VLC implementations, parity is typically left as zeros in .cdg files.
+   * Parity Q (buffer[2-3]) and Parity P (buffer[20-23]) are mostly ignored by file-based players.
    */
   setParity(): void {
-    // Simple parity calculation (XOR of all data bits)
-    // CDG spec defines specific parity, but many players ignore it
-    let parity = 0
-    for (let i = 1; i < 19; i++)
-      parity ^= this.buffer[i]
-
-    this.buffer[19] = parity & 0x3F
-    this.buffer[20] = parity & 0x3F
-    this.buffer[21] = parity & 0x3F
-    this.buffer[22] = parity & 0x3F
+    // Leave parity bytes as zero (standard practice in .cdg files)
+    // buffer[2-3] = parity Q (already zero from constructor)
+    // buffer[20-23] = parity P (set to zero)
+    // This matches CD+G Magic's approach: zero parity is safe and widely compatible
+    this.buffer[20] = 0
+    this.buffer[21] = 0
+    this.buffer[22] = 0
+    this.buffer[23] = 0
   }
 
   /**
@@ -227,7 +234,7 @@ export class CDGPalette {
       this.rgbToCDG(0, 255, 255),    // 12: Cyan
       this.rgbToCDG(255, 128, 0),    // 13: Orange
       this.rgbToCDG(128, 0, 128),    // 14: Purple
-      this.rgbToCDG(255, 255, 0)     // 15: BRIGHT YELLOW (test color)
+      this.rgbToCDG(0, 128, 0)       // 15: Dark green
     ]
   }
 

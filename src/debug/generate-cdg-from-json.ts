@@ -10,6 +10,7 @@ import { CDGPalette } from '../karaoke/renderers/cdg/CDGPacket'
 import { timeToPacks, computeDurationSecondsFromParsedJson } from '../cdg/utils'
 import synthesizePrelude from '../cdg/prelude'
 import { PaletteScheduler } from '../karaoke/renderers/cdg/PaletteScheduler'
+import { loadPalettedBMP } from './PalettedBMPLoader'
 
 // Interpret time values from the parsed JSON: some fields are already in CDG packet
 // units (packs) while others may be in milliseconds. We will select explicit
@@ -228,44 +229,16 @@ async function main() {
   const palette = new CDGPalette()
   const paletteColors = palette.getColors()
 
-  // Initialize PaletteScheduler to track color assignments and schedule LOAD packets
-  // Start with the CDGPalette colors from the project (if available) so we can schedule
-  // palette changes when rendering encounters new colors.
-  const paletteScheduler = new PaletteScheduler(paletteColors)
+  // Initialize PaletteScheduler: start with ONLY the text colors (0-1 are typically used for text)
+  // Reserve slots 0 (black/background) and 1 (yellow/foreground) from the default palette
+  // This allows the BMP colors to use slots 2-15
+  const textColorPalette = new Array(16).fill(0)
+  textColorPalette[0] = paletteColors[0]  // black background
+  textColorPalette[1] = paletteColors[1]  // yellow text
+  // slots 2-15 will be allocated as BMP colors are encountered
+  
+  const paletteScheduler = new PaletteScheduler(textColorPalette)
   const paletteScheduleHistory: Array<{ packIndex: number; packets: Uint8Array[] }> = []
-
-  async function loadImage(filePath: string) {
-    // Dynamically import Jimp to avoid ESM import shape issues in typings.
-    const jm = await import('jimp')
-    const dataBuf = fs.readFileSync(filePath)
-
-    async function tryRead(arg: any) {
-      if (typeof (jm as any).read === 'function') return await (jm as any).read(arg)
-      if ((jm as any).default && typeof (jm as any).default.read === 'function') return await (jm as any).default.read(arg)
-      if ((jm as any).Jimp && typeof (jm as any).Jimp.read === 'function') return await (jm as any).Jimp.read(arg)
-      throw new Error('No readable Jimp API found')
-    }
-
-    let image: any
-    try {
-      image = await tryRead(filePath)
-    } catch (e) {
-      // fallback: try reading from a buffer
-      image = await tryRead(dataBuf)
-    }
-    return {
-      width: image.bitmap.width,
-      height: image.bitmap.height,
-      pixels: image.bitmap.data,
-    }
-  }
-
-  function findNearestPaletteIndex(r: number, g: number, b: number) {
-    const cdgColor = PaletteScheduler.rgbToCDG(r, g, b)
-    // Try to find or allocate a slot for this color
-    const slot = paletteScheduler.findOrAllocateSlot(cdgColor)
-    return slot
-  }
 
   const events: any[] = []
   // Track when palette needs LOAD packets so we can inject them at appropriate positions
@@ -321,14 +294,14 @@ async function main() {
       continue
     }
 
-    // BMP clips: render bitmap into 6x12 tiles and map to nearest palette indices
+    // BMP clips: load paletted BMP and map palette indices to CDG palette
     if (clip.type === 'BMPClip') {
       const clipStart = clip.start || 0
+      const clipStartPack = timeToPacks((clipStart || 0), pps, timesInMsFlag, timesInPacksFlag)
       for (const ev of clip.events || []) {
         const bmpRel = ev.bmp_path || clip.bmp_path
         if (!bmpRel) continue
-        // Try several fallbacks for BMP path: relative to JSON dir, basename in that dir,
-        // and the reference sample files directory.
+        // Try several fallbacks for BMP path
         const candidates = []
         const relNorm = bmpRel.replace(/\\/g, '/')
         candidates.push(path.join(path.dirname(inPath), relNorm))
@@ -340,11 +313,39 @@ async function main() {
         }
         try {
           if (!bmpPath) throw new Error('BMP not found in candidate paths: ' + candidates.join(', '))
-          const bmp = await loadImage(bmpPath)
+          
+          // Load the BMP using the paletted loader to preserve index information
+          const bmpData = loadPalettedBMP(bmpPath)
+          
+          // First pass: discover which palette indices are actually used in the image
+          const usedBmpIndices = new Set<number>()
+          for (let i = 0; i < bmpData.pixels.length; i++) {
+            usedBmpIndices.add(bmpData.pixels[i])
+          }
+          
+          // Build a mapping from BMP palette indices to CDG palette indices
+          // Only allocate CDG slots for palette entries that are actually used in the image
+          const bmpToCDGIndexMap: number[] = new Array(256).fill(0)
+          
+          for (const bmpIdx of usedBmpIndices) {
+            if (bmpIdx < bmpData.palette.length) {
+              const {
+                r,
+                g,
+                b,
+              } = bmpData.palette[bmpIdx]
+              const cdgColor = PaletteScheduler.rgbToCDG(r, g, b)
+              const cdgSlot = paletteScheduler.findOrAllocateSlot(cdgColor)
+              bmpToCDGIndexMap[bmpIdx] = cdgSlot
+              uniqueColors.add(cdgColor)
+            }
+          }
+          
           const startCol = Math.floor((ev.x_offset || clip.x_offset || 0) / CDG_SCREEN.TILE_WIDTH)
           const startRow = Math.floor((ev.y_offset || clip.y_offset || 0) / CDG_SCREEN.TILE_HEIGHT)
-          const tilesX = Math.ceil(bmp.width / CDG_SCREEN.TILE_WIDTH)
-          const tilesY = Math.ceil(bmp.height / CDG_SCREEN.TILE_HEIGHT)
+          const tilesX = Math.ceil(bmpData.width / CDG_SCREEN.TILE_WIDTH)
+          const tilesY = Math.ceil(bmpData.height / CDG_SCREEN.TILE_HEIGHT)
+          
           for (let by = 0; by < tilesY; by++) {
             for (let bx = 0; bx < tilesX; bx++) {
               const pixels: number[][] = []
@@ -353,31 +354,47 @@ async function main() {
                 for (let x = 0; x < CDG_SCREEN.TILE_WIDTH; x++) {
                   const px = bx * CDG_SCREEN.TILE_WIDTH + x
                   const py = by * CDG_SCREEN.TILE_HEIGHT + y
-                  let idx = 0
-                  if (px < bmp.width && py < bmp.height) {
-                    const off = (py * bmp.width + px) * 4
-                    const r = bmp.pixels[off + 0]
-                    const g = bmp.pixels[off + 1]
-                    const bcol = bmp.pixels[off + 2]
-                    idx = findNearestPaletteIndex(r, g, bcol)
-                    // Track that we used this color
-                    const cdgColor = PaletteScheduler.rgbToCDG(r, g, bcol)
-                    uniqueColors.add(cdgColor)
+                  let cdgIdx = 0
+                  if (px < bmpData.width && py < bmpData.height) {
+                    // BMP pixels are stored bottom-to-top in standard BMP files
+                    const bmpY = bmpData.height - 1 - py
+                    const bmpPixelIdx = bmpY * bmpData.width + px
+                    const bmpPaletteIdx = bmpData.pixels[bmpPixelIdx]
+                    cdgIdx = bmpToCDGIndexMap[bmpPaletteIdx]
                   }
-                  rowArr.push(idx)
+                  rowArr.push(cdgIdx)
                 }
                 pixels.push(rowArr)
               }
-            const startPack = timeToPacks((clipStart || 0) + (ev.clip_time_offset || 0), pps, timesInMsFlag, timesInPacksFlag)
-            let evDurPacks = 0
-            if (ev.clip_time_duration != null) evDurPacks = timeToPacks(ev.clip_time_duration, pps, timesInMsFlag, timesInPacksFlag)
-            else if (clip.duration != null) evDurPacks = timeToPacks(clip.duration, pps, timesInMsFlag, timesInPacksFlag)
-            else evDurPacks = Math.ceil(pps * 2)
-            const durationPacks = Math.max(1, evDurPacks)
+              
+              const startPack = timeToPacks((clipStart || 0) + (ev.clip_time_offset || 0), pps, timesInMsFlag, timesInPacksFlag)
+              let evDurPacks = 0
+              if (ev.clip_time_duration != null) evDurPacks = timeToPacks(ev.clip_time_duration, pps, timesInMsFlag, timesInPacksFlag)
+              else if (clip.duration != null) evDurPacks = timeToPacks(clip.duration, pps, timesInMsFlag, timesInPacksFlag)
+              else evDurPacks = Math.ceil(pps * 2)
+              const durationPacks = Math.max(1, evDurPacks)
               events.push({
-                blockX: startCol + bx, blockY: startRow + by, pixels, startPack, durationPacks 
+                blockX: startCol + bx,
+                blockY: startRow + by,
+                pixels,
+                startPack,
+                durationPacks
               })
             }
+          }
+          
+          // Generate palette packets for any newly-allocated colors in this BMP
+          const newLoadPackets = paletteScheduler.generateLoadPackets()
+          if (newLoadPackets.length > 0) {
+            const eventStartPack = timeToPacks((clipStart || 0) + ((ev as any).clip_time_offset || 0), pps, timesInMsFlag, timesInPacksFlag)
+            const paletteInjectPack = Math.max(clipStartPack, eventStartPack - 5)
+            paletteScheduleHistory.push({
+              packIndex: paletteInjectPack,
+              packets: newLoadPackets
+            })
+            console.log(`BMP clip: allocated ${usedBmpIndices.size} BMP palette indices -> scheduled ${newLoadPackets.length} palette LOAD packets at pack ${paletteInjectPack}`)
+          } else {
+            console.log(`BMP clip: allocated ${usedBmpIndices.size} BMP palette indices, but no new LOAD packets needed (colors already loaded)`)
           }
         } catch (e) {
           console.warn('Failed to load BMP', bmpPath, (e as any).message || e)
@@ -866,38 +883,16 @@ async function main() {
     console.warn('Diagnostic pre-schedule assertion failed:', (e as any).message || e)
   }
 
-  // --- Palette Scheduling Pass ---
-  // Now that we've discovered all unique colors from rendering, generate LOAD packets
-  // to schedule them into the prelude. This ensures palette colors are loaded before
-  // any tile packets reference them.
-  console.log('Palette scheduling: discovered', uniqueColors.size, 'unique colors')
-  if (uniqueColors.size > 0) {
-    // Mark all unique colors in the scheduler for LOAD packet generation
-    for (const cdgColor of uniqueColors) {
-      paletteScheduler.findOrAllocateSlot(cdgColor)
-    }
-
-    // Generate LOAD packets for all needed colors
-    const loadPackets = paletteScheduler.generateLoadPackets()
-    console.log('Generated', loadPackets.length, 'palette LOAD packets')
-
-    // Inject LOAD packets right after the prelude (at the end of reserved slots)
-    // This ensures palettes are set up before tile rendering begins
-    if (loadPackets.length > 0 && initPkts.length < initialPacketSlots.length) {
-      let injectIdx = Math.max(initPkts.length, reservedCount)
-      for (const loadPkt of loadPackets) {
-        if (injectIdx < initialPacketSlots.length) {
-          initialPacketSlots[injectIdx] = loadPkt
-          injectIdx++
-        }
-      }
-      console.log('Injected', loadPackets.length, 'palette LOAD packets into prelude at index', Math.max(initPkts.length, reservedCount))
-    }
-
-    // Log the final palette for diagnostics
-    const finalPalette = paletteScheduler.getPalette()
-    console.log('Final palette (16 colors):', finalPalette.map((c) => '0x' + c.toString(16).padStart(3, '0')).join(', '))
-  }
+  // --- Palette Scheduling Pass (DISABLED - using paletteScheduleHistory instead) ---
+  // Previously we would generate palette packets here at the end, but this causes
+  // palette packets to be injected AFTER tiles have already started, causing color
+  // mismatches. Instead, we now generate palette packets during BMP event processing
+  // (when colors are first allocated) and store them in paletteScheduleHistory for
+  // proper injection timing.
+  //
+  // Palette packets are now scheduled to appear BEFORE their corresponding tiles,
+  // as specified in paletteScheduleHistory entries.
+  console.log('Palette scheduling: disabled (using paletteScheduleHistory from BMP events)')
 
   const { packetSlots } = scheduleFontEvents(
     events,
@@ -919,6 +914,34 @@ async function main() {
     if (packetSlots[i].some((b) => b !== 0)) { firstNon = i; break }
   }
   console.log('First non-empty packet index (scheduler):', firstNon)
+
+  // --- Inject palette packets from schedule history ---
+  // paletteScheduleHistory contains palette LOAD packets that should be injected
+  // at specific pack indices when new BMP colors are first needed
+  if (paletteScheduleHistory.length > 0) {
+    console.log(`Injecting ${paletteScheduleHistory.length} palette schedule entries...`)
+    for (const entry of paletteScheduleHistory) {
+      const packIdx = entry.packIndex
+      if (packIdx >= 0 && packIdx < packetSlots.length) {
+        for (const pkt of entry.packets) {
+          // Find next available slot starting from packIdx
+          let slotIdx = packIdx
+          while (slotIdx < packetSlots.length && packetSlots[slotIdx].some((b) => b !== 0)) {
+            slotIdx++
+          }
+          if (slotIdx < packetSlots.length) {
+            packetSlots[slotIdx] = pkt
+            console.log(`  Injected palette packet at slot ${slotIdx} (requested ${packIdx})`)
+          } else {
+            // No empty slot found; forcefully insert at packIdx, overwriting what's there
+            // Palette packets are critical and take precedence over individual tiles
+            packetSlots[packIdx] = pkt
+            console.log(`  Force-injected palette packet at slot ${packIdx} (overwrote existing packet)`)
+          }
+        }
+      }
+    }
+  }
   // Proof-of-concept: if the project timeline finishes earlier than the file
   // duration (e.g. after an END banner), insert a MEMORY_PRESET sequence to
   // clear VRAM so the reference state is matched. This is a targeted debug

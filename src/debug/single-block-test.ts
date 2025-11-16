@@ -29,9 +29,8 @@ async function run() {
     const cmd = pkt[0]
     const inst = pkt[1] & 0x3F
     if (cmd === 0x09 && (inst === 0x06 || inst === 0x26)) {
-      // CDGPacket.setData places data starting at buffer[3]. Per the
-      // CDGPacket layout the row/col are at offsets 5/6 and pixel lines
-      // occupy 7..18.
+      // CDGPacket.setData places data starting at buffer[3] (CD+G Magic encoding).
+      // The row/col are at offsets 5/6 and pixel lines occupy 7..18.
       const y = pkt[5] & 0x3F
       const x = pkt[6] & 0x3F
       const lines = Array.from(pkt.slice(7, 19)).map(b => b & 0x3F)
