@@ -61,6 +61,9 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
 
   const vram = new VRAM();
   const comp = new Compositor();
+  // Track XOR packets separately for statistics
+  let xorPacketsGenerated = 0;
+  let copyPacketsGenerated = 0;
 
   // Compute a conservative placement cap: do not allow scheduler to place
   // events arbitrarily far past the last intended event. This prevents
@@ -291,7 +294,7 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
       const tmpV = new VRAM();
       // writeFontBlock may update VRAM; here we only need the packet bytes
       // for placement sizing and copying later.
-      (ev as any).__probePackets = writeFontBlock(tmpV, ev.blockX, ev.blockY, ev.pixels, 0, comp as any);
+      (ev as any).__probePackets = writeFontBlock(tmpV, ev.blockX, ev.blockY, ev.pixels, 0, comp as any, ev.xorOnly || false);
     } catch (e) {
       (ev as any).__probePackets = [];
     }
@@ -336,12 +339,20 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
   // If a probe packet array was computed earlier, reuse it. Otherwise
   // generate packets now (this will update VRAM as before).
   const probe = (ev as any).__probePackets as Uint8Array[] | undefined;
-  const packets: Uint8Array[] = probe && probe.length ? probe : writeFontBlock(vram, ev.blockX, ev.blockY, ev.pixels, 0, comp as any);
+  const packets: Uint8Array[] = probe && probe.length ? probe : writeFontBlock(vram, ev.blockX, ev.blockY, ev.pixels, 0, comp as any, ev.xorOnly || false);
     if (packets.length === 0) continue;
+    // Track packet types
+    for (const pkt of packets) {
+      if (pkt[1] === 0x26) xorPacketsGenerated++;
+      else if (pkt[1] === 0x06) copyPacketsGenerated++;
+    }
     // CRITICAL: Update VRAM after successful write so subsequent blocks
     // can use tile comparison optimization. This is what fixes the file size
     // from 11,126 packets to ~5,500.
-    vram.writeBlock(ev.blockX, ev.blockY, ev.pixels);
+    // Skip VRAM update for XOR-only blocks as they don't change VRAM state
+    if (!ev.xorOnly) {
+      vram.writeBlock(ev.blockX, ev.blockY, ev.pixels);
+    }
     if (_debugLogCount < 10 && diagEnabled) {
       console.log('scheduler: event', ev.blockX, ev.blockY, 'startPack', ev.startPack, 'produced', packets.length)
       _debugLogCount++
@@ -373,9 +384,14 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
         const gpk = (gev as any).__probePackets as Uint8Array[] | undefined;
         // CRITICAL FIX: Use persistent vram instead of new VRAM()
         // This ensures group packets see the real VRAM state
-        const use = gpk && gpk.length ? gpk : writeFontBlock(vram, gev.blockX, gev.blockY, gev.pixels, 0, comp as any);
+        const use = gpk && gpk.length ? gpk : writeFontBlock(vram, gev.blockX, gev.blockY, gev.pixels, 0, comp as any, gev.xorOnly || false);
         groupPackets.push(use);
         totalNeeded += use.length || 1;
+        // Track packet types
+        for (const pkt of use) {
+          if (pkt[1] === 0x26) xorPacketsGenerated++;
+          else if (pkt[1] === 0x06) copyPacketsGenerated++;
+        }
       }
       // Attempt to find a contiguous run for the whole group starting near placedIdxBase
       const groupPlacedIdxBase = reservedStart + ev.startPack + (startPackOffsets.get(ev.startPack) || 0);
@@ -397,8 +413,10 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
           }
           ;(gev as any).__placedIndices = placedForThis;
           _handledEvents.add(gev);
-          // Update VRAM after placing this group event
-          vram.writeBlock(gev.blockX, gev.blockY, gev.pixels);
+          // Update VRAM after placing this group event (unless it's XOR-only)
+          if (!gev.xorOnly) {
+            vram.writeBlock(gev.blockX, gev.blockY, gev.pixels);
+          }
           offset += Math.max(1, gpkts.length);
         }
         // Advance the startPack offset by totalNeeded so subsequent groups don't collide
@@ -723,6 +741,7 @@ export function scheduleAndWriteDemo(outPath: string, durationSeconds = 4) {
 
   // write to file
   writePacketsToFile(outPath, packetSlots);
+  console.log(`Scheduler packet statistics: COPY=${copyPacketsGenerated} XOR=${xorPacketsGenerated} total=${copyPacketsGenerated + xorPacketsGenerated}`);
   return {
     outPath,
     count: packetSlots.length,

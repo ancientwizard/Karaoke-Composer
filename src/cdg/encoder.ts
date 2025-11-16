@@ -122,6 +122,7 @@ export function blockEqualsComposited(compositor: Compositor, blockX: number, bl
 // - if 2 colors: 1 COPY packet with mask of second color
 // - if 3 colors: 2 packets: COPY then XOR
 // - if >=4 colors: bitplane method: for each used bitplane write COPY (first) then XORs
+// - if xorOnly: generates XOR-mode packet for highlighting (karaoke)
 export function writeFontBlock(
   vram: VRAM,
   blockX: number,
@@ -129,6 +130,7 @@ export function writeFontBlock(
   blockPixels: number[][],
   channelOrCompositor?: number | Compositor,
   maybeCompositor?: Compositor,
+  xorOnly: boolean = false,
 ): CDGPacket[] {
   // Port of CDGMagic::write_fontblock / write_fontblock_single
   // Support two calling forms used in the codebase:
@@ -198,7 +200,18 @@ export function writeFontBlock(
     return lines;
   }
 
-  // XOR-only case isn't modelled externally here; skip (no xor_only semantics passed in)
+  // XOR-only case: used for karaoke highlighting
+  // This generates an XOR packet that highlights pixels without changing background
+  if (xorOnly) {
+    // For XOR-only highlighting, treat as if highlighting color index 1
+    // Only include block if it has meaningful pixels (avoid writing empty highlights)
+    const hasPixels = blockPixels.some(row => row.some(pix => pix > 0));
+    if (!hasPixels) return [];
+    
+    const lines = buildLines((pix) => pix > 0);
+    packets.push(write_fontblock_single(XOR_FONT, channel, blockX, blockY, 0, 1, lines));
+    return packets;
+  }
 
   if (num_colors === 0 || num_colors === 1) {
     const c = colorsByFreq[0] || 0;

@@ -311,8 +311,10 @@ async function main() {
             }
             pixels.push(rowArr)
           }
+          // Check if this clip uses XOR highlighting for karaoke
+          const isXorHighlight = clip.highlight_mode === 1 && (clip.karaoke_mode != null && clip.karaoke_mode > 0)
           events.push({
-            blockX: t.col, blockY: t.row, pixels, startPack, durationPacks 
+            blockX: t.col, blockY: t.row, pixels, startPack, durationPacks, xorOnly: isXorHighlight
           })
         }
       }
