@@ -290,6 +290,20 @@ async function main() {
             blockX: t.col, blockY: t.row, pixels, startPack, durationPacks, xorOnly: isXorHighlight
           })
         }
+
+        // Generate palette packets for any newly-allocated text colors
+        // Always generate load packets for text clips to ensure palette is loaded
+        let packetsToInject = paletteScheduler.generateLoadPackets()
+        if (packetsToInject.length === 0) {
+          // If no new colors were allocated, still generate load packets for current palette state
+          packetsToInject = generatePaletteLoadPackets()
+        }
+        const paletteInjectPack = Math.max(0, startPack - 5)
+        paletteScheduleHistory.push({
+          packIndex: paletteInjectPack,
+          packets: packetsToInject
+        })
+        console.log(`TextClip: scheduled ${packetsToInject.length} palette LOAD packets at pack ${paletteInjectPack}`)
       }
       continue
     }
@@ -998,20 +1012,23 @@ async function main() {
       }
     } else {
       // fallback behavior: single clear after last event
-      const memPkts = generateMemoryPresetPackets(0)
-      const need = memPkts.length
-      let lastEventEnd = 0
-      for (const ev of events) {
-        const endPack = (ev.startPack || 0) + (ev.durationPacks || 0)
-        if (endPack > lastEventEnd) lastEventEnd = endPack
-      }
-      let clearStart = Math.min(packetSlots.length - need, Math.max(0, lastEventEnd + 1))
-      if (clearStart < 0) clearStart = 0
-      for (let k = 0; k < need; k++) {
-        const idx = clearStart + k
-        if (idx >= 0 && idx < packetSlots.length) packetSlots[idx] = memPkts[k]
-      }
-      console.log('Inserted fallback MEMORY_PRESET at packet index', clearStart)
+      // DISABLED: This was inserting MEMORY_PRESET packets in wrong locations,
+      // overwriting valid tile data. The scheduler should handle end-of-content cleanup.
+      console.log('Skipped fallback MEMORY_PRESET insertion (relies on reference prelude instead)')
+      // const memPkts = generateMemoryPresetPackets(0)
+      // const need = memPkts.length
+      // let lastEventEnd = 0
+      // for (const ev of events) {
+      //   const endPack = (ev.startPack || 0) + (ev.durationPacks || 0)
+      //   if (endPack > lastEventEnd) lastEventEnd = endPack
+      // }
+      // let clearStart = Math.min(packetSlots.length - need, Math.max(0, lastEventEnd + 1))
+      // if (clearStart < 0) clearStart = 0
+      // for (let k = 0; k < need; k++) {
+      //   const idx = clearStart + k
+      //   if (idx >= 0 && idx < packetSlots.length) packetSlots[idx] = memPkts[k]
+      // }
+      // console.log('Inserted fallback MEMORY_PRESET at packet index', clearStart)
     }
   } catch (e) {
     console.warn('Could not insert MEMORY_PRESET behavior:', (e as any).message || e)
