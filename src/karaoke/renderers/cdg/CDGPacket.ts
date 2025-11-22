@@ -11,8 +11,8 @@
  * CDG Command codes (first byte of packet)
  */
 export enum CDGCommand {
-  CDG_MEMORY_PRESET = 0x08,            // Clear screen with color
-  CDG_BORDER_PRESET = 0x0C,            // Set border to color
+  CDG_MEMORY_PRESET = 0x01,            // Clear screen with color
+  CDG_BORDER_PRESET = 0x02,            // Set border to color
   CDG_TILE_BLOCK = 0x06,               // Draw tile block (normal)
   CDG_SCROLL_PRESET = 0x14,            // Scroll screen
   CDG_SCROLL_COPY = 0x18,              // Scroll screen with copy

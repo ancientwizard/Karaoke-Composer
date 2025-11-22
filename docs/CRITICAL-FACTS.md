@@ -61,6 +61,30 @@ When you use `--reference reference/cd+g-magic/Sample_Files/sample_project_04.cd
    - We still generate our own COPY/XOR packets
    - But these are based on our scheduled events
 
+## THE REAL PROBLEM: Missing Screen Reset Commands (MEMORY_PRESET, BORDER_PRESET)
+
+**BREAKTHROUGH DISCOVERY**: 
+We're missing packet types entirely:
+- 48 MEMORY_PRESET (0x01) packets at specific locations (603-11018)
+- 3 BORDER_PRESET (0x02) packets at specific locations (602, 2701, 11002)  
+- 1 SCROLL_COPY (0x18) packet at location 250
+
+These are screen SETUP/RESET commands that happen throughout playback, not just at the start!
+
+**Current status**:
+- ✅ Palette loads NOW FIXED (158 LOAD_LOW vs 140, 225 LOAD_HIGH vs 147) - GOOD!
+- ✅ Tile encoding is working (COPY/XOR ratio different but playable)
+- ❌ **Missing screen reset commands scattered throughout file**
+- ❌ Missing SCROLL_COPY command
+
+**Why rendering is broken**:
+Without screen resets at the right times, the display gets corrupted/confused.
+The MEMORY_PRESET packets (which clear the screen to a color) are critical.
+
+**Solution**: Generate MEMORY_PRESET packets at transition points between clips
+- Reference places them at ~2s intervals or at clip boundaries
+- Need to inject into paletteScheduleHistory like we do with palette loads
+
 ## THE REAL PROBLEM: Multi-Color Tile Encoding + Missing Palette Loads
 
 **Finding**: We improved palette loads (now 8 LOAD_LOW, 74 LOAD_HIGH vs 3, 2 before).

@@ -29,7 +29,7 @@ async function main() {
     console.log('  --prelude-mode <mode>    Prelude synthesizer mode: minimal|aggressive (default: minimal)')
     console.log('  --prelude-copy-tiles     Selectively copy tile/palette/memory/border packets from reference prelude')
     console.log('  --no-prelude-copy        When using --reference, skip copying its prelude')
-  console.log('  --allow-prelude-overwrite  Opt-in: allow scheduler to overwrite synthesized/pre-filled prelude slots')
+    console.log('  --allow-prelude-overwrite  Opt-in: allow scheduler to overwrite synthesized/pre-filled prelude slots')
     console.log('  --zero-after-seconds N   Zero generated packets at/after N seconds (mimic END/clear)')
     console.log('\nNotes:')
     console.log('  Do NOT use --synthesize-prelude-only if you want a full playable CDG;')
@@ -263,8 +263,9 @@ async function main() {
         else evDurPacks = Math.ceil(pps * 2) // default to 2 seconds
         const durationPacks = Math.max(1, evDurPacks)
 
-        const tileRow = Math.floor((ev.clip_y_offset || 0) / CDG_SCREEN.TILE_HEIGHT)
-        const tileCol = Math.floor((ev.clip_x_offset || 0) / CDG_SCREEN.TILE_WIDTH)
+        // Add border offset to place text in visible area (border is 6 tiles wide, 12 tiles tall)
+        const tileRow = CDG_SCREEN.BORDER_HEIGHT / CDG_SCREEN.TILE_HEIGHT + Math.floor((ev.clip_y_offset || 0) / CDG_SCREEN.TILE_HEIGHT)
+        const tileCol = CDG_SCREEN.BORDER_WIDTH / CDG_SCREEN.TILE_WIDTH + Math.floor((ev.clip_x_offset || 0) / CDG_SCREEN.TILE_WIDTH)
 
         const tiles = textRenderer.renderAt(clip.text || '', tileRow, tileCol)
         for (const t of tiles) {
@@ -289,21 +290,11 @@ async function main() {
           events.push({
             blockX: t.col, blockY: t.row, pixels, startPack, durationPacks, xorOnly: isXorHighlight
           })
-        }
 
-        // Generate palette packets for any newly-allocated text colors
-        // Always generate load packets for text clips to ensure palette is loaded
-        let packetsToInject = paletteScheduler.generateLoadPackets()
-        if (packetsToInject.length === 0) {
-          // If no new colors were allocated, still generate load packets for current palette state
-          packetsToInject = generatePaletteLoadPackets()
+          // NOTE: Palette loading for text events is disabled.
+          // Reference behavior shows that palette is loaded with BMP clips, not per text tile.
+          // Text tiles use the same palette colors (typically 0-1 for text color).
         }
-        const paletteInjectPack = Math.max(0, startPack - 5)
-        paletteScheduleHistory.push({
-          packIndex: paletteInjectPack,
-          packets: packetsToInject
-        })
-        console.log(`TextClip: scheduled ${packetsToInject.length} palette LOAD packets at pack ${paletteInjectPack}`)
       }
       continue
     }
@@ -312,9 +303,15 @@ async function main() {
     if (clip.type === 'BMPClip') {
       const clipStart = clip.start || 0
       const clipStartPack = timeToPacks((clipStart || 0), pps, timesInMsFlag, timesInPacksFlag)
+
+      // Process all BMP events and allocate colors FIRST
+      // Then generate palette packets once for the entire BMP clip
+      let hadAnyEvents = false
+
       for (const ev of clip.events || []) {
         const bmpRel = ev.bmp_path || clip.bmp_path
         if (!bmpRel) continue
+        hadAnyEvents = true
         // Try several fallbacks for BMP path
         const candidates = []
         const relNorm = bmpRel.replace(/\\/g, '/')
@@ -327,20 +324,20 @@ async function main() {
         }
         try {
           if (!bmpPath) throw new Error('BMP not found in candidate paths: ' + candidates.join(', '))
-          
+
           // Load the BMP using the paletted loader to preserve index information
           const bmpData = loadPalettedBMP(bmpPath)
-          
+
           // First pass: discover which palette indices are actually used in the image
           const usedBmpIndices = new Set<number>()
           for (let i = 0; i < bmpData.pixels.length; i++) {
             usedBmpIndices.add(bmpData.pixels[i])
           }
-          
+
           // Build a mapping from BMP palette indices to CDG palette indices
           // Only allocate CDG slots for palette entries that are actually used in the image
           const bmpToCDGIndexMap: number[] = new Array(256).fill(0)
-          
+
           for (const bmpIdx of usedBmpIndices) {
             if (bmpIdx < bmpData.palette.length) {
               const {
@@ -354,12 +351,12 @@ async function main() {
               uniqueColors.add(cdgColor)
             }
           }
-          
+
           const startCol = Math.floor((ev.x_offset || clip.x_offset || 0) / CDG_SCREEN.TILE_WIDTH)
           const startRow = Math.floor((ev.y_offset || clip.y_offset || 0) / CDG_SCREEN.TILE_HEIGHT)
           const tilesX = Math.ceil(bmpData.width / CDG_SCREEN.TILE_WIDTH)
           const tilesY = Math.ceil(bmpData.height / CDG_SCREEN.TILE_HEIGHT)
-          
+
           for (let by = 0; by < tilesY; by++) {
             for (let bx = 0; bx < tilesX; bx++) {
               const pixels: number[][] = []
@@ -380,7 +377,7 @@ async function main() {
                 }
                 pixels.push(rowArr)
               }
-              
+
               const startPack = timeToPacks((clipStart || 0) + (ev.clip_time_offset || 0), pps, timesInMsFlag, timesInPacksFlag)
               let evDurPacks = 0
               if (ev.clip_time_duration != null) evDurPacks = timeToPacks(ev.clip_time_duration, pps, timesInMsFlag, timesInPacksFlag)
@@ -396,22 +393,25 @@ async function main() {
               })
             }
           }
-          
-          // Generate palette packets for any newly-allocated colors in this BMP
-          const newLoadPackets = paletteScheduler.generateLoadPackets()
-          if (newLoadPackets.length > 0) {
-            const eventStartPack = timeToPacks((clipStart || 0) + ((ev as any).clip_time_offset || 0), pps, timesInMsFlag, timesInPacksFlag)
-            const paletteInjectPack = Math.max(clipStartPack, eventStartPack - 5)
-            paletteScheduleHistory.push({
-              packIndex: paletteInjectPack,
-              packets: newLoadPackets
-            })
-            console.log(`BMP clip: allocated ${usedBmpIndices.size} BMP palette indices -> scheduled ${newLoadPackets.length} palette LOAD packets at pack ${paletteInjectPack}`)
-          } else {
-            console.log(`BMP clip: allocated ${usedBmpIndices.size} BMP palette indices, but no new LOAD packets needed (colors already loaded)`)
-          }
         } catch (e) {
           console.warn('Failed to load BMP', bmpPath, (e as any).message || e)
+        }
+      }
+
+      // After processing all events in this BMP clip, schedule palette packets once
+      if (hadAnyEvents) {
+        const newLoadPackets = paletteScheduler.generateLoadPackets()
+        if (newLoadPackets.length > 0) {
+          // Inject palette packets at the clip start (or slightly before if possible)
+          // so they're available before any tiles from this clip are rendered
+          const paletteInjectPack = Math.max(0, clipStartPack - 2)
+          paletteScheduleHistory.push({
+            packIndex: paletteInjectPack,
+            packets: newLoadPackets
+          })
+          console.log(`BMP clip: scheduled ${newLoadPackets.length} palette LOAD packets at pack ${paletteInjectPack}`)
+        } else {
+          console.log(`BMP clip: no new LOAD packets needed (colors already loaded)`)
         }
       }
       continue
@@ -424,7 +424,19 @@ async function main() {
     process.exit(2)
   }
 
-  console.log('Built events:', events.length)
+  // Screen reset injection moved to AFTER scheduler (see below)
+  // Store clip boundaries for later use
+  const clipBoundaryTimes = new Set<number>()
+  for (const clip of parsed.clips || []) {
+    const clipStart = clip.start || 0
+    const clipStartPack = timeToPacks(clipStart, pps, timesInMsFlag, timesInPacksFlag)
+    if (clipStartPack > 0) {
+      clipBoundaryTimes.add(clipStartPack)
+    }
+  }
+  console.log('Screen reset will be injected at clip boundaries. Count:', clipBoundaryTimes.size)
+
+  console.log('\nBuilt events:', events.length)
   if (events.length > 0) {
     console.log('Sample event[0]:', JSON.stringify({
       blockX: events[0].blockX,
@@ -470,10 +482,21 @@ async function main() {
       initPkts = [...palettePkts, ...borderPkts, ...memoryPkts]
     }
   } else {
-    const palettePkts = generatePaletteLoadPackets()
-    const borderPkts = generateBorderPacket(0)
-    const memoryPkts = generateMemoryPresetPackets(1)
-    initPkts = [...palettePkts, ...borderPkts, ...memoryPkts]
+    // When NOT using --use-prelude and NOT using --reference:
+    // Don't create a default prelude. The scheduler will create palette/reset packets
+    // at the appropriate times based on what the content actually needs.
+    // This avoids palette mismatches between a generic prelude and the actual content.
+    if (referenceCdgPath) {
+      // With --reference, we still want an initial prelude (but it will be replaced by reference)
+      const palettePkts = generatePaletteLoadPackets()
+      const borderPkts = generateBorderPacket(0)
+      const memoryPkts = generateMemoryPresetPackets(1)
+      initPkts = [...palettePkts, ...borderPkts, ...memoryPkts]
+    } else {
+      // Without --reference and without --use-prelude: start completely empty
+      // The scheduler will inject palette/reset packets where needed
+      initPkts = []
+    }
   }
 
   // If requested, write only the synthesized prelude and exit. This helps
@@ -897,16 +920,49 @@ async function main() {
     console.warn('Diagnostic pre-schedule assertion failed:', (e as any).message || e)
   }
 
-  // --- Palette Scheduling Pass (DISABLED - using paletteScheduleHistory instead) ---
-  // Previously we would generate palette packets here at the end, but this causes
-  // palette packets to be injected AFTER tiles have already started, causing color
-  // mismatches. Instead, we now generate palette packets during BMP event processing
-  // (when colors are first allocated) and store them in paletteScheduleHistory for
-  // proper injection timing.
-  //
-  // Palette packets are now scheduled to appear BEFORE their corresponding tiles,
-  // as specified in paletteScheduleHistory entries.
-  console.log('Palette scheduling: disabled (using paletteScheduleHistory from BMP events)')
+  // --- Inject initial screen resets when NOT using --reference ---
+  // This ensures the CDG starts with a clean slate
+  if (!referenceCdgPath) {
+    const borderPkts = generateBorderPacket(0)
+    const memoryPkts = generateMemoryPresetPackets(0)
+    let slotIdx = 0
+    for (const pkt of borderPkts) {
+      if (slotIdx < initialPacketSlots.length && !initialPacketSlots[slotIdx].some((b) => b !== 0)) {
+        initialPacketSlots[slotIdx] = pkt
+        slotIdx++
+      }
+    }
+    for (const pkt of memoryPkts) {
+      if (slotIdx < initialPacketSlots.length && !initialPacketSlots[slotIdx].some((b) => b !== 0)) {
+        initialPacketSlots[slotIdx] = pkt
+        slotIdx++
+      }
+    }
+    console.log(`Injected ${borderPkts.length} BORDER + ${memoryPkts.length} MEMORY packets at start (no --reference mode)`)
+  }
+
+  // --- Pre-inject palette packets into initialPacketSlots BEFORE scheduler runs ---
+  // This ensures the scheduler will respect palette packet locations and not overwrite them.
+  // Palette packets are collected in paletteScheduleHistory during BMP event processing.
+  if (paletteScheduleHistory.length > 0) {
+    console.log(`Pre-injecting ${paletteScheduleHistory.length} palette entries into initial slots...`)
+    for (const entry of paletteScheduleHistory) {
+      const packIdx = entry.packIndex
+      if (packIdx >= 0 && packIdx < initialPacketSlots.length) {
+        for (const pkt of entry.packets) {
+          // Find next available (empty) slot starting from packIdx
+          let slotIdx = packIdx
+          while (slotIdx < initialPacketSlots.length && initialPacketSlots[slotIdx].some((b) => b !== 0)) {
+            slotIdx++
+          }
+          if (slotIdx < initialPacketSlots.length) {
+            initialPacketSlots[slotIdx] = pkt
+            console.log(`  Pre-injected palette packet at slot ${slotIdx} (requested ${packIdx})`)
+          }
+        }
+      }
+    }
+  }
 
   const { packetSlots } = scheduleFontEvents(
     events,
@@ -919,9 +975,9 @@ async function main() {
     reservedStartIndex,
     initialPacketSlots
   )
-  // Debug: count non-empty packet slots produced by scheduler before we place init packets
+  // Debug: count non-empty packet slots produced by scheduler
   const nonEmpty = packetSlots.reduce((acc, pkt) => acc + (pkt.some((b) => b !== 0) ? 1 : 0), 0)
-  console.log('Scheduler produced non-empty slots before init copy:', nonEmpty)
+  console.log('Scheduler produced non-empty slots:', nonEmpty)
   // find first non-empty index
   let firstNon = -1
   for (let i = 0; i < packetSlots.length; i++) {
@@ -929,33 +985,24 @@ async function main() {
   }
   console.log('First non-empty packet index (scheduler):', firstNon)
 
-  // --- Inject palette packets from schedule history ---
-  // paletteScheduleHistory contains palette LOAD packets that should be injected
-  // at specific pack indices when new BMP colors are first needed
-  if (paletteScheduleHistory.length > 0) {
-    console.log(`Injecting ${paletteScheduleHistory.length} palette schedule entries...`)
-    for (const entry of paletteScheduleHistory) {
-      const packIdx = entry.packIndex
-      if (packIdx >= 0 && packIdx < packetSlots.length) {
-        for (const pkt of entry.packets) {
-          // Find next available slot starting from packIdx
-          let slotIdx = packIdx
-          while (slotIdx < packetSlots.length && packetSlots[slotIdx].some((b) => b !== 0)) {
-            slotIdx++
-          }
-          if (slotIdx < packetSlots.length) {
-            packetSlots[slotIdx] = pkt
-            console.log(`  Injected palette packet at slot ${slotIdx} (requested ${packIdx})`)
-          } else {
-            // No empty slot found; forcefully insert at packIdx, overwriting what's there
-            // Palette packets are critical and take precedence over individual tiles
-            packetSlots[packIdx] = pkt
-            console.log(`  Force-injected palette packet at slot ${packIdx} (overwrote existing packet)`)
-          }
-        }
-      }
+  // --- Screen reset injection DISABLED ---
+  // Using --reference mode instead, which copies prelude from reference file.
+
+  // Debug: verify reset packets are in packetSlots right after injection
+  const postInjectBorders = []
+  const postInjectMemories = []
+  for (let i = 0; i < Math.min(13000, packetSlots.length); i++) {
+    const pkt = packetSlots[i]
+    if (pkt && pkt[1] !== undefined) {
+      const cmd = pkt[1] & 0x3F
+      if (cmd === 0x02) postInjectBorders.push(i)
+      else if (cmd === 0x01) postInjectMemories.push(i)
     }
   }
+  console.log(`Post-injection check: BORDER=${postInjectBorders.length}, MEMORY=${postInjectMemories.length}`)
+  if (postInjectBorders.length > 0) console.log(`  BORDER packets at indices:`, postInjectBorders)
+  if (postInjectMemories.length > 0) console.log(`  MEMORY packets at indices (first 10):`, postInjectMemories.slice(0, 10))
+
   // Proof-of-concept: if the project timeline finishes earlier than the file
   // duration (e.g. after an END banner), insert a MEMORY_PRESET sequence to
   // clear VRAM so the reference state is matched. This is a targeted debug
@@ -1166,3 +1213,6 @@ async function main() {
 main().catch((e) => { console.error(e); process.exit(2) })
 
 export default main
+
+## vim: et nu ts=2 sw=2
+## END
