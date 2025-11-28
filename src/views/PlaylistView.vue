@@ -16,6 +16,12 @@
       </div>
     </div>
 
+    <!-- Alert Messages -->
+    <div v-if="alertMessage" :class="['alert', `alert-${alertType}`, 'alert-dismissible', 'fade', 'show']" role="alert">
+      {{ alertMessage }}
+      <button type="button" class="btn-close" @click="alertMessage = ''" aria-label="Close"></button>
+    </div>
+
     <!-- Import Dialog -->
     <div v-if="showImportDialog" class="modal d-block bg-dark bg-opacity-50" style="display: block">
       <div class="modal-dialog modal-dialog-centered">
@@ -25,15 +31,28 @@
             <button type="button" class="btn-close" @click="showImportDialog = false"></button>
           </div>
           <div class="modal-body">
-            <label class="form-label">Select CDG or CMP File</label>
-            <input type="file" class="form-control" accept=".cdg,.cmp" />
+            <label class="form-label">Select .cmp Project File</label>
+            <input
+              ref="fileInput"
+              type="file"
+              class="form-control"
+              accept=".cmp"
+              @change="onFileSelected"
+            />
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" @click="showImportDialog = false">
               Cancel
             </button>
-            <button type="button" class="btn btn-primary" @click="importProject">
-              Import
+            <button
+              type="button"
+              class="btn btn-primary"
+              @click="importProject"
+              :disabled="!selectedFile || isLoading"
+            >
+              <i v-if="isLoading" class="bi bi-hourglass-split"></i>
+              <i v-else class="bi bi-upload"></i>
+              {{ isLoading ? 'Loading...' : 'Import' }}
             </button>
           </div>
         </div>
@@ -52,9 +71,9 @@
               <thead>
                 <tr>
                   <th>Project Name</th>
-                  <th>Artist</th>
+                  <th>Audio File</th>
+                  <th>Clips</th>
                   <th>Duration</th>
-                  <th>Created</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -64,25 +83,28 @@
                     <i class="bi bi-file-earmark-music"></i>
                     {{ project.name }}
                   </td>
-                  <td>{{ project.artist }}</td>
-                  <td>{{ project.duration }}</td>
-                  <td>{{ project.created }}</td>
+                  <td>{{ project.audioFile }}</td>
+                  <td>{{ project.clipsCount }}</td>
+                  <td>{{ formatDuration(project.duration) }}</td>
                   <td>
                     <button
                       class="btn btn-sm btn-outline-primary me-2"
                       @click="editProject(index)"
+                      title="Open in editor"
                     >
                       <i class="bi bi-pencil"></i>
                     </button>
                     <button
                       class="btn btn-sm btn-outline-secondary me-2"
-                      @click="playProject(index)"
+                      @click="viewDetails(index)"
+                      title="View details"
                     >
-                      <i class="bi bi-play"></i>
+                      <i class="bi bi-info-circle"></i>
                     </button>
                     <button
                       class="btn btn-sm btn-outline-danger"
                       @click="deleteProject(index)"
+                      title="Remove from list"
                     >
                       <i class="bi bi-trash"></i>
                     </button>
@@ -94,8 +116,49 @@
           <div v-if="projects.length === 0" class="card-body">
             <div class="alert alert-info mb-0">
               <i class="bi bi-info-circle"></i>
-              No projects yet. Create a new project or import an existing one.
+              No projects loaded. Import a project file (.cmp) to get started.
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Project Details Modal -->
+    <div v-if="showDetailsModal && selectedProjectIndex !== null" class="modal d-block bg-dark bg-opacity-50" style="display: block">
+      <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Project Details</h5>
+            <button type="button" class="btn-close" @click="showDetailsModal = false"></button>
+          </div>
+          <div class="modal-body">
+            <div v-if="projects[selectedProjectIndex]" class="row g-3">
+              <div class="col-md-6">
+                <strong>Project Name:</strong>
+                <p>{{ projects[selectedProjectIndex].name }}</p>
+              </div>
+              <div class="col-md-6">
+                <strong>Audio File:</strong>
+                <p>{{ projects[selectedProjectIndex].audioFile }}</p>
+              </div>
+              <div class="col-md-6">
+                <strong>Total Clips:</strong>
+                <p>{{ projects[selectedProjectIndex].clipsCount }}</p>
+              </div>
+              <div class="col-md-6">
+                <strong>Duration:</strong>
+                <p>{{ formatDuration(projects[selectedProjectIndex].duration) }}</p>
+              </div>
+              <div class="col-12">
+                <strong>Path:</strong>
+                <p class="text-muted small">{{ projects[selectedProjectIndex].projectPath }}</p>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" @click="showDetailsModal = false">
+              Close
+            </button>
           </div>
         </div>
       </div>
@@ -106,52 +169,91 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
+import { ProjectLoader } from '@/ts/project/ProjectLoader';
+import type { LoadedProject } from '@/ts/project/ProjectLoader';
 
-interface Project {
-  name: string;
-  artist: string;
-  duration: string;
-  created: string;
+interface Project extends LoadedProject {
+  id?: string;
 }
 
 const router = useRouter();
+const fileInput = ref<HTMLInputElement>();
 const showImportDialog = ref(false);
-const projects = ref<Project[]>([
-  {
-    name: 'Sample Song 1',
-    artist: 'Artist Name',
-    duration: '3:45',
-    created: '2025-01-01',
-  },
-  {
-    name: 'Sample Song 2',
-    artist: 'Another Artist',
-    duration: '4:20',
-    created: '2025-01-02',
-  },
-]);
+const showDetailsModal = ref(false);
+const selectedFile = ref<File | null>(null);
+const isLoading = ref(false);
+const alertMessage = ref('');
+const alertType = ref<'success' | 'error' | 'info'>('info');
+const selectedProjectIndex = ref<number | null>(null);
+const projects = ref<Project[]>([]);
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const editProject = (_index: number) => {
-  // Load project and navigate to editor
-  router.push('/editor');
+const onFileSelected = (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  selectedFile.value = target.files?.[0] || null;
 };
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const playProject = (_index: number) => {
-  console.log('Playing project');
-};
+const importProject = async () => {
+  if (!selectedFile.value) {
+    return;
+  }
 
-const deleteProject = (index: number) => {
-  if (confirm(`Delete "${projects.value[index].name}"?`)) {
-    projects.value.splice(index, 1);
+  isLoading.value = true;
+  try {
+    const buffer = await selectedFile.value.arrayBuffer();
+    const loaded = ProjectLoader.loadFromBuffer(buffer, selectedFile.value.name);
+
+    if (loaded) {
+      // Add unique ID to project
+      (loaded as Project).id = `${loaded.name}-${Date.now()}`;
+      projects.value.push(loaded as Project);
+
+      alertMessage.value = `Project "${loaded.name}" imported successfully!`;
+      alertType.value = 'success';
+
+      // Close dialog and reset
+      showImportDialog.value = false;
+      selectedFile.value = null;
+      if (fileInput.value) {
+        fileInput.value.value = '';
+      }
+    } else {
+      alertMessage.value = 'Failed to parse project file. Ensure it is a valid .cmp file.';
+      alertType.value = 'error';
+    }
+  } catch (error) {
+    alertMessage.value = `Error loading file: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    alertType.value = 'error';
+  } finally {
+    isLoading.value = false;
   }
 };
 
-const importProject = () => {
-  // Handle file import
-  showImportDialog.value = false;
-  alert('Project imported successfully!');
+const editProject = (index: number) => {
+  const project = projects.value[index];
+  // Store project in session storage for editor to access
+  sessionStorage.setItem('currentProject', JSON.stringify(project));
+  router.push('/editor');
+};
+
+const viewDetails = (index: number) => {
+  selectedProjectIndex.value = index;
+  showDetailsModal.value = true;
+};
+
+const deleteProject = (index: number) => {
+  const project = projects.value[index];
+  if (confirm(`Delete "${project.name}" from the list?`)) {
+    projects.value.splice(index, 1);
+    alertMessage.value = `Project "${project.name}" removed.`;
+    alertType.value = 'info';
+  }
+};
+
+const formatDuration = (packets: number): string => {
+  const seconds = Math.round(packets / 300);
+  const minutes = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${minutes}:${secs.toString().padStart(2, '0')}`;
 };
 </script>
 
@@ -162,5 +264,9 @@ const importProject = () => {
 
 .modal.d-block {
   z-index: 1050;
+}
+
+.alert {
+  margin-top: 1rem;
 }
 </style>
