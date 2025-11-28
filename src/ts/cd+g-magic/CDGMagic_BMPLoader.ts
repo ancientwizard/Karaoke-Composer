@@ -6,7 +6,7 @@
  * Extends BMPObject with file I/O and format validation.
  */
 
-import { CDGMagic_BMPObject } from "./CDGMagic_BMPObject";
+import { CDGMagic_BMPObject } from "@/ts/cd+g-magic/CDGMagic_BMPObject";
 
 /**
  * BMP loading error conditions

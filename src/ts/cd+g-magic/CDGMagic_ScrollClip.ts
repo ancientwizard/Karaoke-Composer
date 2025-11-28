@@ -5,7 +5,7 @@
  * Extends MediaClip for clips with horizontal/vertical scrolling.
  */
 
-import { CDGMagic_MediaClip } from "./CDGMagic_MediaClip";
+import { CDGMagic_MediaClip } from "@/ts/cd+g-magic/CDGMagic_MediaClip";
 
 /**
  * Scroll direction enumeration
@@ -239,7 +239,9 @@ export class CDGMagic_ScrollClip extends CDGMagic_MediaClip {
       }
 
       return true;
-    } catch {
+    }
+
+    catch {
       return false;
     }
   }

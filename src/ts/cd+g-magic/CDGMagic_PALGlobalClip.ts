@@ -5,7 +5,7 @@
  * Extends MediaClip for clips that change the global color palette.
  */
 
-import { CDGMagic_MediaClip } from "./CDGMagic_MediaClip";
+import { CDGMagic_MediaClip } from "@/ts/cd+g-magic/CDGMagic_MediaClip";
 
 /**
  * PAL Global Clip - Global palette modification clip

@@ -338,7 +338,9 @@ export class CDGMagic_TextClip extends CDGMagic_MediaClip {
       }
 
       return true;
-    } catch {
+    }
+
+    catch {
       return false;
     }
   }
