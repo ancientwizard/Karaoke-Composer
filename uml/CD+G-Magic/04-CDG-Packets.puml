@@ -1,0 +1,64 @@
+@startuml CDG-Packets
+skinparam backgroundColor #FEFEFE
+skinparam classBackgroundColor #F0F0F0
+skinparam classBorderColor #333333
+
+title CD+Graphics Magic - CD+G Packet Format
+
+package "Packet Structure" {
+    class CD_SCPacket {
+        + command: char
+        + instruction: char
+        + parityQ: char[2]
+        + data: char[16]
+        + parityP: char[4]
+    }
+}
+
+package "Commands" {
+    enum EncoderCommands {
+        LINE_GRAPHICS
+        WRITE_FONT
+        TV_GRAPHICS
+        MEMORY_PRESET
+        BORDER_PRESET
+        LOAD_CLUT_LO
+        LOAD_CLUT_HI
+        COPY_FONT
+        XOR_FONT
+        SCROLL_PRESET
+        SCROLL_COPY
+        SET_TRANSPARENT
+    }
+
+    enum DecoderCommands {
+        TV_GRAPHICS
+        MEMORY_PRESET
+        BORDER_PRESET
+        LOAD_CLUT
+        COPY_FONT
+        XOR_FONT
+        SCROLL
+        EXT_GRAPHICS
+    }
+}
+
+package "Screen Specs" {
+    class ScreenDimensions {
+        VRAM_WIDTH: 300
+        VRAM_HEIGHT: 216
+        RGBA_WIDTH: 312
+        RGBA_HEIGHT: 216
+    }
+
+    class PaletteInfo {
+        CLUT_SIZE_G: 16
+        CLUT_SIZE_EG: 256
+    }
+}
+
+CD_SCPacket --> EncoderCommands : uses
+CD_SCPacket --> DecoderCommands : uses
+ScreenDimensions --> PaletteInfo
+
+@enduml

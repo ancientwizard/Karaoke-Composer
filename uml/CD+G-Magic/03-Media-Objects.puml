@@ -1,0 +1,98 @@
+@startuml Media-Objects
+skinparam backgroundColor #FEFEFE
+skinparam classBackgroundColor #F0F0F0
+skinparam classBorderColor #333333
+
+title CD+Graphics Magic - Media Objects Hierarchy
+
+package "Base Media Objects" {
+    class CDGMagic_BMPObject {
+        - internal_bmp_width: uint
+        - internal_bmp_height: uint
+        - internal_x_offset: int
+        - internal_y_offset: int
+        - internal_palette: PALObject
+        - internal_bmp_data: uchar array
+        + width()
+        + height()
+        + pixel()
+        + PALObject()
+        + bilinear_resize()
+    }
+
+    class CDGMagic_PALObject {
+        - internal_palette: ulong array
+        - internal_update_mask: ulong
+        - internal_dissolve_interval: int
+        + number_of_colors()
+        + color()
+        + update_mask()
+        + dissolve()
+    }
+
+    class CDGMagic_MediaEvent {
+        + start_offset: int
+        + duration: int
+        + PALObject: PALObject
+        + BMPObject: BMPObject
+        + border_index: uchar
+    }
+
+    class CDGMagic_MediaClip {
+        - internal_queue: MediaEvent array
+        - internal_start: int
+        - internal_duration: int
+        + start_pack()
+        + duration()
+        + end_pack()
+        + event_queue()
+        + sort_event_queue()
+    }
+
+    class CDGMagic_TrackOptions
+}
+
+package "Specialized BMP Objects" {
+    class CDGMagic_BMPClip
+    class CDGMagic_BMPClip_Window
+    class CDGMagic_BMPLoader
+    class CDGMagic_PALGlobalClip
+    class CDGMagic_PALGlobalClip_Window
+}
+
+package "Specialized Clips" {
+    class CDGMagic_TextClip
+    class CDGMagic_TextClip_Window
+    class CDGMagic_ScrollClip
+    class CDGMagic_ScrollClip_Window
+    class CDGMagic_VectorClip_Window
+}
+
+package "UI/Editing Objects" {
+    class CDGMagic_MovableClipBox
+    class CDGMagic_EditingGroup
+    class CDGMagic_EditingLanes
+    class CDGMagic_EditingLanes_PlaybackHead
+}
+
+CDGMagic_MediaClip --> CDGMagic_MediaEvent : contains queue
+CDGMagic_MediaClip --> CDGMagic_TrackOptions : references
+CDGMagic_MediaEvent --> CDGMagic_BMPObject : references
+CDGMagic_MediaEvent --> CDGMagic_PALObject : references
+CDGMagic_BMPObject --> CDGMagic_PALObject : uses
+
+CDGMagic_BMPClip --|> CDGMagic_BMPObject
+CDGMagic_PALGlobalClip --|> CDGMagic_BMPObject
+CDGMagic_TextClip --|> CDGMagic_BMPObject
+CDGMagic_ScrollClip --|> CDGMagic_BMPObject
+
+CDGMagic_BMPClip_Window --> CDGMagic_BMPClip : edits
+CDGMagic_PALGlobalClip_Window --> CDGMagic_PALGlobalClip : edits
+CDGMagic_TextClip_Window --> CDGMagic_TextClip : edits
+CDGMagic_ScrollClip_Window --> CDGMagic_ScrollClip : edits
+
+CDGMagic_EditingGroup --> CDGMagic_EditingLanes : contains
+CDGMagic_EditingLanes --> CDGMagic_EditingLanes_PlaybackHead : has
+CDGMagic_EditingLanes --> CDGMagic_MediaClip : displays
+
+@enduml

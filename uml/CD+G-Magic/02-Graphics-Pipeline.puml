@@ -1,0 +1,95 @@
+@startuml Graphics-Pipeline
+skinparam backgroundColor #FEFEFE
+skinparam classBackgroundColor #F0F0F0
+skinparam classBorderColor #333333
+
+title CD+Graphics Magic - Graphics Pipeline
+
+package "Encoding Pipeline" {
+    class CDGMagic_GraphicsEncoder {
+        - vram: ushort array
+        - comp_buffer: ushort array
+        - g_palette: ulong array
+        - eg_palette: ulong array
+        - cdg_stream: CD_SCPacket
+        - current_length: int
+        + compute_graphics()
+        + Get_Stream()
+        + length()
+    }
+
+    class CDGMagic_FontBlock {
+        - internal_start_pack: int
+        - x_block: int
+        - y_block: int
+        - z_index: uchar
+        + num_colors()
+        + prominent_color()
+        + pixel_value()
+        + start_pack()
+    }
+
+    class CD_SCPacket {
+        + command: char
+        + instruction: char
+        + parityQ: char[2]
+        + data: char[16]
+        + parityP: char[4]
+    }
+}
+
+package "Decoding Pipeline" {
+    class CDGMagic_GraphicsDecoder {
+        - rgba_screen: uchar array
+        - vram: uchar array
+        - palette: ulong array
+        - h_offset: int
+        - v_offset: int
+        - border_color: int
+        + decode_packs()
+        + Reset()
+        + QuickReset()
+        + GetRGBAScreen()
+        + GetVRAM()
+        + GetPalette()
+    }
+}
+
+package "BMPObject Pipeline" {
+    class CDGMagic_BMPObject {
+        - internal_bmp_width: uint
+        - internal_bmp_height: uint
+        - internal_palette: PALObject
+        - internal_bmp_data: uchar array
+        - internal_xor_only: uchar
+        - internal_composite_index: uchar
+        + width()
+        + height()
+        + pixel()
+        + PALObject()
+        + bilinear_resize()
+    }
+
+    class CDGMagic_PALObject {
+        - internal_palette: ulong array
+        - internal_update_mask: ulong
+        - internal_dissolve_interval: int
+        + number_of_colors()
+        + color()
+        + update_mask()
+        + dissolve()
+    }
+
+    class CDGMagic_BMPLoader
+    class CDGMagic_BMPClip
+}
+
+CDGMagic_GraphicsEncoder --> CD_SCPacket : generates
+CDGMagic_GraphicsEncoder --> CDGMagic_FontBlock : creates
+CDGMagic_GraphicsDecoder --> CD_SCPacket : processes
+CDGMagic_GraphicsDecoder --> CDGMagic_FontBlock : renders
+CDGMagic_BMPObject --> CDGMagic_PALObject : uses
+CDGMagic_BMPLoader --> CDGMagic_BMPObject : loads
+CDGMagic_BMPClip --|> CDGMagic_BMPObject
+
+@enduml

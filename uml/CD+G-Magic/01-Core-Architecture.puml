@@ -1,0 +1,122 @@
+@startuml Core-Architecture
+skinparam backgroundColor #FEFEFE
+skinparam classBackgroundColor #F0F0F0
+skinparam classBorderColor #333333
+
+title CD+Graphics Magic - Core Architecture
+
+package "Application Layer" {
+    class CDGMagic_Application {
+        + CDGMagic_Application()
+        + app_exit_callback()
+        + app_about_callback()
+        + show_preview_window()
+        + bmp_to_transition_callback()
+    }
+}
+
+package "UI/Window Layer" {
+    class CDGMagic_MainWindow {
+        - editing_group: EditingGroup
+        + CDGMagic_MainWindow()
+        + set_prev()
+    }
+
+    class CDGMagic_PreviewWindow
+    class CDGMagic_EditingGroup
+}
+
+package "Graphics Processing" {
+    class CDGMagic_GraphicsEncoder {
+        - vram: ushort array
+        - comp_buffer: ushort array
+        - g_palette: ulong array
+        - cdg_stream: CD_SCPacket
+        + compute_graphics()
+        + length()
+        + Get_Stream()
+    }
+
+    class CDGMagic_GraphicsDecoder {
+        - rgba_screen: uchar array
+        - vram: uchar array
+        - palette: ulong array
+        + decode_packs()
+        + Reset()
+        + GetRGBAScreen()
+        + GetVRAM()
+        + GetPalette()
+    }
+}
+
+package "Media Layer" {
+    class CDGMagic_MediaClip {
+        - internal_queue: MediaEvent array
+        - internal_start: int
+        - internal_duration: int
+        + start_pack()
+        + duration()
+        + event_queue()
+        + sort_event_queue()
+    }
+
+    class CDGMagic_TrackOptions
+    
+    class CDGMagic_MediaEvent {
+        + start_offset: int
+        + duration: int
+        + PALObject: PALObject
+        + BMPObject: BMPObject
+    }
+}
+
+package "Audio Layer" {
+    class CDGMagic_AudioPlayback {
+        + Start_Playback()
+        + Stop_Playback()
+        + Play_Next_Buffer()
+        + Seek_To_Sample()
+        + TotalFrames()
+        + Get_WAVE_BMP()
+    }
+}
+
+package "Graphics Objects" {
+    class CDGMagic_FontBlock {
+        - x_block: int
+        - y_block: int
+        - z_index: uchar
+        + num_colors()
+        + pixel_value()
+        + start_pack()
+    }
+
+    class CDGMagic_BMPObject {
+        - width: uint
+        - height: uint
+        - palette: PALObject
+        + width()
+        + height()
+        + pixel()
+    }
+
+    class CDGMagic_PALObject {
+        - palette: ulong array
+        + number_of_colors()
+        + color()
+        + dissolve()
+    }
+}
+
+CDGMagic_Application --> CDGMagic_MainWindow
+CDGMagic_Application --> CDGMagic_PreviewWindow
+CDGMagic_MainWindow --> CDGMagic_EditingGroup
+CDGMagic_GraphicsEncoder --> CDGMagic_MediaClip
+CDGMagic_GraphicsEncoder --> CDGMagic_FontBlock
+CDGMagic_MediaClip --> CDGMagic_MediaEvent
+CDGMagic_MediaClip --> CDGMagic_TrackOptions
+CDGMagic_MediaEvent --> CDGMagic_PALObject
+CDGMagic_MediaEvent --> CDGMagic_BMPObject
+CDGMagic_BMPObject --> CDGMagic_PALObject
+
+@enduml

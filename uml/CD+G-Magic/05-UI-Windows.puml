@@ -1,0 +1,68 @@
+@startuml UI-Windows
+skinparam backgroundColor #FEFEFE
+skinparam classBackgroundColor #F0F0F0
+skinparam classBorderColor #333333
+
+title CD+Graphics Magic - UI Windows Hierarchy
+
+package "Application" {
+    class CDGMagic_Application {
+        + CDGMagic_Application()
+        + app_exit_callback()
+        + app_about_callback()
+        + show_preview_window()
+    }
+}
+
+package "Main Windows" {
+    class CDGMagic_MainWindow {
+        - editing_group: EditingGroup
+        + CDGMagic_MainWindow()
+        + set_prev()
+    }
+
+    class CDGMagic_PreviewWindow
+    class CDGMagic_TimeOutput
+}
+
+package "Menu System" {
+    class CDGMagic_MainWindow_MenuBar
+    class CDGMagic_MainWindow_MenuBar_MenuItems
+}
+
+package "Editing UI" {
+    class CDGMagic_EditingGroup
+    class CDGMagic_EditingLanes
+    class CDGMagic_EditingLanes_PlaybackHead
+    class CDGMagic_TrackOptions
+}
+
+package "Clip Editing Windows" {
+    class CDGMagic_BMPClip_Window
+    class CDGMagic_TextClip_Window
+    class CDGMagic_TextClip_Window__Editor
+    class CDGMagic_TextClip_Window__CtrlButton
+    class CDGMagic_PALGlobalClip_Window
+    class CDGMagic_ScrollClip_Window
+    class CDGMagic_VectorClip_Window
+    class CDGMagic_TrackOptions_MaskWindow
+}
+
+package "UI Components" {
+    class CDGMagic_MovableClipBox
+}
+
+CDGMagic_Application --> CDGMagic_MainWindow
+CDGMagic_Application --> CDGMagic_PreviewWindow
+CDGMagic_MainWindow --> CDGMagic_MainWindow_MenuBar
+CDGMagic_MainWindow --> CDGMagic_EditingGroup
+CDGMagic_MainWindow_MenuBar --> CDGMagic_MainWindow_MenuBar_MenuItems
+
+CDGMagic_EditingGroup --> CDGMagic_EditingLanes
+CDGMagic_EditingLanes --> CDGMagic_EditingLanes_PlaybackHead
+CDGMagic_EditingLanes --> CDGMagic_TrackOptions
+
+CDGMagic_TextClip_Window --> CDGMagic_TextClip_Window__Editor
+CDGMagic_TextClip_Window --> CDGMagic_TextClip_Window__CtrlButton
+
+@enduml
