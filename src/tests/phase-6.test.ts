@@ -12,6 +12,15 @@ import { createMediaEvent } from "@/ts/cd+g-magic/CDGMagic_MediaEvent";
 describe("CDGMagic_MediaClip - Phase 6 Expansion", () => {
   let clip: CDGMagic_MediaClip;
 
+  beforeAll(() => {
+    // Suppress expected console errors during tests
+    jest.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterAll(() => {
+    jest.restoreAllMocks();
+  });
+
   beforeEach(() => {
     clip = new CDGMagic_MediaClip(0, 1000);
   });

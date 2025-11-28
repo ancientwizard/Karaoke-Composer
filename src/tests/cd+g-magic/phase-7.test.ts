@@ -13,6 +13,15 @@
 
 import { CDGMagic_AudioPlayback } from "@/ts/cd+g-magic/CDGMagic_AudioPlayback";
 
+// Suppress expected console errors during tests
+beforeAll(() => {
+  jest.spyOn(console, "error").mockImplementation(() => {});
+});
+
+afterAll(() => {
+  jest.restoreAllMocks();
+});
+
 describe("Phase 7: Audio Playback", () => {
   describe("CDGMagic_AudioPlayback - Constructor & Initialization", () => {
     let audio: CDGMagic_AudioPlayback;

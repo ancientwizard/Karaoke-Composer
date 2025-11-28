@@ -3,10 +3,19 @@
  * Tests for MainWindow, PreviewWindow, and Application classes
  */
 
-import { CDGMagic_MainWindow } from "@/ts/cd+g-magic/CDGMagic_MainWindow";
+import { CDGMagic_MainWindow    } from "@/ts/cd+g-magic/CDGMagic_MainWindow";
 import { CDGMagic_PreviewWindow } from "@/ts/cd+g-magic/CDGMagic_PreviewWindow";
-import { CDGMagic_Application } from "@/ts/cd+g-magic/CDGMagic_Application";
-import { CDGMagic_EditingGroup } from "@/ts/cd+g-magic/CDGMagic_EditingGroup";
+import { CDGMagic_Application   } from "@/ts/cd+g-magic/CDGMagic_Application";
+import { CDGMagic_EditingGroup  } from "@/ts/cd+g-magic/CDGMagic_EditingGroup";
+
+// Suppress expected console errors during tests
+beforeAll(() => {
+  jest.spyOn(console, "error").mockImplementation(() => {});
+});
+
+afterAll(() => {
+  jest.restoreAllMocks();
+});
 
 /**
  * MainWindow Tests
