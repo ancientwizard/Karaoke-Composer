@@ -5,8 +5,8 @@
  */
 
 import { CDGMagic_EditingLanes_PlaybackHead } from "@/ts/cd+g-magic/CDGMagic_EditingLanes_PlaybackHead";
-import { CDGMagic_MovableClipBox } from "@/ts/cd+g-magic/CDGMagic_MovableClipBox";
-import type { CDGMagic_MediaClip } from "@/ts/cd+g-magic/CDGMagic_MediaClip";
+import { CDGMagic_MovableClipBox            } from "@/ts/cd+g-magic/CDGMagic_MovableClipBox";
+import type { CDGMagic_MediaClip            } from "@/ts/cd+g-magic/CDGMagic_MediaClip";
 
 /**
  * EditingLanes: Multi-lane timeline display
