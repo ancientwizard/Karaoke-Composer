@@ -94,10 +94,12 @@ export class CMPParser {
 
     // Read number of clips
     const numClips = this.readInt32();
+    console.log(`[CMPParser] Num clips: ${numClips}`);
 
     // Read each clip
     for (let i = 0; i < numClips; i++) {
       const clipMarker = this.readStringUntilNull();
+      console.log(`[CMPParser] Clip ${i}: marker="${clipMarker}" offset=${this.offset}`);
 
       if (clipMarker === 'CDGMagic_BMPClip::') {
         const clip = this.readBMPClip();
@@ -186,7 +188,7 @@ export class CMPParser {
 
   /**
    * Read BMP clip data
-   * Format from CDGMagic_BMPClip::serialize:
+   * Format from CDGMagic_BMPClip::serialize/deserialize:
    *   "CDGMagic_BMPClip::" + null (already read by caller)
    *   <track: char>
    *   <start: int>
@@ -196,16 +198,16 @@ export class CMPParser {
    *     - <event_start_offset: int>
    *     - <event_duration: int>
    *     - <bmp_file_path> + null
+   *     - <height: int> (note: height first!)
    *     - <width: int>
-   *     - <height: int>
    *     - <x_offset: int>
    *     - <y_offset: int>
    *     - <fill_index: char>
    *     - <composite_index: char>
    *     - <should_composite: int>
    *     - <border_index: char>
-   *     - <memory_preset_index: char>
-   *     - <update_pal: int>
+   *     - <screen_index: char>
+   *     - <should_palette: int>
    *     - <transition_file> + null
    *     - <transition_length: short>
    */
@@ -221,16 +223,16 @@ export class CMPParser {
         const eventStart = this.readInt32();
         const eventDuration = this.readInt32();
         const bmpPath = this.readStringUntilNull();
+        const height = this.readInt32(); // Height comes first!
         const width = this.readInt32();
-        const height = this.readInt32();
         const xOffset = this.readInt32();
         const yOffset = this.readInt32();
         const fillIndex = this.readInt8();
         const compositeIndex = this.readInt8();
         const shouldComposite = this.readInt32();
         const borderIndex = this.readInt8();
-        const memoryPresetIndex = this.readInt8();
-        const updatePal = this.readInt32();
+        const screenIndex = this.readInt8();
+        const shouldPalette = this.readInt32();
         const transitionFile = this.readStringUntilNull();
         const transitionLength = this.readInt16();
 
@@ -238,16 +240,16 @@ export class CMPParser {
           eventStart,
           eventDuration,
           bmpPath,
-          width,
           height,
+          width,
           xOffset,
           yOffset,
           fillIndex,
           compositeIndex,
           shouldComposite,
           borderIndex,
-          memoryPresetIndex,
-          updatePal,
+          screenIndex,
+          shouldPalette,
           transitionFile,
           transitionLength,
         });
@@ -267,20 +269,66 @@ export class CMPParser {
 
   /**
    * Read text clip data
+   * Format from CDGMagic_TextClip::serialize/deserialize
    */
   private readTextClip(): CMPClip | null {
     try {
       const track = this.readInt8();
       const start = this.readInt32();
       const duration = this.readInt32();
-      const numEvents = this.readInt32();
 
-      // Skip event data for now (similar structure to BMPClip)
-      for (let i = 0; i < numEvents; i++) {
-        this.readInt32(); // event start
-        this.readInt32(); // event duration
-        this.readStringUntilNull(); // skip string
-        // Would need full TextClip format to parse completely
+      // Text rendering properties
+      const fontFace = this.readStringUntilNull();
+      const fontSize = this.readInt32();
+      const karaokeMode = this.readInt8();
+      const highlightMode = this.readInt8();
+      const foregroundColor = this.readInt8();
+      const backgroundColor = this.readInt8();
+      const outlineColor = this.readInt8();
+      const squareSize = this.readInt8();
+      const roundSize = this.readInt8();
+      const frameColor = this.readInt8();
+      const boxColor = this.readInt8();
+      const fillColor = this.readInt8();
+      const compositeColor = this.readInt8();
+      const shouldComposite = this.readInt32();
+      const xorBandwidth = this.readInt32();
+      const antialiasMode = this.readInt32();
+      const defaultPaletteNumber = this.readInt32();
+
+      // Text content
+      this.readInt32(); // textLength - usually just for info, we'll use the string length
+      const textContent = this.readStringUntilNull();
+
+      // Events
+      const totalEvents = this.readInt32();
+      const events = [];
+      for (let i = 0; i < totalEvents; i++) {
+        const clipTimeOffset = this.readInt32();
+        const clipTimeDuration = this.readInt32();
+        const width = this.readInt32();
+        const height = this.readInt32();
+        const xOffset = this.readInt32();
+        const yOffset = this.readInt32();
+        const transitionFile = this.readStringUntilNull();
+        const transitionLength = this.readInt16();
+        const clipKarType = this.readInt32();
+        const clipLineNum = this.readInt32();
+        const clipWordNum = this.readInt32();
+
+        events.push({
+          clipTimeOffset,
+          clipTimeDuration,
+          width,
+          height,
+          xOffset,
+          yOffset,
+          transitionFile,
+          transitionLength,
+          clipKarType,
+          clipLineNum,
+          clipWordNum,
+        });
       }
 
       return {
@@ -288,9 +336,30 @@ export class CMPParser {
         track,
         start,
         duration,
-        data: {},
+        data: {
+          fontFace,
+          fontSize,
+          karaokeMode,
+          highlightMode,
+          foregroundColor,
+          backgroundColor,
+          outlineColor,
+          squareSize,
+          roundSize,
+          frameColor,
+          boxColor,
+          fillColor,
+          compositeColor,
+          shouldComposite,
+          xorBandwidth,
+          antialiasMode,
+          defaultPaletteNumber,
+          textContent,
+          events,
+        },
       };
-    } catch {
+    } catch (error) {
+      console.error('[CMPParser] Error reading TextClip:', error);
       return null;
     }
   }
