@@ -146,12 +146,44 @@
                 <p>{{ projects[selectedProjectIndex].clipsCount }}</p>
               </div>
               <div class="col-md-6">
-                <strong>Duration:</strong>
+                <strong>Duration (MM:SS):</strong>
                 <p>{{ formatDuration(projects[selectedProjectIndex].duration) }}</p>
               </div>
               <div class="col-12">
                 <strong>Path:</strong>
                 <p class="text-muted small">{{ projects[selectedProjectIndex].projectPath }}</p>
+              </div>
+              
+              <!-- Debug Info Section -->
+              <div class="col-12 mt-3 pt-3 border-top">
+                <strong>Debug Information:</strong>
+              </div>
+              <div class="col-md-6">
+                <strong>Raw Duration (packets):</strong>
+                <p class="font-monospace">{{ projects[selectedProjectIndex].duration }}</p>
+              </div>
+              <div class="col-md-6">
+                <strong>As milliseconds:</strong>
+                <p class="font-monospace">{{ (projects[selectedProjectIndex].duration / 300) * 1000 }} ms</p>
+              </div>
+              <div class="col-md-6">
+                <strong>At 300 pps:</strong>
+                <p class="font-monospace">{{ (projects[selectedProjectIndex].duration / 300).toFixed(2) }} seconds</p>
+              </div>
+              <div class="col-md-6">
+                <strong>Clips in project:</strong>
+                <p class="font-monospace">{{ projects[selectedProjectIndex].clipsCount }}</p>
+              </div>
+              
+              <!-- Individual Clip Info -->
+              <div class="col-12 mt-3 pt-3 border-top" v-if="projects[selectedProjectIndex].rawData?.clips.length">
+                <strong>Clip Details:</strong>
+                <div v-for="(clip, idx) in projects[selectedProjectIndex].rawData.clips" :key="idx" class="mt-2 p-2 bg-light rounded small">
+                  <div><strong>Clip {{ idx + 1 }}:</strong> {{ clip.type }} on track {{ clip.track }}</div>
+                  <div>Start (raw): {{ clip.start }} packets = {{ (clip.start / 300).toFixed(2) }}s</div>
+                  <div>Duration (raw): {{ clip.duration }} packets = {{ (clip.duration / 300).toFixed(2) }}s</div>
+                  <div>End: {{ Math.floor((clip.start + clip.duration) / 300) }}s</div>
+                </div>
               </div>
             </div>
           </div>

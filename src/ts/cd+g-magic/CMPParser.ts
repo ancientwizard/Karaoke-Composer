@@ -96,21 +96,21 @@ export class CMPParser {
   }
 
   /**
-   * Read uint32 (little-endian)
+   * Read uint32 (big-endian, matching C++ CDGMagic_MediaClip::get_int)
    */
   private readUint32(): number {
     const bytes = this.readBytes(4);
     return (
-      (bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (bytes[3] << 24)) >>> 0
+      ((bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3]) >>> 0
     );
   }
 
   /**
-   * Read uint16 (little-endian)
+   * Read uint16 (big-endian, matching C++ CDGMagic_MediaClip::get_short)
    */
   private readUint16(): number {
     const bytes = this.readBytes(2);
-    return (bytes[0] | (bytes[1] << 8)) & 0xffff;
+    return ((bytes[0] << 8) | bytes[1]) & 0xffff;
   }
 
   /**
@@ -267,8 +267,8 @@ export class CMPParser {
   private readBMPClip(): CMPClip | null {
     try {
       const track = this.readUint32();
-      const start = this.readUint32();
-      const duration = this.readUint32();
+      const start = this.readUint32(); // Already in packets from C++
+      const duration = this.readUint32(); // Already in packets from C++
 
       const clip: CMPClip = {
         type: 'BMPClip',
@@ -293,8 +293,8 @@ export class CMPParser {
   private readTextClip(): CMPClip | null {
     try {
       const track = this.readUint32();
-      const start = this.readUint32();
-      const duration = this.readUint32();
+      const start = this.readUint32(); // Already in packets from C++
+      const duration = this.readUint32(); // Already in packets from C++
 
       const clip: CMPClip = {
         type: 'TextClip',
@@ -320,8 +320,8 @@ export class CMPParser {
   private readScrollClip(): CMPClip | null {
     try {
       const track = this.readUint32();
-      const start = this.readUint32();
-      const duration = this.readUint32();
+      const start = this.readUint32(); // Already in packets from C++
+      const duration = this.readUint32(); // Already in packets from C++
 
       const clip: CMPClip = {
         type: 'ScrollClip',
@@ -343,8 +343,8 @@ export class CMPParser {
   private readPALGlobalClip(): CMPClip | null {
     try {
       const track = this.readUint32();
-      const start = this.readUint32();
-      const duration = this.readUint32();
+      const start = this.readUint32(); // Already in packets from C++
+      const duration = this.readUint32(); // Already in packets from C++
 
       const clip: CMPClip = {
         type: 'PALGlobalClip',
