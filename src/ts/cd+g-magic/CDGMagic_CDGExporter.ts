@@ -5,27 +5,35 @@
  * Handles packet scheduling, color palette management, and bitmap/text rendering.
  */
 
+import fs from 'fs';
 import { CDGMagic_MediaClip     } from "@/ts/cd+g-magic/CDGMagic_MediaClip";
 import { CDGMagic_TextClip      } from "@/ts/cd+g-magic/CDGMagic_TextClip";
 import { CDGMagic_ScrollClip    } from "@/ts/cd+g-magic/CDGMagic_ScrollClip";
 import { CDGMagic_PALGlobalClip } from "@/ts/cd+g-magic/CDGMagic_PALGlobalClip";
 import { CDGMagic_BMPClip       } from "@/ts/cd+g-magic/CDGMagic_BMPClip";
+import { readBMP }              from "@/ts/cd+g-magic/BMPReader";
+import { renderTextToTile }     from "@/ts/cd+g-magic/TextRenderer";
 
 /**
- * CD+G Packet Command Codes (byte 0)
+ * CD+G Instruction Codes (byte 1 of packet) for TV Graphics mode (0x09)
+ * Command byte (byte 0) is always 0x09 for TV Graphics mode
  */
-enum CDGCommand {
+enum CDGInstruction {
   MEMORY_PRESET    = 0x01,  // Screen clear/preset
   BORDER_PRESET    = 0x02,  // Border color
-  LOAD_LOW         = 0x0E,  // Load palette entries 0-7
-  LOAD_HIGH        = 0x1E,  // Load palette entries 8-15
-  TILE_BLOCK       = 0x06,  // Tile data update
-  SCROLL_PRESET    = 0x04,  // Scroll setup
+  TILE_BLOCK       = 0x06,  // Tile data update (COPY_FONT)
+  XOR_FONT         = 0x26,  // XOR font block
+  SCROLL_PRESET    = 0x14,  // Scroll setup
   SCROLL_COPY      = 0x18,  // Scroll execute
-  PAINT_ON         = 0x08,  // Enable drawing
-  PAINT_OFF        = 0x09,  // Disable drawing
-  DEFINE_FONT      = 0x0A,  // Font definition
+  TRANSPARENT_COLOR = 0x1C, // Set transparent color index
+  LOAD_LOW         = 0x1E,  // Load palette entries 0-7 (LOAD_CLUT_LO)
+  LOAD_HIGH        = 0x1F,  // Load palette entries 8-15 (LOAD_CLUT_HI)
 }
+
+/**
+ * CD+G Command Code (always 0x09 for TV Graphics)
+ */
+const CDG_COMMAND = 0x09;
 
 /**
  * CD+G Packet Structure (24 bytes)
@@ -146,6 +154,18 @@ class CDGMagic_CDGExporter {
   }
 
   /**
+   * Set palette colors (0-15)
+   *
+   * @param palette Array of [R, G, B] tuples (6-bit values 0-63)
+   */
+  set_palette(palette: Array<[number, number, number]>): void {
+    if (palette.length !== 16) {
+      throw new Error('Palette must have exactly 16 colors');
+    }
+    this.internal_palette = palette;
+  }
+
+  /**
    * Generate initial packets (prelude)
    *
    * Creates standard CD+G initialization sequence:
@@ -183,11 +203,9 @@ class CDGMagic_CDGExporter {
     // Clear existing schedule
     this.internal_packet_schedule.clear();
 
-    // Add prelude at packet 0
-    const prelude = this.generate_prelude();
-    for (const pkt of prelude) {
-      this.add_scheduled_packet(0, pkt);
-    }
+    // Note: Do NOT add prelude at packet 0. Each clip (BMPClip, etc.) handles its own
+    // palette setup at its start time. This matches the reference C++ implementation
+    // and ensures proper synchronization of graphics data.
 
     // Process each clip
     for (const clip of this.internal_clips) {
@@ -215,17 +233,133 @@ class CDGMagic_CDGExporter {
    *
    * @param clip TextClip to schedule
    */
+  /**
+   * Schedule packets for TextClip
+   *
+   * Renders text to tile blocks and schedules them as TILE_BLOCK packets
+   *
+   * @param clip TextClip to schedule
+   */
   private schedule_text_clip(clip: CDGMagic_TextClip): void {
-    // For each event in the clip
-    for (let i = 0; i < clip.event_count(); i++) {
-      // Calculate global packet position
-      const global_packet = clip.start_pack() + i * 100; // Simplified
+    console.debug('[schedule_text_clip] Starting TextClip at packet', clip.start_pack(), 'duration:', clip.duration());
 
-      // Schedule palette loads
-      this.add_scheduled_packet(global_packet, this.create_load_high_packet(0, 1, 2, 3, 4, 5, 6, 7));
+    // Get text events from clip
+    const textEvents = (clip as any)._events || [];
+    
+    if (textEvents.length === 0) {
+      console.debug('[schedule_text_clip] No text events found');
+      // Still schedule minimal packets for initialization
+      this.add_scheduled_packet(clip.start_pack(), this.create_load_low_packet(0, 1, 2, 3, 4, 5, 6, 7));
+      this.add_scheduled_packet(clip.start_pack() + 1, this.create_load_high_packet(8, 9, 10, 11, 12, 13, 14, 15));
+      return;
+    }
 
-      // Schedule text rendering packets (would use font encoding in real implementation)
-      // This is simplified; real implementation would encode text as tile blocks
+    // Get text content and rendering properties from clip data
+    const textContent = clip.text_content();
+    let foregroundColor = clip.foreground_color();
+    let backgroundColor = clip.background_color();
+
+    // Clamp to 0-15 range (CD+G palette indices)
+    foregroundColor = Math.min(15, Math.max(0, foregroundColor));
+    backgroundColor = Math.min(15, Math.max(0, backgroundColor));
+
+    console.debug(`[schedule_text_clip] Rendering text: "${textContent.substring(0, 40)}" with FG=${foregroundColor}, BG=${backgroundColor}`);
+
+    // Load palette with current colors
+    this.add_scheduled_packet(clip.start_pack(), this.create_load_low_packet(0, 1, 2, 3, 4, 5, 6, 7));
+    this.add_scheduled_packet(clip.start_pack() + 1, this.create_load_high_packet(8, 9, 10, 11, 12, 13, 14, 15));
+
+    // Schedule memory preset to ensure screen is initialized
+    this.add_scheduled_packet(clip.start_pack() + 2, this.create_memory_preset_packet(0));
+
+    // For each text event, render text and schedule tile packets
+    let packetsScheduled = 0;
+    const maxPackets = clip.duration() - 3; // Leave room for palette and memory preset
+
+    for (let eventIdx = 0; eventIdx < textEvents.length && packetsScheduled < maxPackets; eventIdx++) {
+      const event = textEvents[eventIdx];
+      
+      if (!event) {
+        continue;
+      }
+
+      // Get position and dimensions from event
+      // xOffset, yOffset are in pixels; convert to tiles
+      const boxLeftPixel = event.xOffset || 0;
+      const boxTopPixel = event.yOffset || 0;
+      const boxWidthPixel = event.width || 288;  // Full screen width if not specified
+      const boxHeightPixel = event.height || 24; // One line if not specified
+
+      const boxLeftTile = Math.floor(boxLeftPixel / 6);
+      const boxTopTile = Math.floor(boxTopPixel / 12);
+      const boxWidthTiles = Math.ceil(boxWidthPixel / 6);
+      const boxHeightTiles = Math.ceil(boxHeightPixel / 12);
+
+      console.debug(`[schedule_text_clip] Event ${eventIdx}: box=tile(${boxLeftTile},${boxTopTile}) size=${boxWidthTiles}x${boxHeightTiles}`);
+
+      // Split text into lines
+      const lines = textContent.split('\n');
+
+      // Calculate total text width for centering
+      // Approximate: monospace, each char is 1 tile wide
+      let totalLinesRendered = 0;
+
+      for (let lineIdx = 0; lineIdx < lines.length && packetsScheduled < maxPackets; lineIdx++) {
+        const line = lines[lineIdx]!;
+        
+        // Skip empty lines
+        if (line.length === 0) {
+          continue;
+        }
+
+        // Calculate text width in tiles (each character is approximately 1 tile)
+        // The actual character width is 5 pixels in a 6-pixel tile
+        const textWidthTiles = line.length;
+
+        // Center the text horizontally within the box
+        const totalBoxWidthTiles = boxWidthTiles;
+        const centeredStartTile = boxLeftTile + Math.floor((totalBoxWidthTiles - textWidthTiles) / 2);
+
+        // Vertical position: top of box + line number
+        const lineTile = boxTopTile + lineIdx;
+
+        console.debug(`[schedule_text_clip] Line ${lineIdx}: "${line.substring(0, 20)}" centered at tile(${centeredStartTile},${lineTile})`);
+
+        // Render each character in the line as a tile
+        for (let charIdx = 0; charIdx < line.length && charIdx < boxWidthTiles && packetsScheduled < maxPackets; charIdx++) {
+          const char = line[charIdx]!;
+
+          // Calculate tile position
+          const tileX = centeredStartTile + charIdx;
+          const tileY = lineTile;
+
+          // Skip if out of screen bounds
+          if (tileX < 0 || tileX >= 50 || tileY < 0 || tileY >= 18) {
+            continue;
+          }
+
+          // Render character to tile
+          const tileData = renderTextToTile(char, foregroundColor, backgroundColor);
+
+          // Create and schedule tile block packet
+          const packet = this.create_tile_block_packet(tileData, tileX, tileY);
+          
+          // Space packets through the clip duration
+          const basePacket = clip.start_pack() + 3 + eventIdx;
+          this.add_scheduled_packet(basePacket, packet);
+          packetsScheduled++;
+        }
+
+        totalLinesRendered++;
+      }
+
+      if (totalLinesRendered > 0) {
+        console.debug(`[schedule_text_clip] Event ${eventIdx}: rendered ${totalLinesRendered} lines, ${packetsScheduled} tiles total`);
+      }
+    }
+
+    if (packetsScheduled > 0) {
+      console.debug(`[schedule_text_clip] Rendered ${packetsScheduled} text tile packets total`);
     }
   }
 
@@ -266,14 +400,244 @@ class CDGMagic_CDGExporter {
    * @param clip BMPClip to schedule
    */
   private schedule_bmp_clip(clip: CDGMagic_BMPClip): void {
-    // Schedule memory preset to clear before bitmap
-    this.add_scheduled_packet(clip.start_pack(), this.create_memory_preset_packet(0));
+    console.debug('[schedule_bmp_clip] Starting BMPClip at packet', clip.start_pack(), 'duration:', clip.duration());
+    
+    // Load BMP FIRST to get its palette
+    // BMPClip stores events with bmp_path
+    if ((clip as any)._bmp_events && (clip as any)._bmp_events.length > 0) {
+      const bmpEvent = (clip as any)._bmp_events[0];
+      const bmpPath = bmpEvent.bmp_path || bmpEvent.bmpPath || bmpEvent.path;
+      
+      if (bmpPath && fs.existsSync(bmpPath)) {
+        try {
+          // Load BMP file
+          const bmpBuffer = fs.readFileSync(bmpPath);
+          const bmpData = readBMP(new Uint8Array(bmpBuffer));
 
-    // Schedule palette loads
-    this.add_scheduled_packet(clip.start_pack() + 1, this.create_load_low_packet(0, 1, 2, 3, 4, 5, 6, 7));
-    this.add_scheduled_packet(clip.start_pack() + 2, this.create_load_high_packet(8, 9, 10, 11, 12, 13, 14, 15));
+          // Update palette with BMP's palette BEFORE scheduling palette packets
+          this.internal_palette = bmpData.palette.slice(0, 16);
+          console.debug(`[schedule_bmp_clip] Loaded BMP: ${bmpPath} (${bmpData.width}x${bmpData.height})`);
 
-    // Schedule tile blocks would go here (in real implementation)
+          // Now schedule palette packets with the BMP's colors
+          this.add_scheduled_packet(clip.start_pack(), this.create_load_low_packet(0, 1, 2, 3, 4, 5, 6, 7));
+          this.add_scheduled_packet(clip.start_pack() + 1, this.create_load_high_packet(8, 9, 10, 11, 12, 13, 14, 15));
+
+          // Schedule memory preset to clear screen after palette is loaded
+          this.add_scheduled_packet(clip.start_pack() + 2, this.create_memory_preset_packet(0));
+
+          // Render BMP to tile blocks
+          this.render_bmp_to_tiles(clip.start_pack() + 3, bmpData, clip.duration() - 3);
+        } catch (error) {
+          console.warn(`[schedule_bmp_clip] Failed to load BMP ${bmpPath}: ${error}`);
+          
+          // Fall back to default palette and empty screen
+          this.add_scheduled_packet(clip.start_pack(), this.create_load_low_packet(0, 1, 2, 3, 4, 5, 6, 7));
+          this.add_scheduled_packet(clip.start_pack() + 1, this.create_load_high_packet(8, 9, 10, 11, 12, 13, 14, 15));
+          this.add_scheduled_packet(clip.start_pack() + 2, this.create_memory_preset_packet(0));
+        }
+      }
+    }
+  }
+
+  /**
+   * Render BMP image to CD+G tile blocks
+   * 
+   * CD+G display is 300×216 pixels = 50 tiles wide × 18 tiles high
+   * Each tile is 6×12 pixels
+   *
+   * @param start_packet Starting packet number
+   * @param bmpData BMP pixel data and palette
+   * @param max_packets Maximum packets available for tiles
+   */
+  private render_bmp_to_tiles(start_packet: number, bmpData: any, max_packets: number): void {
+    const SCREEN_TILES_WIDE = 50;
+    const SCREEN_TILES_HIGH = 18;
+    const TILE_WIDTH = 6;
+    const TILE_HEIGHT = 12;
+
+    // Scale BMP to fit CD+G display
+    const bmpScaleX = bmpData.width / (SCREEN_TILES_WIDE * TILE_WIDTH);
+    const bmpScaleY = bmpData.height / (SCREEN_TILES_HIGH * TILE_HEIGHT);
+
+    let packets_scheduled = 0;
+
+    // Render each tile on screen
+    for (let tile_y = 0; tile_y < SCREEN_TILES_HIGH && packets_scheduled < max_packets; tile_y++) {
+      for (let tile_x = 0; tile_x < SCREEN_TILES_WIDE && packets_scheduled < max_packets; tile_x++) {
+        // Sample BMP pixels for this tile
+        const tile_data = this.sample_bmp_tile(bmpData, tile_x, tile_y, bmpScaleX, bmpScaleY);
+        
+        if (tile_data) {
+          // Create tile block packet
+          const packet = this.create_tile_block_packet(tile_data, tile_x, tile_y);
+          this.add_scheduled_packet(start_packet + packets_scheduled, packet);
+          packets_scheduled++;
+        }
+      }
+    }
+
+    console.debug(`[render_bmp_to_tiles] Rendered ${packets_scheduled} tile packets`);
+  }
+
+  /**
+   * Sample BMP pixels for a single tile and determine colors
+   * Returns [color1, color2, pixel_data] or null if tile is empty
+   */
+  private sample_bmp_tile(
+    bmpData: any,
+    tile_x: number,
+    tile_y: number,
+    scaleX: number,
+    scaleY: number
+  ): [number, number, Uint8Array] | null {
+    const TILE_WIDTH = 6;
+    const TILE_HEIGHT = 12;
+
+    // Map tile position to BMP pixel position
+    const bmp_x = Math.floor(tile_x * TILE_WIDTH * scaleX);
+    const bmp_y = Math.floor(tile_y * TILE_HEIGHT * scaleY);
+
+    // Find the two most common colors in this tile region
+    const colorCounts: Map<number, number> = new Map();
+
+    for (let py = 0; py < TILE_HEIGHT; py++) {
+      for (let px = 0; px < TILE_WIDTH; px++) {
+        const src_x = Math.floor(bmp_x + px * scaleX);
+        const src_y = Math.floor(bmp_y + py * scaleY);
+
+        if (src_x < bmpData.width && src_y < bmpData.height) {
+          const pixel_idx = src_y * bmpData.width + src_x;
+          if (pixel_idx < bmpData.pixels.length) {
+            const color = bmpData.pixels[pixel_idx]!;
+            colorCounts.set(color, (colorCounts.get(color) || 0) + 1);
+          }
+        }
+      }
+    }
+
+    // Find two most common colors
+    const colors = Array.from(colorCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 2)
+      .map(([color]) => color % 16); // Clamp to 16 colors
+
+    const color1 = colors[0] || 0;
+    const color2 = colors[1] || color1;
+
+    // Generate pixel data using the two colors
+    const pixelData = new Uint8Array(12);
+    for (let py = 0; py < TILE_HEIGHT; py++) {
+      let byte = 0;
+      for (let px = 0; px < TILE_WIDTH; px++) {
+        const src_x = Math.floor(bmp_x + px * scaleX);
+        const src_y = Math.floor(bmp_y + py * scaleY);
+
+        let bit = 0;
+        if (src_x < bmpData.width && src_y < bmpData.height) {
+          const pixel_idx = src_y * bmpData.width + src_x;
+          if (pixel_idx < bmpData.pixels.length) {
+            const pixel_color = bmpData.pixels[pixel_idx]! % 16;
+            // Use simple nearest-color matching
+            bit = Math.abs(pixel_color - color1) <= Math.abs(pixel_color - color2) ? 0 : 1;
+          }
+        }
+
+        byte = (byte << 1) | bit;
+      }
+      pixelData[py] = byte;
+    }
+
+    return [color1, color2, pixelData];
+  }
+
+  /**
+   * Create tile block packet from color and pixel data
+   */
+  private create_tile_block_packet(
+    tile_data: [number, number, Uint8Array],
+    tile_x: number,
+    tile_y: number
+  ): CDGPacket {
+    const [color1, color2, pixelData] = tile_data;
+    const payload = new Uint8Array(16);
+
+    // Tile block format: [color1, color2, y_block, x_block, ...pixel_data]
+    payload[0] = color1 & 0x0f;
+    payload[1] = color2 & 0x0f;
+    payload[2] = tile_y & 0x1f;
+    payload[3] = tile_x & 0x3f;
+
+    // Copy pixel data
+    for (let i = 0; i < Math.min(12, pixelData.length); i++) {
+      payload[4 + i] = pixelData[i]!;
+    }
+
+    return {
+      command: CDG_COMMAND,
+      instruction: CDGInstruction.TILE_BLOCK,
+      payload,
+      parity1: 0,
+      parity2: 0,
+    };
+  }
+
+  /**
+   * Add test pattern tiles to prove the rendering pipeline works
+   *
+   * Creates a colorful test pattern filling as much of the screen as possible
+   * given the number of available packets.
+   *
+   * @param start_packet Starting packet number for test pattern
+   * @param max_tiles Maximum number of tiles to create (limited by clip duration)
+   */
+  private add_test_pattern_tiles(start_packet: number, max_tiles: number): void {
+    // Create a visible test pattern: fill screen with colored tiles
+    // Screen is 300×216 pixels = 50 tiles wide × 18 tiles high = 900 tiles max
+    let packet_offset = 0;
+    let tiles_created = 0;
+    const tile_positions: Array<{x: number; y: number; color: number}> = [];
+
+    // Fill screen with colored tiles, up to max_tiles limit
+    for (let y = 0; y < 18 && tiles_created < max_tiles; y++) {
+      for (let x = 0; x < 50 && tiles_created < max_tiles; x++) {
+        // Use different colors for each tile to create a visible grid pattern
+        const color1 = ((x + y) % 7) + 1;  // Cycle through colors 1-7
+        const color2 = ((x + y + 3) % 7) + 1;
+
+        if (tile_positions.length < 10) {
+          tile_positions.push({x, y, color: color1});
+        }
+
+        // Create tile pixel data with all pixels using color1 (solid color)
+        const tile_data = new Uint8Array(12);
+        // All bits 0 means all 6×12 pixels use color1
+        for (let i = 0; i < 12; i++) {
+          tile_data[i] = 0;  // All pixels -> color1
+        }
+
+        // Create COPY_FONT packet for this tile
+        const payload = new Uint8Array(16);
+        payload[0] = color1 & 0x0f;
+        payload[1] = color2 & 0x0f;
+        payload[2] = y & 0xff;
+        payload[3] = x & 0xff;
+        payload.set(tile_data, 4);
+
+        const packet: CDGPacket = {
+          command: CDG_COMMAND,            // Always 0x09 for TV Graphics
+          instruction: CDGInstruction.TILE_BLOCK,  // 0x06 = COPY_FONT
+          payload,
+          parity1: 0,
+          parity2: 0,
+        };
+
+        this.add_scheduled_packet(start_packet + packet_offset, packet);
+        packet_offset++;
+        tiles_created++;
+      }
+    }
+
+    console.debug('[add_test_pattern_tiles] Created', tiles_created, 'tile packets. Sample positions:', tile_positions);
   }
 
   /**
@@ -318,21 +682,34 @@ class CDGMagic_CDGExporter {
   /**
    * Create LOAD_LOW packet (palette entries 0-7)
    *
+   * Following C++ reference exactly (CDGMagic_GraphicsEncoder.cpp line 408-411):
+   * - Internal palette stores 6-bit RGB values (0-63 per channel)
+   * - Encoding reduces to 4-bit Red, 6-bit Green, 4-bit Blue
+   * - Red/Blue: 6-bit >> 2 = 4-bit (values 0-15, which scale back to 0-255 by *17)
+   * - Green: stays 6-bit across split bytes
+   *
    * @returns CDGPacket
    */
   private create_load_low_packet(...colors: number[]): CDGPacket {
     const payload = new Uint8Array(16);
     for (let i = 0; i < 8; i++) {
-      // Each color: 2 bits padding + 2-bit R + 2-bit G + 2-bit B
       const color_index = colors[i] || 0;
-      const color = this.internal_palette[color_index];
-      payload[i * 2] = (color[0] >> 4) | ((color[1] >> 4) << 2) | ((color[2] >> 4) << 4);
-      payload[i * 2 + 1] = 0;
+      const [r_6bit, g_6bit, b_6bit] = this.internal_palette[color_index];
+
+      // Convert 6-bit Red and Blue to 4-bit (shift right by 2)
+      const r_4bit = (r_6bit >> 2) & 0x0f;
+      const b_4bit = (b_6bit >> 2) & 0x0f;
+
+      // Encode byte 0: Red (bits 5-2) + Green upper 2 bits (bits 1-0)
+      payload[i * 2] = (r_4bit << 2) | ((g_6bit >> 4) & 0x03);
+
+      // Encode byte 1: Blue (bits 3-0) + Green lower 4 bits (bits 5-4)
+      payload[i * 2 + 1] = (b_4bit & 0x0f) | ((g_6bit & 0x0f) << 4);
     }
 
     return {
-      command: CDGCommand.LOAD_LOW,
-      instruction: 0,
+      command: CDG_COMMAND,
+      instruction: CDGInstruction.LOAD_LOW,
       payload,
       parity1: 0,
       parity2: 0,
@@ -342,24 +719,32 @@ class CDGMagic_CDGExporter {
   /**
    * Create LOAD_HIGH packet (palette entries 8-15)
    *
+   * Following C++ reference exactly: same format as LOAD_LOW
+   * - 6-bit palette values converted to 4-bit Red/Blue, 6-bit Green
+   *
    * @returns CDGPacket
    */
   private create_load_high_packet(...colors: number[]): CDGPacket {
     const payload = new Uint8Array(16);
     for (let i = 0; i < 8; i++) {
-      // Same encoding as LOAD_LOW but for colors 8-15
       const color_index = (colors[i] || 0) % 8; // Clamp to 0-7 offset
       const palette_index = 8 + color_index;
-      const color = this.internal_palette[palette_index];
-      if (color) {
-        payload[i * 2] = (color[0] >> 4) | ((color[1] >> 4) << 2) | ((color[2] >> 4) << 4);
-        payload[i * 2 + 1] = 0;
-      }
+      const [r_6bit, g_6bit, b_6bit] = this.internal_palette[palette_index];
+
+      // Convert 6-bit Red and Blue to 4-bit (shift right by 2)
+      const r_4bit = (r_6bit >> 2) & 0x0f;
+      const b_4bit = (b_6bit >> 2) & 0x0f;
+
+      // Encode byte 0: Red (bits 5-2) + Green upper 2 bits (bits 1-0)
+      payload[i * 2] = (r_4bit << 2) | ((g_6bit >> 4) & 0x03);
+
+      // Encode byte 1: Blue (bits 3-0) + Green lower 4 bits (bits 5-4)
+      payload[i * 2 + 1] = (b_4bit & 0x0f) | ((g_6bit & 0x0f) << 4);
     }
 
     return {
-      command: CDGCommand.LOAD_HIGH,
-      instruction: 0,
+      command: CDG_COMMAND,
+      instruction: CDGInstruction.LOAD_HIGH,
       payload,
       parity1: 0,
       parity2: 0,
@@ -378,8 +763,8 @@ class CDGMagic_CDGExporter {
     payload[1] = 0;           // Reserved
 
     return {
-      command: CDGCommand.MEMORY_PRESET,
-      instruction: 0,
+      command: CDG_COMMAND,
+      instruction: CDGInstruction.MEMORY_PRESET,
       payload,
       parity1: 0,
       parity2: 0,
@@ -398,8 +783,8 @@ class CDGMagic_CDGExporter {
     payload[1] = 0;
 
     return {
-      command: CDGCommand.BORDER_PRESET,
-      instruction: 0,
+      command: CDG_COMMAND,
+      instruction: CDGInstruction.BORDER_PRESET,
       payload,
       parity1: 0,
       parity2: 0,
@@ -428,8 +813,8 @@ class CDGMagic_CDGExporter {
     payload[3] = y_offset & 0xFF;
 
     return {
-      command: CDGCommand.SCROLL_PRESET,
-      instruction: 0,
+      command: CDG_COMMAND,
+      instruction: CDGInstruction.SCROLL_PRESET,
       payload,
       parity1: 0,
       parity2: 0,
@@ -443,8 +828,8 @@ class CDGMagic_CDGExporter {
    */
   private create_scroll_copy_packet(): CDGPacket {
     return {
-      command: CDGCommand.SCROLL_COPY,
-      instruction: 0,
+      command: CDG_COMMAND,
+      instruction: CDGInstruction.SCROLL_COPY,
       payload: new Uint8Array(16),
       parity1: 0,
       parity2: 0,

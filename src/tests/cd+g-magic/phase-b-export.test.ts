@@ -173,8 +173,10 @@ describe("Phase B: CDG Export Pipeline", () => {
       // Verify packet structure
       expect(binary.length).toBe(300 * 24);
 
-      // First packet should be prelude (LOAD_LOW = 0x0E)
-      expect(binary[0]).toBe(0x0E);
+      // First packet should be empty (no prelude at packet 0 anymore)
+      // Palette packets are scheduled with BMPClips, not globally
+      expect(binary[0]).toBe(0x00);    // Command = empty
+      expect(binary[1]).toBe(0x00);    // Instruction = empty
     });
 
     test("should export multiple clips to binary", () => {
@@ -287,24 +289,28 @@ describe("Phase B: CDG Export Pipeline", () => {
     });
 
     test("should generate palette packets in prelude", () => {
-      const exporter = new CDGMagic_CDGExporter(300);
+      const exporter = new CDGMagic_CDGExporter(700); // 300 packets target
 
+      // Create a generic clip at packet 0 - no special handling
       const clip = new CDGMagic_MediaClip(0, 300);
       expect(exporter.register_clip(clip)).toBe(true);
 
       exporter.schedule_packets();
       const binary = exporter.export_to_binary();
 
-      // Packets 0-3 should be prelude (LOAD_LOW, LOAD_HIGH, MEMORY_PRESET, BORDER_PRESET)
-      const packet1_cmd = binary[0];     // LOAD_LOW = 0x0E
-      const packet2_cmd = binary[24];    // LOAD_HIGH = 0x1E
-      const packet3_cmd = binary[48];    // MEMORY_PRESET = 0x01
-      const packet4_cmd = binary[72];    // BORDER_PRESET = 0x02
+      // With no BMPClip, all packets should be empty (zero-filled)
+      // First packet should be all zeros
+      const packet1_cmd = binary[0];      // Command (should be 0 for empty)
+      const packet1_instr = binary[1];    // Instruction (should be 0 for empty)
+      
+      expect(packet1_cmd).toBe(0x00);     // Empty packet starts with 0x00
+      expect(packet1_instr).toBe(0x00);   // Empty packet has 0x00 instruction
 
-      expect(packet1_cmd).toBe(0x0E);
-      expect(packet2_cmd).toBe(0x1E);
-      expect(packet3_cmd).toBe(0x01);
-      expect(packet4_cmd).toBe(0x02);
+      // All packets should be empty since no BMPClip or other rendering was added
+      // Check a random packet in the middle
+      const packet200_offset = 200 * 24;
+      const packet200_cmd = binary[packet200_offset];
+      expect(packet200_cmd).toBe(0x00);   // Should still be empty
     });
   });
 
