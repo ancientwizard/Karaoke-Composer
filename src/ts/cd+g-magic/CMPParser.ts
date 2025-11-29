@@ -2,22 +2,15 @@
  * CD+Graphics Magic - CMP Project File Parser
  *
  * Parses the binary CD+Graphics Magic project format (.cmp)
- * and converts to project data structure
+ * Follows exact serialization format from C++ implementation:
+ * - CDGMagic_EditingGroup::DoProjectSave_callback (save format)
+ * - CDGMagic_EditingGroup::DoProjectOpen_callback (load format)
+ * - CDGMagic_BMPClip::serialize/deserialize (clip format)
  */
-
-/**
- * Project file format marker
- */
-const PROJECT_FILE_MARKER = 'CDGMagic_ProjectFile::';
-const AUDIOPLAYBACK_MARKER = 'CDGMagic_AudioPlayback::';
-const TRACKOPTIONS_MARKER = 'CDGMagic_TrackOptions::';
-const BMPCLIP_MARKER = 'CDGMagic_BMPClip::';
-const TEXTCLIP_MARKER = 'CDGMagic_TextClip::';
-const SCROLLCLIP_MARKER = 'CDGMagic_ScrollClip::';
-const PALGLOBALCLIP_MARKER = 'CDGMagic_PALGlobalClip::';
 
 export interface CMPProject {
   audioFile: string;
+  playPosition: number;
   tracks: CMPTrack[];
   clips: CMPClip[];
 }
@@ -25,7 +18,6 @@ export interface CMPProject {
 export interface CMPTrack {
   index: number;
   channel: number;
-  maskActive: boolean;
 }
 
 export interface CMPClip {
@@ -39,7 +31,7 @@ export interface CMPClip {
 /**
  * CMP Project File Parser
  *
- * Reads binary .cmp files and extracts project structure
+ * Reads binary .cmp files following the exact format from C++ implementation
  */
 export class CMPParser {
   private buffer: Uint8Array;
@@ -52,236 +44,222 @@ export class CMPParser {
 
   /**
    * Parse the entire project file
+   * Format from CDGMagic_EditingGroup::DoProjectSave_callback:
+   *   "CDGMagic_ProjectFile::" + null
+   *   "CDGMagic_AudioPlayback::" + null
+   *   <audio_file_path> + null
+   *   <play_position: int>
+   *   "CDGMagic_TrackOptions::" + null
+   *   <8 x track_channel: char>
+   *   <num_clips: int>
+   *   [for each clip]
+   *     - "CDGMagic_BMPClip::" + null
+   *     - <track: char>
+   *     - <start: int>
+   *     - <duration: int>
+   *     - <num_events: int>
+   *     - [event data...]
    */
   parse(): CMPProject {
     const project: CMPProject = {
       audioFile: '',
+      playPosition: 0,
       tracks: [],
       clips: [],
     };
 
-    // Read project header
-    this.readProjectHeader(project);
-
-    // Read audio playback settings
-    this.readAudioPlayback(project);
-
-    // Read track options
-    this.readTracks(project);
-
-    // Read clips
-    this.readClips(project);
-
-    return project;
-  }
-
-  /**
-   * Read string from buffer at current offset
-   */
-  private readString(): string {
-    if (this.offset >= this.buffer.length) {
-      return '';
+    // Read and skip project file marker
+    if (this.readStringUntilNull() !== 'CDGMagic_ProjectFile::') {
+      throw new Error('Invalid project file format: missing project marker');
     }
 
-    const lengthBytes = this.readBytes(2);
-    const length = (lengthBytes[1] << 8) | lengthBytes[0]; // Little-endian
+    // Read audio playback section
+    if (this.readStringUntilNull() !== 'CDGMagic_AudioPlayback::') {
+      throw new Error('Invalid project file format: missing audio playback marker');
+    }
+    project.audioFile = this.readStringUntilNull();
+    project.playPosition = this.readInt32();
 
-    if (length === 0 || this.offset + length > this.buffer.length) {
-      return '';
+    // Read track options section
+    if (this.readStringUntilNull() !== 'CDGMagic_TrackOptions::') {
+      throw new Error('Invalid project file format: missing track options marker');
+    }
+    for (let i = 0; i < 8; i++) {
+      const channel = this.readInt8();
+      project.tracks.push({
+        index: i,
+        channel,
+      });
     }
 
-    const strBytes = this.readBytes(length);
-    const decoder = new TextDecoder();
-    return decoder.decode(strBytes);
-  }
+    // Read number of clips
+    const numClips = this.readInt32();
 
-  /**
-   * Read uint32 (big-endian, matching C++ CDGMagic_MediaClip::get_int)
-   */
-  private readUint32(): number {
-    const bytes = this.readBytes(4);
-    return (
-      ((bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3]) >>> 0
-    );
-  }
+    // Read each clip
+    for (let i = 0; i < numClips; i++) {
+      const clipMarker = this.readStringUntilNull();
 
-  /**
-   * Read uint16 (big-endian, matching C++ CDGMagic_MediaClip::get_short)
-   */
-  private readUint16(): number {
-    const bytes = this.readBytes(2);
-    return ((bytes[0] << 8) | bytes[1]) & 0xffff;
-  }
-
-  /**
-   * Read uint8
-   */
-  private readUint8(): number {
-    if (this.offset >= this.buffer.length) {
-      return 0;
-    }
-    return this.buffer[this.offset++];
-  }
-
-  /**
-   * Read N bytes
-   */
-  private readBytes(n: number): Uint8Array {
-    if (this.offset + n > this.buffer.length) {
-      n = this.buffer.length - this.offset;
-    }
-    const bytes = this.buffer.slice(this.offset, this.offset + n);
-    this.offset += n;
-    return bytes;
-  }
-
-  /**
-   * Skip to next marker or n bytes
-   */
-  private skipTo(marker?: string): boolean {
-    if (!marker) {
-      return true;
-    }
-
-    const markerBytes = new TextEncoder().encode(marker);
-    while (this.offset < this.buffer.length) {
-      let match = true;
-      for (let i = 0; i < markerBytes.length; i++) {
-        if (
-          this.offset + i >= this.buffer.length ||
-          this.buffer[this.offset + i] !== markerBytes[i]
-        ) {
-          match = false;
-          break;
-        }
-      }
-      if (match) {
-        this.offset += markerBytes.length;
-        return true;
-      }
-      this.offset++;
-    }
-    return false;
-  }
-
-  /**
-   * Read project header
-   */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  private readProjectHeader(_project: CMPProject): void {
-    if (!this.skipTo(PROJECT_FILE_MARKER)) {
-      return;
-    }
-  }
-
-  /**
-   * Read audio playback settings
-   */
-  private readAudioPlayback(project: CMPProject): void {
-    if (!this.skipTo(AUDIOPLAYBACK_MARKER)) {
-      return;
-    }
-
-    project.audioFile = this.readString();
-  }
-
-  /**
-   * Read track options
-   */
-  private readTracks(project: CMPProject): void {
-    let trackIndex = 0;
-    while (this.skipTo(TRACKOPTIONS_MARKER)) {
-      const track: CMPTrack = {
-        index: trackIndex,
-        channel: this.readUint8(),
-        maskActive: this.readUint8() !== 0,
-      };
-      project.tracks.push(track);
-      trackIndex++;
-
-      // Check if we've hit the end of tracks (next marker is a clip)
-      if (this.peekMarker() !== TRACKOPTIONS_MARKER) {
-        break;
-      }
-    }
-  }
-
-  /**
-   * Peek at next marker without consuming it
-   */
-  private peekMarker(): string | null {
-    const savedOffset = this.offset;
-    const markers = [
-      BMPCLIP_MARKER,
-      TEXTCLIP_MARKER,
-      SCROLLCLIP_MARKER,
-      PALGLOBALCLIP_MARKER,
-      TRACKOPTIONS_MARKER,
-    ];
-
-    for (const marker of markers) {
-      this.offset = savedOffset;
-      if (this.skipTo(marker)) {
-        this.offset = savedOffset;
-        return marker;
-      }
-    }
-    this.offset = savedOffset;
-    return null;
-  }
-
-  /**
-   * Read all clips
-   */
-  private readClips(project: CMPProject): void {
-    while (this.offset < this.buffer.length) {
-      if (this.skipTo(BMPCLIP_MARKER)) {
+      if (clipMarker === 'CDGMagic_BMPClip::') {
         const clip = this.readBMPClip();
         if (clip) {
           project.clips.push(clip);
         }
-      } else if (this.skipTo(TEXTCLIP_MARKER)) {
+      } else if (clipMarker === 'CDGMagic_TextClip::') {
         const clip = this.readTextClip();
         if (clip) {
           project.clips.push(clip);
         }
-      } else if (this.skipTo(SCROLLCLIP_MARKER)) {
+      } else if (clipMarker === 'CDGMagic_ScrollClip::') {
         const clip = this.readScrollClip();
         if (clip) {
           project.clips.push(clip);
         }
-      } else if (this.skipTo(PALGLOBALCLIP_MARKER)) {
+      } else if (clipMarker === 'CDGMagic_PALGlobalClip::') {
         const clip = this.readPALGlobalClip();
         if (clip) {
           project.clips.push(clip);
         }
       } else {
-        break;
+        console.warn(`Unknown clip type: ${clipMarker}`);
       }
     }
+
+    return project;
+  }
+
+  /**
+   * Read string until null terminator
+   */
+  private readStringUntilNull(): string {
+    let result = '';
+    while (this.offset < this.buffer.length) {
+      const byte = this.buffer[this.offset++];
+      if (byte === 0) {
+        break;
+      }
+      result += String.fromCharCode(byte);
+    }
+    return result;
+  }
+
+  /**
+   * Read int32 (big-endian, matching C++ CDGMagic_MediaClip::get_int)
+   */
+  private readInt32(): number {
+    if (this.offset + 4 > this.buffer.length) {
+      return 0;
+    }
+    const value =
+      ((this.buffer[this.offset] << 24) |
+        (this.buffer[this.offset + 1] << 16) |
+        (this.buffer[this.offset + 2] << 8) |
+        this.buffer[this.offset + 3]) >>>
+      0;
+    this.offset += 4;
+    return value;
+  }
+
+  /**
+   * Read int16 (big-endian, matching C++ CDGMagic_MediaClip::get_short)
+   */
+  private readInt16(): number {
+    if (this.offset + 2 > this.buffer.length) {
+      return 0;
+    }
+    const value =
+      ((this.buffer[this.offset] << 8) | this.buffer[this.offset + 1]) & 0xffff;
+    this.offset += 2;
+    return value;
+  }
+
+  /**
+   * Read int8 (single byte, signed)
+   */
+  private readInt8(): number {
+    if (this.offset >= this.buffer.length) {
+      return 0;
+    }
+    const byte = this.buffer[this.offset++];
+    // Convert to signed if needed
+    return byte > 127 ? byte - 256 : byte;
   }
 
   /**
    * Read BMP clip data
+   * Format from CDGMagic_BMPClip::serialize:
+   *   "CDGMagic_BMPClip::" + null (already read by caller)
+   *   <track: char>
+   *   <start: int>
+   *   <duration: int>
+   *   <num_events: int>
+   *   [for each event]
+   *     - <event_start_offset: int>
+   *     - <event_duration: int>
+   *     - <bmp_file_path> + null
+   *     - <width: int>
+   *     - <height: int>
+   *     - <x_offset: int>
+   *     - <y_offset: int>
+   *     - <fill_index: char>
+   *     - <composite_index: char>
+   *     - <should_composite: int>
+   *     - <border_index: char>
+   *     - <memory_preset_index: char>
+   *     - <update_pal: int>
+   *     - <transition_file> + null
+   *     - <transition_length: short>
    */
   private readBMPClip(): CMPClip | null {
     try {
-      const track = this.readUint32();
-      const start = this.readUint32(); // Already in packets from C++
-      const duration = this.readUint32(); // Already in packets from C++
+      const track = this.readInt8();
+      const start = this.readInt32();
+      const duration = this.readInt32();
+      const numEvents = this.readInt32();
 
-      const clip: CMPClip = {
+      const events = [];
+      for (let i = 0; i < numEvents; i++) {
+        const eventStart = this.readInt32();
+        const eventDuration = this.readInt32();
+        const bmpPath = this.readStringUntilNull();
+        const width = this.readInt32();
+        const height = this.readInt32();
+        const xOffset = this.readInt32();
+        const yOffset = this.readInt32();
+        const fillIndex = this.readInt8();
+        const compositeIndex = this.readInt8();
+        const shouldComposite = this.readInt32();
+        const borderIndex = this.readInt8();
+        const memoryPresetIndex = this.readInt8();
+        const updatePal = this.readInt32();
+        const transitionFile = this.readStringUntilNull();
+        const transitionLength = this.readInt16();
+
+        events.push({
+          eventStart,
+          eventDuration,
+          bmpPath,
+          width,
+          height,
+          xOffset,
+          yOffset,
+          fillIndex,
+          compositeIndex,
+          shouldComposite,
+          borderIndex,
+          memoryPresetIndex,
+          updatePal,
+          transitionFile,
+          transitionLength,
+        });
+      }
+
+      return {
         type: 'BMPClip',
         track,
         start,
         duration,
-        data: {
-          bmpFile: this.readString(),
-          // Additional BMP-specific fields would go here
-        },
+        data: { events },
       };
-
-      return clip;
     } catch {
       return null;
     }
@@ -292,23 +270,26 @@ export class CMPParser {
    */
   private readTextClip(): CMPClip | null {
     try {
-      const track = this.readUint32();
-      const start = this.readUint32(); // Already in packets from C++
-      const duration = this.readUint32(); // Already in packets from C++
+      const track = this.readInt8();
+      const start = this.readInt32();
+      const duration = this.readInt32();
+      const numEvents = this.readInt32();
 
-      const clip: CMPClip = {
+      // Skip event data for now (similar structure to BMPClip)
+      for (let i = 0; i < numEvents; i++) {
+        this.readInt32(); // event start
+        this.readInt32(); // event duration
+        this.readStringUntilNull(); // skip string
+        // Would need full TextClip format to parse completely
+      }
+
+      return {
         type: 'TextClip',
         track,
         start,
         duration,
-        data: {
-          fontName: this.readString(),
-          text: this.readString(),
-          // Additional text-specific fields would go here
-        },
+        data: {},
       };
-
-      return clip;
     } catch {
       return null;
     }
@@ -319,42 +300,54 @@ export class CMPParser {
    */
   private readScrollClip(): CMPClip | null {
     try {
-      const track = this.readUint32();
-      const start = this.readUint32(); // Already in packets from C++
-      const duration = this.readUint32(); // Already in packets from C++
+      const track = this.readInt8();
+      const start = this.readInt32();
+      const duration = this.readInt32();
+      const numEvents = this.readInt32();
 
-      const clip: CMPClip = {
+      // Skip event data for now
+      for (let i = 0; i < numEvents; i++) {
+        this.readInt32(); // event start
+        this.readInt32(); // event duration
+        this.readStringUntilNull(); // skip string
+      }
+
+      return {
         type: 'ScrollClip',
         track,
         start,
         duration,
         data: {},
       };
-
-      return clip;
     } catch {
       return null;
     }
   }
 
   /**
-   * Read PAL Global clip data
+   * Read PAL global clip data
    */
   private readPALGlobalClip(): CMPClip | null {
     try {
-      const track = this.readUint32();
-      const start = this.readUint32(); // Already in packets from C++
-      const duration = this.readUint32(); // Already in packets from C++
+      const track = this.readInt8();
+      const start = this.readInt32();
+      const duration = this.readInt32();
+      const numEvents = this.readInt32();
 
-      const clip: CMPClip = {
+      // Skip event data for now
+      for (let i = 0; i < numEvents; i++) {
+        this.readInt32(); // event start
+        this.readInt32(); // event duration
+        this.readStringUntilNull(); // skip string
+      }
+
+      return {
         type: 'PALGlobalClip',
         track,
         start,
         duration,
         data: {},
       };
-
-      return clip;
     } catch {
       return null;
     }
