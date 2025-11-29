@@ -239,9 +239,7 @@ export class CDGMagic_ScrollClip extends CDGMagic_MediaClip {
       }
 
       return true;
-    }
-
-    catch {
+    } catch {
       return false;
     }
   }

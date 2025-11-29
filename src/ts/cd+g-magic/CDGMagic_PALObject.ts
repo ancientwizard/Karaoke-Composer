@@ -29,6 +29,7 @@ export class CDGMagic_PALObject {
    *
    * Default state:
    * - All 256 palette entries set to 0x000000FF (black, opaque)
+   *   Format: RRGGBBAA where AA=FF (fully opaque), RRGGBB=000000 (black)
    * - Update mask: 0xFFFF (all colors marked for update)
    * - No dissolve effect
    */
@@ -41,7 +42,7 @@ export class CDGMagic_PALObject {
     this.internal_dissolve_steps = 0;
 
     // Allocate palette memory for 256 colors
-    // Initialize to black with full opacity (0x000000FF)
+    // Initialize to black with full opacity (0x000000FF in RRGGBBAA format)
     this.internal_palette = new Uint32Array(256);
     for (let idx = 0; idx < 256; idx++) {
       this.internal_palette[idx] = 0x000000FF;

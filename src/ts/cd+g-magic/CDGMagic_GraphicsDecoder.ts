@@ -14,18 +14,31 @@ import { CDGMagic_CDSCPacket  } from "@/ts/cd+g-magic/CDGMagic_CDSCPacket";
  * Standard CD+G resolution and format constants
  */
 export namespace CDGDisplay {
-  // Standard CD+G display dimensions
-  export const WIDTH = 304;
-  export const HEIGHT = 192;
-  export const TOTAL_PIXELS = WIDTH * HEIGHT;
+  // VRAM dimensions (from C++ reference: new unsigned char[300*216])
+  export const VRAM_WIDTH = 300;
+  export const VRAM_HEIGHT = 216;
+  export const VRAM_TOTAL_PIXELS = VRAM_WIDTH * VRAM_HEIGHT;
 
-  // Standard CD+G pixel tile dimensions
+  // Output framebuffer dimensions (with 6-pixel borders on each side)
+  export const OUTPUT_WIDTH = 312;   // 300 + 6 + 6
+  export const OUTPUT_HEIGHT = 216;  // Same as VRAM height
+  export const OUTPUT_TOTAL_PIXELS = OUTPUT_WIDTH * OUTPUT_HEIGHT;
+
+  // Active display area (where actual graphics are rendered)
+  export const ACTIVE_X_START = 6;
+  export const ACTIVE_X_END = 294;   // 300 - 6
+  export const ACTIVE_Y_START = 12;
+  export const ACTIVE_Y_END = 204;   // 216 - 12
+  export const ACTIVE_WIDTH = ACTIVE_X_END - ACTIVE_X_START;   // 288
+  export const ACTIVE_HEIGHT = ACTIVE_Y_END - ACTIVE_Y_START;  // 192
+
+  // Standard CD+G pixel tile dimensions (for font blocks)
   export const TILE_WIDTH = 6;
   export const TILE_HEIGHT = 12;
 
-  // Number of tiles in grid
-  export const TILES_WIDE = WIDTH / TILE_WIDTH;  // 50 tiles
-  export const TILES_HIGH = HEIGHT / TILE_HEIGHT; // 16 tiles
+  // Number of tiles in grid (based on VRAM)
+  export const TILES_WIDE = VRAM_WIDTH / TILE_WIDTH;  // 50 tiles
+  export const TILES_HIGH = VRAM_HEIGHT / TILE_HEIGHT; // 18 tiles
 
   // Color constants
   export const TRANSPARENT_INDEX = 0; // Default transparent color
@@ -41,22 +54,23 @@ export namespace CDGDisplay {
  * - Transparent color index
  * - Screen/memory state
  *
- * Instruction Support:
+ * Instruction Support (TV Graphics mode, 0x09):
  * - 0x01: MEMORY_PRESET (clear/fill screen)
  * - 0x02: BORDER_PRESET (set border color)
- * - 0x04: LOAD_CLUT_LO (load palette colors 0-7)
- * - 0x0C: LOAD_CLUT_HI (load palette colors 8-15)
  * - 0x06: COPY_FONT (render tile, direct copy mode)
+ * - 0x14: SCROLL_PRESET (pan/scroll display)
+ * - 0x18: SCROLL_COPY (scroll execute)
+ * - 0x1C: TRANSPARENT_COLOR (set transparent index)
+ * - 0x1E: LOAD_CLUT_LO (load palette colors 0-7)
+ * - 0x1F: LOAD_CLUT_HI (load palette colors 8-15)
  * - 0x26: XOR_FONT (render tile, XOR blend mode)
- * - 0x08: SCROLL_PRESET (pan/scroll display)
- * - 0x1F: TRANSPARENT_COLOR (set transparent index)
  *
- * The decoder maintains VRAM as a 304×192 pixel buffer indexed by palette (0-15).
+ * The decoder maintains VRAM as a 300×216 pixel buffer indexed by palette (0-15).
  * All rendering operations work in palette space, not RGBA.
  * RGBA conversion happens only during final framebuffer output.
  */
 export class CDGMagic_GraphicsDecoder {
-  // VRAM: 304×192 pixels, each pixel is 4-bit palette index (0-15)
+  // VRAM: 300×216 pixels, each pixel is 4-bit palette index (0-15)
   // Stored as single byte per pixel (wasting 4 bits, for simplicity)
   private internal_vram: Uint8Array;
 
@@ -75,18 +89,24 @@ export class CDGMagic_GraphicsDecoder {
   // Packet count processed (for debugging/diagnostics)
   private internal_packet_count: number;
 
+  // Horizontal scroll offset (applied during rendering)
+  private internal_h_offset: number;
+
+  // Vertical scroll offset (applied during rendering)
+  private internal_v_offset: number;
+
   /**
    * Constructor: Initialize graphics decoder with default state
    *
    * Initializes:
-   * - VRAM filled with palette index 0 (default/transparent)
+   * - VRAM (300×216) filled with palette index 0 (default/transparent)
    * - Default palette (black screen)
    * - Border index set to 0
    * - Transparent index set to 0
    * - Empty font block
    */
   constructor() {
-    this.internal_vram = new Uint8Array(CDGDisplay.TOTAL_PIXELS);
+    this.internal_vram = new Uint8Array(CDGDisplay.VRAM_TOTAL_PIXELS);
     this.internal_vram.fill(0); // Clear to palette index 0
 
     this.internal_palette = new CDGMagic_PALObject();
@@ -94,6 +114,8 @@ export class CDGMagic_GraphicsDecoder {
     this.internal_transparent_index = 0;
     this.internal_font_block = new CDGMagic_FontBlock();
     this.internal_packet_count = 0;
+    this.internal_h_offset = 0;
+    this.internal_v_offset = 0;
   }
 
   /**
@@ -116,10 +138,10 @@ export class CDGMagic_GraphicsDecoder {
    * @returns Palette index (0-15), or 0 if out of bounds
    */
   pixel(x: number, y: number): number {
-    if (x < 0 || x >= CDGDisplay.WIDTH || y < 0 || y >= CDGDisplay.HEIGHT) {
+    if (x < 0 || x >= CDGDisplay.VRAM_WIDTH || y < 0 || y >= CDGDisplay.VRAM_HEIGHT) {
       return 0;
     }
-    return this.internal_vram[y * CDGDisplay.WIDTH + x]!;
+    return this.internal_vram[y * CDGDisplay.VRAM_WIDTH + x]!;
   }
 
   /**
@@ -130,8 +152,8 @@ export class CDGMagic_GraphicsDecoder {
    * @param palette_index Palette index (0-15)
    */
   set_pixel(x: number, y: number, palette_index: number): void {
-    if (x >= 0 && x < CDGDisplay.WIDTH && y >= 0 && y < CDGDisplay.HEIGHT) {
-      this.internal_vram[y * CDGDisplay.WIDTH + x] = palette_index & 0x0f;
+    if (x >= 0 && x < CDGDisplay.VRAM_WIDTH && y >= 0 && y < CDGDisplay.VRAM_HEIGHT) {
+      this.internal_vram[y * CDGDisplay.VRAM_WIDTH + x] = palette_index & 0x0f;
     }
   }
 
@@ -230,10 +252,10 @@ export class CDGMagic_GraphicsDecoder {
       case 0x02:
         this.execute_border_preset(data);
         break;
-      case 0x04:
+      case 0x1e:
         this.execute_load_clut_lo(data);
         break;
-      case 0x0c:
+      case 0x1f:
         this.execute_load_clut_hi(data);
         break;
       case 0x06:
@@ -242,10 +264,10 @@ export class CDGMagic_GraphicsDecoder {
       case 0x26:
         this.execute_xor_font(data);
         break;
-      case 0x08:
+      case 0x14:
         this.execute_scroll_preset();
         break;
-      case 0x1f:
+      case 0x1c:
         this.execute_transparent_color(data);
         break;
       // Unrecognized instructions are silently ignored
@@ -290,28 +312,38 @@ export class CDGMagic_GraphicsDecoder {
    * Execute LOAD_CLUT_LO (0x04)
    *
    * Loads 8 colors into palette indices 0-7.
-   * Each color is 24-bit RGB in the packet data.
+   * Colors are 6-bit RGB packed in 2 bytes per color (12 bits total).
    *
    * Data format (bytes 4-19):
-   * - 8 colors × 3 bytes each = 24 bytes total (spans across packets)
-   * - This packet holds: R0 G0 B0 R1 G1 B1 R2 G2 B2 R3 G3 B3 R4 G4 B4 R5
-   * - Next packet holds: G5 B5 R6 G6 B6 R7 G7 B7 (+ padding)
+   * Each color uses 2 bytes with 6-bit RGB values:
+   * - Byte 0: bits 5-0 = Red (6 bits), bits 7-6 = upper Green bits
+   * - Byte 1: bits 3-0 = Blue (6 bits), bits 5-4 = lower Green bits
    *
-   * For this packet alone, loads colors 0-5 (first 18 bytes).
+   * 6-bit values (0-63) are scaled to 8-bit (0-255) by multiplying by 17.
    *
    * @param data 16-byte data payload from packet
    */
   private execute_load_clut_lo(data: Uint8Array): void {
-    // Load palette colors 0-7 from RGB triplets
+    // Load palette colors 0-7 from 6-bit RGB packed format
     for (let i = 0; i < 8; i++) {
-      const byte_offset = i * 3;
-      if (byte_offset + 2 < 16) {
-        const r = data[byte_offset]!;
-        const g = data[byte_offset + 1]!;
-        const b = data[byte_offset + 2]!;
-        // Construct RGBA: (R << 24) | (G << 16) | (B << 8) | 0xFF (full alpha)
+      const byte_offset = i * 2;
+      if (byte_offset + 1 < 16) {
+        // Extract 6-bit RGB values (following C++ reference exactly)
+        const r_6bit = (data[byte_offset]! & 0x3c) >> 2;           // Red: bits 5-2
+        const g_high = (data[byte_offset]! & 0x03) << 4;           // Green high bits
+        const g_low = (data[byte_offset + 1]! & 0x30) >> 4;        // Green low bits
+        const g_6bit = g_high | g_low;
+        const b_6bit = data[byte_offset + 1]! & 0x0f;              // Blue: bits 3-0
+
+        // Scale 6-bit values to 8-bit by multiplying by 17
+        const r = (r_6bit * 17) & 0xff;
+        const g = (g_6bit * 17) & 0xff;
+        const b = (b_6bit * 17) & 0xff;
+
+        // Construct RGBA with alpha = 0xFF
         const rgba = (r << 24) | (g << 16) | (b << 8) | 0xff;
         this.internal_palette.color(i, rgba);
+        console.debug('[execute_load_clut_lo] Color', i, ':', { r, g, b, hex: rgba.toString(16) });
       }
     }
   }
@@ -320,21 +352,28 @@ export class CDGMagic_GraphicsDecoder {
    * Execute LOAD_CLUT_HI (0x0C)
    *
    * Loads 8 colors into palette indices 8-15.
-   * Each color is 24-bit RGB in the packet data.
-   *
-   * Data format: Same as LOAD_CLUT_LO, but for colors 8-15.
+   * Colors are 6-bit RGB packed in 2 bytes per color (same format as LOAD_CLUT_LO).
    *
    * @param data 16-byte data payload from packet
    */
   private execute_load_clut_hi(data: Uint8Array): void {
-    // Load palette colors 8-15 from RGB triplets
+    // Load palette colors 8-15 from 6-bit RGB packed format (same as LO)
     for (let i = 0; i < 8; i++) {
-      const byte_offset = i * 3;
-      if (byte_offset + 2 < 16) {
-        const r = data[byte_offset]!;
-        const g = data[byte_offset + 1]!;
-        const b = data[byte_offset + 2]!;
-        // Construct RGBA: (R << 24) | (G << 16) | (B << 8) | 0xFF (full alpha)
+      const byte_offset = i * 2;
+      if (byte_offset + 1 < 16) {
+        // Extract 6-bit RGB values (following C++ reference exactly)
+        const r_6bit = (data[byte_offset]! & 0x3c) >> 2;           // Red: bits 5-2
+        const g_high = (data[byte_offset]! & 0x03) << 4;           // Green high bits
+        const g_low = (data[byte_offset + 1]! & 0x30) >> 4;        // Green low bits
+        const g_6bit = g_high | g_low;
+        const b_6bit = data[byte_offset + 1]! & 0x0f;              // Blue: bits 3-0
+
+        // Scale 6-bit values to 8-bit by multiplying by 17
+        const r = (r_6bit * 17) & 0xff;
+        const g = (g_6bit * 17) & 0xff;
+        const b = (b_6bit * 17) & 0xff;
+
+        // Construct RGBA with alpha = 0xFF
         const rgba = (r << 24) | (g << 16) | (b << 8) | 0xff;
         this.internal_palette.color(8 + i, rgba);
       }
@@ -363,11 +402,17 @@ export class CDGMagic_GraphicsDecoder {
     const x_block = data[3]!;
 
     if (y_block >= CDGDisplay.TILES_HIGH || x_block >= CDGDisplay.TILES_WIDE) {
+      console.debug('[execute_copy_font] OUT OF BOUNDS:', { y_block, x_block, max_y: CDGDisplay.TILES_HIGH, max_x: CDGDisplay.TILES_WIDE });
       return; // Out of bounds
     }
 
     const base_x = x_block * CDGDisplay.TILE_WIDTH;
     const base_y = y_block * CDGDisplay.TILE_HEIGHT;
+
+    // Log first 3 tiles for debugging
+    if (this.internal_packet_count <= 3) {
+      console.debug(`[execute_copy_font] Tile ${this.internal_packet_count}: block (${x_block},${y_block}) -> pixel (${base_x},${base_y}), colors (${color1},${color2})`);
+    }
 
     // Process 12 rows of pixel data
     for (let row = 0; row < CDGDisplay.TILE_HEIGHT; row++) {
@@ -475,26 +520,109 @@ export class CDGMagic_GraphicsDecoder {
    *
    * @returns RGBA framebuffer (304×192×4 = 233,472 bytes)
    */
+  /**
+   * Generate RGB framebuffer from VRAM and palette
+   *
+   * Following C++ CDGMagic_GraphicsDecoder::GetRGBAScreen():
+   * - Output: 312 × 216 pixels (RGB, 3 bytes per pixel = 202,176 bytes)
+   * - VRAM source: 300 × 216 (centered in output)
+   * - Active display area (rendered from VRAM): x 6-294, y 12-204 (288×192)
+   * - Border area: rendered separately with border color
+   * - Offsets: h_offset and v_offset applied during VRAM reads
+   *
+   * @returns RGB framebuffer (3 bytes per pixel, size 312×216)
+   */
   to_rgba_framebuffer(): Uint8Array {
-    const framebuffer = new Uint8Array(CDGDisplay.TOTAL_PIXELS * 4);
+    // Output: 312×216 RGB (3 bytes per pixel)
+    const framebuffer = new Uint8Array(CDGDisplay.OUTPUT_WIDTH * CDGDisplay.OUTPUT_HEIGHT * 3);
 
-    for (let i = 0; i < CDGDisplay.TOTAL_PIXELS; i++) {
-      const palette_index = this.internal_vram[i]!;
-      const argb = this.internal_palette.color(palette_index);
+    // Render active display area from VRAM with offsets applied
+    // Active area: x from 6-294, y from 12-204
+    for (let y_loc = CDGDisplay.ACTIVE_Y_START; y_loc < CDGDisplay.ACTIVE_Y_END; y_loc++) {
+      for (let x_loc = CDGDisplay.ACTIVE_X_START; x_loc < CDGDisplay.ACTIVE_X_END; x_loc++) {
+        // Apply offsets when reading from VRAM (wrap around using modulo)
+        const vram_x = (x_loc + this.internal_h_offset) % CDGDisplay.VRAM_WIDTH;
+        const vram_y = (y_loc + this.internal_v_offset) % CDGDisplay.VRAM_HEIGHT;
+        const scr_loc = vram_x + vram_y * CDGDisplay.VRAM_WIDTH;
 
-      // Extract ARGB components and convert to RGBA
-      const a = (argb >> 24) & 0xff;
-      const r = (argb >> 16) & 0xff;
-      const g = (argb >> 8) & 0xff;
-      const b = argb & 0xff;
+        // Calculate destination in output buffer
+        const dest_loc = (x_loc + y_loc * CDGDisplay.OUTPUT_WIDTH) * 3;
 
-      framebuffer[i * 4] = r;
-      framebuffer[i * 4 + 1] = g;
-      framebuffer[i * 4 + 2] = b;
-      framebuffer[i * 4 + 3] = a;
+        // Get palette index from VRAM (lower 4 bits only)
+        const palette_index = this.internal_vram[scr_loc]! & 0x0f;
+        const color = this.internal_palette.color(palette_index);
+
+        // Extract RGB components and write to framebuffer
+        // Color format: 0xRRGGBBAA
+        // Octal shifts: >> 030 = >> 24 (red), >> 020 = >> 16 (green), >> 010 = >> 8 (blue)
+        framebuffer[dest_loc] = (color >> 24) & 0xff;     // Red
+        framebuffer[dest_loc + 1] = (color >> 16) & 0xff; // Green
+        framebuffer[dest_loc + 2] = (color >> 8) & 0xff;  // Blue
+      }
     }
 
+    // Fill border areas with border color
+    this.fill_border_rgb(framebuffer);
+
     return framebuffer;
+  }
+
+  /**
+   * Fill border areas of framebuffer with border color
+   *
+   * Following C++ proc_fill_RGB calls from GetRGBAScreen():
+   * - Top border: x 0-312, y 0-12
+   * - Bottom border: x 0-312, y 204-216
+   * - Left border: x 0-6, y 12-204
+   * - Right border: x 306-312, y 12-204
+   *
+   * @param framebuffer RGB output buffer (312×216×3)
+   */
+  private fill_border_rgb(framebuffer: Uint8Array): void {
+    const border_rgba = this.internal_palette.color(this.internal_border_index);
+    const border_r = (border_rgba >> 24) & 0xff;
+    const border_g = (border_rgba >> 16) & 0xff;
+    const border_b = (border_rgba >> 8) & 0xff;
+
+    // Top border: y 0-12
+    for (let y = 0; y < 12; y++) {
+      for (let x = 0; x < CDGDisplay.OUTPUT_WIDTH; x++) {
+        const dest_loc = (x + y * CDGDisplay.OUTPUT_WIDTH) * 3;
+        framebuffer[dest_loc] = border_r;
+        framebuffer[dest_loc + 1] = border_g;
+        framebuffer[dest_loc + 2] = border_b;
+      }
+    }
+
+    // Bottom border: y 204-216
+    for (let y = 204; y < CDGDisplay.OUTPUT_HEIGHT; y++) {
+      for (let x = 0; x < CDGDisplay.OUTPUT_WIDTH; x++) {
+        const dest_loc = (x + y * CDGDisplay.OUTPUT_WIDTH) * 3;
+        framebuffer[dest_loc] = border_r;
+        framebuffer[dest_loc + 1] = border_g;
+        framebuffer[dest_loc + 2] = border_b;
+      }
+    }
+
+    // Left border: x 0-6
+    for (let y = 12; y < 204; y++) {
+      for (let x = 0; x < 6; x++) {
+        const dest_loc = (x + y * CDGDisplay.OUTPUT_WIDTH) * 3;
+        framebuffer[dest_loc] = border_r;
+        framebuffer[dest_loc + 1] = border_g;
+        framebuffer[dest_loc + 2] = border_b;
+      }
+    }
+
+    // Right border: x 306-312
+    for (let y = 12; y < 204; y++) {
+      for (let x = 306; x < CDGDisplay.OUTPUT_WIDTH; x++) {
+        const dest_loc = (x + y * CDGDisplay.OUTPUT_WIDTH) * 3;
+        framebuffer[dest_loc] = border_r;
+        framebuffer[dest_loc + 1] = border_g;
+        framebuffer[dest_loc + 2] = border_b;
+      }
+    }
   }
 
   /**
@@ -508,6 +636,8 @@ export class CDGMagic_GraphicsDecoder {
     this.internal_border_index = 0;
     this.internal_transparent_index = 0;
     this.internal_packet_count = 0;
+    this.internal_h_offset = 0;
+    this.internal_v_offset = 0;
   }
 
   /**
@@ -522,6 +652,8 @@ export class CDGMagic_GraphicsDecoder {
     cloned.internal_border_index = this.internal_border_index;
     cloned.internal_transparent_index = this.internal_transparent_index;
     cloned.internal_packet_count = this.internal_packet_count;
+    cloned.internal_h_offset = this.internal_h_offset;
+    cloned.internal_v_offset = this.internal_v_offset;
     return cloned;
   }
 }

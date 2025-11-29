@@ -10,6 +10,9 @@ How agents should use this file
 
 Global defaults
 - Primary language: TypeScript. Create .ts files (no .js/cjs)
+- Always consult reference/cd+g-magic/CDG_Magic/Source/*.cpp and *.h files as a source of truth
+   everytime you forget to use them your work suffers and I have to redirect you. It wastes time
+   due to all the rework.
 - Module format: ESM (import/export). Target runtime: Node 18+.
 - Package manager: npm.
 - Line endings: LF. Encoding: UTF-8.
@@ -70,9 +73,9 @@ Where to find things
       E.G. like how to create .cdg files
  - bin/ things I'll run, unless I ask you wont make change here;
       Though I think two of these should be moved my me to the diag/ (TBD)
- - diag/ lots of tools etc to support/aide development
+ - diag/ lots of tools etc to support/aide development; thinks I can delete on a whim
  - dist/ obvious
- - docs/ subject matter .md files
+ - docs/ subject matter .md files; put ALL new .md's here
  - projects/  I'll explain later once Agent mode starts working again
  - src/ where our project's well manacured code lives.
 
