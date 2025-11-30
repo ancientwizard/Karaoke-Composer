@@ -4,16 +4,16 @@
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                      CD_SCPacket                         │
+│                      CD_SCPacket                        │
 ├─────────────────────────────────────────────────────────┤
-│ Offset │ Length │ Name       │ Purpose                 │
-├────────┼────────┼────────────┼─────────────────────────┤
-│ 0      │ 1      │ command    │ Subcode mode (0x09)     │
-│ 1      │ 1      │ instruction│ CDG command             │
-│ 2-3    │ 2      │ parityQ    │ Parity Q (0x00, 0x00)  │
-│ 4-19   │ 16     │ data[16]   │ Command data            │
-│ 20-23  │ 4      │ parityP    │ Parity P (all 0x00)    │
-└────────┴────────┴────────────┴─────────────────────────┘
+│ Offset │ Length │ Name       │ Purpose                  │
+├────────┼────────┼────────────┼──────────────────────────┤
+│ 0      │ 1      │ command    │ Subcode mode (0x09)      │
+│ 1      │ 1      │ instruction│ CDG command              │
+│ 2-3    │ 2      │ parityQ    │ Parity Q (0x00, 0x00)    │
+│ 4-19   │ 16     │ data[16]   │ Command data             │
+│ 20-23  │ 4      │ parityP    │ Parity P (all 0x00)      │
+└────────┴────────┴────────────┴──────────────────────────┘
 ```
 
 ## COPY_FONT/XOR_FONT Data Layout (bytes 4-19)
@@ -76,9 +76,9 @@ Channels allow multi-track playback (rarely used):
 
 ```
 Data[0] layout (color_one):
-┌───────────────────────────┐
+┌─────────────────────────────┐
 │ C1 C1 C0 C0 X X X X X X X X │
-└───────────────────────────┘
+└─────────────────────────────┘
   7 6 5 4 3 2 1 0 (bit positions)
   └─────┘ └───────────────────┘
   Chan    Color 0 index (0-15)
@@ -234,14 +234,14 @@ Block coordinates:
   X: 0-49 (left to right)
 
 Pixel layout within block:
-  ┌─ ─ ─ ─ ─ ─┐
-  │ 0 1 2 3 4 5│  Width: 6 pixels
-  │           │  Height: 12 pixels
-  │ ........  │
-  │ ........  │
-  │ ........  │
-  │ ........  │
-  └─ ─ ─ ─ ─ ─┘
+  ┌────────┐
+  │ 012345 │  Width: 6 pixels
+  │        │  Height: 12 pixels
+  │ ...... │
+  │ ...... │
+  │ ...... │
+  │ ...... │
+  └────────┘
 ```
 
 ## Validation Rules
@@ -280,18 +280,18 @@ Colors: [5, 12] (5 is background, 12 is foreground)
 Pattern: checkerboard (alternating)
 
 Packet layout:
-┌─────┬─────┬─────┬──────────────┬──────────────┐
-│ Cmd │ Instr│Parity│   Data (16 bytes)         │
-├─────┼─────┼─────┼──────────────┼──────────────┤
-│0x09 │0x06 │0,0  │5 + 0  │ 12 + 0 │ 5 │ 10 │ ...│
-│     │     │     │= 0x05 │ = 0x0C │   │    │     │
-├─────┴─────┴─────┼──────────────┼──────────────┤
-│ data[0]=0x05    │ data[1]=0x0C │ data[2]=5    │
-│ (color 0)       │ (color 1)    │ (y_block)    │
-├─────────────────┼──────────────┼──────────────┤
-│ data[3]=10      │ data[4-15]=checkerboard pattern
-│ (x_block)       │ 0b010101 = 0x15 (per scanline)
-└─────────────────┴──────────────┴──────────────┘
+┌─────┬──────┬──────┬──────────────┬──────────────┐
+│ Cmd │ Instr│Parity│  Data (16 bytes)            │
+├─────┼──────┼──────┼──────────────┼──────────────┤
+│0x09 │0x06  │0,0   │5 + 0  │ 12 + 0 │ 5 │ 10 │ ...│
+│     │      │      │= 0x05 │ = 0x0C │   │    │     │
+├─────┴──────┴──────┼──────────────┼──────────────┤
+│ data[0]=0x05      │ data[1]=0x0C │ data[2]=5    │
+│ (color 0)         │ (color 1)    │ (y_block)    │
+├───────────────────┼──────────────┼──────────────┤
+│ data[3]=10        │ data[4-15]=checkerboard pattern
+│ (x_block)         │ 0b010101 = 0x15 (per scanline)
+└───────────────────┴──────────────┴──────────────┘
 
 Scanline byte for checkerboard:
   Pixels: [B F B F B F]  (B=0 for color 0, F=1 for color 1)

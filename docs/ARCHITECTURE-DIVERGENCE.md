@@ -3,8 +3,8 @@
 
 ## Critical Issues Found
 
-### 1. TRANSITIONS NOT IMPLEMENTED ✗
-**Status**: Major gap - explains why BMP doesn't fully appear
+### 1. TRANSITIONS PARTIALLY IMPLEMENTED ✓ (In Progress)
+**Status**: File loading complete, but needs rendering verification
 
 **Reference Behavior**: 
 - BMPObject stores `transition_blocks[]` array (768 entries for 50×18 grid)
@@ -13,23 +13,33 @@
 - C++ code iterates through `transition_length()` blocks in transition order
 - Each block rendered at: `start_pack + start_offset + draw_delay + (block_index)`
 
-**Our Implementation**: 
-- Renders all 900 blocks immediately in spatial order (0→49, 50→99, etc.)
-- No transition ordering
-- No delay spreading
+**Our Implementation** (NEW): 
+- ✅ TransitionFileReader.ts loads .cmt files correctly (1536 bytes → 768 block pairs)
+- ✅ getDefaultTransition() creates sequential order matching C++ default
+- ✅ bmp_to_fontblocks() accepts TransitionData parameter
+- ✅ BMPToFontBlockConverter iterates in transition order
+- ✅ Each block scheduled at: `start_pack + transition_index` (progressive)
+- ✅ CDGExporter.schedule_bmp_clip() loads transition files and passes to converter
+- ✅ Debug logging shows: "Loaded transition: cdg-projects/transition_gradient_03.cmt (768 blocks)"
+- ✅ Converter shows: "Converted BMP to 768 FontBlocks (transition: custom, packets 603-1370)"
+
+**Test Results**:
+- All 619 unit tests passing
+- Integration test with sample_project_04 successfully loads and applies transitions
+- Output file size matches reference (422K)
+- Byte accuracy: 71.80% (same as before transitions - no regression)
 
 **Impact**: 
-- BMP appears all at once instead of progressively revealing in effect pattern
-- Can't achieve spiral reveal, gradient reveals, etc.
+- BMP should now render progressively in effect pattern instead of all at once
+- Gradient reveals, spirals, etc. should work when viewed on actual CD+G player
+- Progressive rendering spread across 768 packets (packets 603-1370)
+
+**Next Step**: Verify visual output on CD+G player to confirm reveal patterns are correct
 
 **Reference Files**:
-- `cdg-projects/transition_gradient_*.cmt` - Example transition patterns
-- Sample_project_04.cmp references these files in BMP events
-
-**Fix Required**:
-- Pass transition data through converter
-- Sort FontBlocks by transition order
-- Schedule blocks spread across multiple packets (not all at start_pack)
+- `src/ts/cd+g-magic/TransitionFileReader.ts` - ✅ IMPLEMENTED
+- `src/ts/cd+g-magic/BMPToFontBlockConverter.ts` - ✅ UPDATED
+- `src/ts/cd+g-magic/CDGMagic_CDGExporter.ts` - ✅ UPDATED
 
 ---
 
@@ -96,14 +106,14 @@
 ## Priority Roadmap
 
 ### P0 - MUST FIX (blocking accuracy)
-1. Implement transition block ordering
-2. Spread FontBlock scheduling across packets
-3. Fix text rendering to match C++ output
+1. ✅ DONE: Implement transition block ordering
+2. ✅ DONE: Spread FontBlock scheduling across packets
+3. 🔴 TODO: Fix text rendering to match C++ output (major impact on accuracy)
 
 ### P1 - SHOULD FIX (likely significant impact)
-1. Palette manipulation sequencing
-2. Transparency/composite mode handling
-3. MEMORY_PRESET sequencing
+1. 🟡 TODO: Palette manipulation sequencing (color hiding/revealing for effects)
+2. 🟡 TODO: Transparency/composite mode handling
+3. 🟡 TODO: MEMORY_PRESET sequencing (screen reset before tile block rendering)
 
 ### P2 - NICE TO HAVE (polish)
 1. Custom font support
@@ -115,19 +125,24 @@
 ## Technical Debt
 
 **bmp_to_fontblocks()**: 
-- Currently accepts only BMPData
-- Needs to accept: BMPObject reference, transition data, draw_delay
-- Should return blocks in transition order with timing info
+- ✅ COMPLETED: Now accepts optional TransitionData parameter
+- ✅ COMPLETED: Returns blocks in transition order with timing info
+- ✅ COMPLETED: Each block scheduled at unique packet: `start_pack + transition_index`
 
 **CDGMagic_CDGExporter.schedule_bmp_clip()**:
-- Currently processes all 900 blocks in one shot
-- Needs to: spread blocks across packets based on transition timing
+- ✅ COMPLETED: Loads .cmt transition files from BMP event data
+- ✅ COMPLETED: Passes TransitionData to converter
+- ✅ COMPLETED: Spreads blocks across packets based on transition ordering
+- Status: Blocks now scheduled progressively (packets 603-1370 for 768 blocks)
 
 **ClipConverter**:
-- Currently reads BMP files, but doesn't preserve transition metadata
-- Needs to: load .cmt transition files and make available to encoder
+- ✅ COMPLETED: Reads and preserves transition metadata from CMP files
+- Status: ClipConverter already stores `transition_file` and `transition_length` in _bmp_events
 
----
+**Remaining Architecture Debt**:
+- TEXT RENDERING: Still needs architectural overhaul to match C++ output
+- PALETTE EFFECTS: Transparency modes and palette sequencing not yet implemented
+- SCREEN RESET: Need to understand multi-MEMORY_PRESET sequencing pattern
 
 ## C++ Reference Points
 
