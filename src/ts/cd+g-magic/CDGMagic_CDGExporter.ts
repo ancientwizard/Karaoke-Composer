@@ -479,8 +479,14 @@ class CDGMagic_CDGExporter {
           this.add_scheduled_packet(clip.start_pack(), this.create_load_low_packet(0, 1, 2, 3, 4, 5, 6, 7));
           this.add_scheduled_packet(clip.start_pack() + 1, this.create_load_high_packet(8, 9, 10, 11, 12, 13, 14, 15));
 
-          // Schedule memory preset to clear screen after palette is loaded
-          this.add_scheduled_packet(clip.start_pack() + 2, this.create_memory_preset_packet(0));
+          // Schedule screen initialization packets (following C++ reference order)
+          // First: set border color to black
+          this.add_scheduled_packet(clip.start_pack() + 2, this.create_border_preset_packet(0));
+          // Then: schedule 16 MEMORY_PRESET packets to clear screen (C++ standard practice)
+          for (let i = 0; i < 16; i++) {
+            const pkt = this.create_memory_preset_packet(0, i);
+            this.add_scheduled_packet(clip.start_pack() + 3 + i, pkt);
+          }
 
           // Load transition file if available, otherwise use default (sequential) ordering
           let transitionData: TransitionData | undefined;
@@ -501,12 +507,12 @@ class CDGMagic_CDGExporter {
           }
 
           // Convert BMP to FontBlocks with transition ordering (if available)
-          const fontblocks = bmp_to_fontblocks(bmpData, clip.start_pack() + 3, transitionData, CDGMagic_CDGExporter.DEBUG);
+          const fontblocks = bmp_to_fontblocks(bmpData, clip.start_pack() + 19, transitionData, CDGMagic_CDGExporter.DEBUG);
           if (CDGMagic_CDGExporter.DEBUG)
             console.debug(`[schedule_bmp_clip] Converted BMP to ${fontblocks.length} FontBlocks`);
 
           // Encode FontBlocks as CD+G packets and schedule them
-          this.encode_fontblocks_to_packets(fontblocks, clip.start_pack() + 3, clip.duration() - 3);
+          this.encode_fontblocks_to_packets(fontblocks, clip.start_pack() + 19, clip.duration() - 19);
         }
 
         catch (error) {
@@ -515,7 +521,11 @@ class CDGMagic_CDGExporter {
           // Fall back to default palette and empty screen
           this.add_scheduled_packet(clip.start_pack(), this.create_load_low_packet(0, 1, 2, 3, 4, 5, 6, 7));
           this.add_scheduled_packet(clip.start_pack() + 1, this.create_load_high_packet(8, 9, 10, 11, 12, 13, 14, 15));
-          this.add_scheduled_packet(clip.start_pack() + 2, this.create_memory_preset_packet(0));
+          this.add_scheduled_packet(clip.start_pack() + 2, this.create_border_preset_packet(0));
+          for (let i = 0; i < 16; i++) {
+            const pkt = this.create_memory_preset_packet(0, i);
+            this.add_scheduled_packet(clip.start_pack() + 3 + i, pkt);
+          }
         }
       }
     }
@@ -990,10 +1000,19 @@ class CDGMagic_CDGExporter {
    * @param color_index Color to fill with (0-15)
    * @returns CDGPacket
    */
-  private create_memory_preset_packet(color_index: number): CDGPacket {
+  private create_memory_preset_packet(color_index: number, repeat_value: number = 0): CDGPacket {
     const payload = new Uint8Array(16);
     payload[0] = color_index; // Fill color
-    payload[1] = 0;           // Reserved
+    payload[1] = repeat_value; // Repeat value (0-15)
+
+    // For repeat values 8-15, embed "CD+GMAGIC 001B" message (C++ reference does this)
+    if (repeat_value >= 8) {
+      const message = 'CD+GMAGIC 001B';
+      for (let i = 0; i < message.length && i < 14; i++) {
+        const charCode = message.charCodeAt(i);
+        payload[2 + i] = ((charCode - 0x20) & 0x3f);
+      }
+    }
 
     return {
       command: CDG_COMMAND,
