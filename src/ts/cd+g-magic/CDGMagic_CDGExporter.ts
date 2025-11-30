@@ -13,6 +13,8 @@ import { CDGMagic_PALGlobalClip } from "@/ts/cd+g-magic/CDGMagic_PALGlobalClip";
 import { CDGMagic_BMPClip       } from "@/ts/cd+g-magic/CDGMagic_BMPClip";
 import { readBMP }              from "@/ts/cd+g-magic/BMPReader";
 import { bmp_to_fontblocks }    from "@/ts/cd+g-magic/BMPToFontBlockConverter";
+import { loadTransitionFile, getDefaultTransition } from "@/ts/cd+g-magic/TransitionFileReader";
+import type { TransitionData } from "@/ts/cd+g-magic/TransitionFileReader";
 import { renderTextToTile }     from "@/ts/cd+g-magic/TextRenderer";
 
 /**
@@ -448,6 +450,7 @@ class CDGMagic_CDGExporter {
     if ((clip as any)._bmp_events && (clip as any)._bmp_events.length > 0) {
       const bmpEvent = (clip as any)._bmp_events[0];
       const bmpPath = bmpEvent.bmp_path || bmpEvent.bmpPath || bmpEvent.path;
+      const transitionPath = bmpEvent.transition_file || bmpEvent.transitionFile || '';
       
       if (bmpPath && fs.existsSync(bmpPath)) {
         try {
@@ -466,8 +469,23 @@ class CDGMagic_CDGExporter {
           // Schedule memory preset to clear screen after palette is loaded
           this.add_scheduled_packet(clip.start_pack() + 2, this.create_memory_preset_packet(0));
 
-          // Convert BMP to FontBlocks (this is the critical change)
-          const fontblocks = bmp_to_fontblocks(bmpData, clip.start_pack() + 3);
+          // Load transition file if available, otherwise use default (sequential) ordering
+          let transitionData: TransitionData | undefined;
+          if (transitionPath && fs.existsSync(transitionPath)) {
+            try {
+              const loaded = loadTransitionFile(transitionPath);
+              if (loaded) {
+                transitionData = loaded;
+                console.debug(`[schedule_bmp_clip] Loaded transition: ${transitionPath} (${transitionData.length} blocks)`);
+              }
+            } catch (transError) {
+              console.warn(`[schedule_bmp_clip] Failed to load transition ${transitionPath}: ${transError}`);
+              transitionData = undefined; // Fall back to default
+            }
+          }
+
+          // Convert BMP to FontBlocks with transition ordering (if available)
+          const fontblocks = bmp_to_fontblocks(bmpData, clip.start_pack() + 3, transitionData);
           console.debug(`[schedule_bmp_clip] Converted BMP to ${fontblocks.length} FontBlocks`);
 
           // Encode FontBlocks as CD+G packets and schedule them
