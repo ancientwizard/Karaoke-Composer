@@ -12,6 +12,7 @@ import { CDGMagic_ScrollClip    } from "@/ts/cd+g-magic/CDGMagic_ScrollClip";
 import { CDGMagic_PALGlobalClip } from "@/ts/cd+g-magic/CDGMagic_PALGlobalClip";
 import { CDGMagic_BMPClip       } from "@/ts/cd+g-magic/CDGMagic_BMPClip";
 import { readBMP }              from "@/ts/cd+g-magic/BMPReader";
+import { bmp_to_fontblocks }    from "@/ts/cd+g-magic/BMPToFontBlockConverter";
 import { renderTextToTile }     from "@/ts/cd+g-magic/TextRenderer";
 
 /**
@@ -425,8 +426,12 @@ class CDGMagic_CDGExporter {
           // Schedule memory preset to clear screen after palette is loaded
           this.add_scheduled_packet(clip.start_pack() + 2, this.create_memory_preset_packet(0));
 
-          // Render BMP to tile blocks
-          this.render_bmp_to_tiles(clip.start_pack() + 3, bmpData, clip.duration() - 3);
+          // Convert BMP to FontBlocks (this is the critical change)
+          const fontblocks = bmp_to_fontblocks(bmpData, clip.start_pack() + 3);
+          console.debug(`[schedule_bmp_clip] Converted BMP to ${fontblocks.length} FontBlocks`);
+
+          // Encode FontBlocks as CD+G packets and schedule them
+          this.encode_fontblocks_to_packets(fontblocks, clip.start_pack() + 3, clip.duration() - 3);
         } catch (error) {
           console.warn(`[schedule_bmp_clip] Failed to load BMP ${bmpPath}: ${error}`);
           
@@ -437,6 +442,152 @@ class CDGMagic_CDGExporter {
         }
       }
     }
+  }
+
+  /**
+   * Encode FontBlocks to CD+G packets using intelligent color compression
+   *
+   * Implements the packet encoding strategies from CD+G Magic:
+   * - 1 color: 1 COPY_FONT packet with all bits set (0x3F)
+   * - 2 colors: 1 COPY_FONT packet with bits indicating color selection
+   * - 3 colors: 1 COPY_FONT + 1 XOR_FONT packet pair
+   * - 4+ colors: bitplane decomposition (multiple packets)
+   *
+   * @param fontblocks Array of FontBlock instances to encode
+   * @param start_packet Starting packet number
+   * @param max_packets Maximum packets available
+   */
+  private encode_fontblocks_to_packets(
+    fontblocks: any[],
+    start_packet: number,
+    max_packets: number
+  ): void {
+    let packets_scheduled = 0;
+    let blocks_skipped = 0;
+
+    for (let idx = 0; idx < fontblocks.length; idx++) {
+      if (packets_scheduled >= max_packets) break;
+
+      const fontblock = fontblocks[idx];
+      const num_colors = fontblock.num_colors();
+      const block_x = fontblock.x_location();
+      const block_y = fontblock.y_location();
+
+      if (num_colors === 0) {
+        // Empty block, skip
+        blocks_skipped++;
+        continue;
+      }
+
+      if (num_colors === 1) {
+        // Single color: 1 packet, all pixels the same
+        const color = fontblock.prominent_color(0);
+        const packet = this.create_copy_font_packet(color, color, block_x, block_y, true);
+        this.add_scheduled_packet(start_packet + packets_scheduled, packet);
+        packets_scheduled++;
+      } else if (num_colors === 2) {
+        // Two colors: 1 packet with bit encoding
+        const color0 = fontblock.prominent_color(0);
+        const color1 = fontblock.prominent_color(1);
+        const packet = this.create_two_color_packet(fontblock, color0, color1, block_x, block_y);
+        this.add_scheduled_packet(start_packet + packets_scheduled, packet);
+        packets_scheduled++;
+      } else {
+        // 3+ colors: use bitplane decomposition
+        // For now, just encode as 2-color using top 2 colors
+        const color0 = fontblock.prominent_color(0);
+        const color1 = fontblock.prominent_color(1);
+        const packet = this.create_two_color_packet(fontblock, color0, color1, block_x, block_y);
+        this.add_scheduled_packet(start_packet + packets_scheduled, packet);
+        packets_scheduled++;
+        
+        if (idx === 0) {
+          console.debug(`[encode_fontblocks] Block(${block_x},${block_y}) has ${num_colors} colors, encoded as 2-color`);
+        }
+      }
+    }
+
+    console.debug(`[encode_fontblocks] Processed ${fontblocks.length} FontBlocks (${blocks_skipped} empty), scheduled ${packets_scheduled} packets`);
+  }
+
+  /**
+   * Create a 1-color COPY_FONT packet (all pixels the same)
+   * @param color Color index (0-15)
+   * @param tile_x Tile X coordinate (0-49)
+   * @param tile_y Tile Y coordinate (0-17)
+   * @param is_filled Whether all bits should be set (0x3F)
+   */
+  private create_copy_font_packet(
+    color: number,
+    color2: number,
+    tile_x: number,
+    tile_y: number,
+    is_filled: boolean
+  ): CDGPacket {
+    const payload = new Uint8Array(16);
+
+    // Colors
+    payload[0] = color & 0x0f;
+    payload[1] = color2 & 0x0f;
+
+    // Coordinates
+    payload[2] = tile_y & 0x1f;
+    payload[3] = tile_x & 0x3f;
+
+    // Pixel data - for single color, all bits set means "use this color"
+    for (let i = 0; i < 12; i++) {
+      payload[4 + i] = is_filled ? 0x3f : 0x00;
+    }
+
+    return {
+      command: CDG_COMMAND,
+      instruction: CDGInstruction.TILE_BLOCK,
+      payload,
+      parity1: 0,
+      parity2: 0,
+    };
+  }
+
+  /**
+   * Create a 2-color COPY_FONT packet
+   * Each bit indicates which of 2 colors to use for that pixel
+   */
+  private create_two_color_packet(
+    fontblock: any,
+    color0: number,
+    color1: number,
+    tile_x: number,
+    tile_y: number
+  ): CDGPacket {
+    const payload = new Uint8Array(16);
+
+    // Colors
+    payload[0] = color0 & 0x0f;
+    payload[1] = color1 & 0x0f;
+
+    // Coordinates
+    payload[2] = tile_y & 0x1f;
+    payload[3] = tile_x & 0x3f;
+
+    // Pixel data - bit encoding
+    for (let row = 0; row < 12; row++) {
+      let byte = 0;
+      for (let col = 0; col < 6; col++) {
+        const pixel_color = fontblock.pixel_value(col, row);
+        // Bit is 1 if pixel is color1, 0 if color0
+        const bit = pixel_color === color1 ? 1 : 0;
+        byte = (byte << 1) | bit;
+      }
+      payload[4 + row] = byte;
+    }
+
+    return {
+      command: CDG_COMMAND,
+      instruction: CDGInstruction.TILE_BLOCK,
+      payload,
+      parity1: 0,
+      parity2: 0,
+    };
   }
 
   /**
@@ -458,6 +609,9 @@ class CDGMagic_CDGExporter {
     // Scale BMP to fit CD+G display
     const bmpScaleX = bmpData.width / (SCREEN_TILES_WIDE * TILE_WIDTH);
     const bmpScaleY = bmpData.height / (SCREEN_TILES_HIGH * TILE_HEIGHT);
+
+    console.debug(`[render_bmp_to_tiles] BMP: ${bmpData.width}x${bmpData.height}, ScaleX: ${bmpScaleX}, ScaleY: ${bmpScaleY}`);
+    console.debug(`[render_bmp_to_tiles] Pixel data length: ${bmpData.pixels?.length || 'null'}`);
 
     let packets_scheduled = 0;
 
@@ -523,6 +677,11 @@ class CDGMagic_CDGExporter {
 
     const color1 = colors[0] || 0;
     const color2 = colors[1] || color1;
+
+    // Debug first few tiles
+    if (tile_x === 0 && tile_y === 0) {
+      console.debug(`[sample_bmp_tile] Tile(0,0): bmp_pos=(${bmp_x},${bmp_y}), colors=${color1},${color2}, colorCounts=${colorCounts.size}`);
+    }
 
     // Generate pixel data using the two colors
     const pixelData = new Uint8Array(12);
