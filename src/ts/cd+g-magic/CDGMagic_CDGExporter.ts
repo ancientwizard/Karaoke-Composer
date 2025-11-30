@@ -343,147 +343,102 @@ class CDGMagic_CDGExporter {
     // Schedule memory preset to ensure screen is initialized
     this.add_scheduled_packet(clip.start_pack() + 2, this.create_memory_preset_packet(0));
 
-    // Initialize compositor for text rendering through MultiColorEncoder pipeline
-    const compositor = new CompositorBuffer();
-    const vram = new VRAMBuffer();
+    // Create a virtual BMP for text rendering (300x216 pixels)
+    const bmpWidth = 300;
+    const bmpHeight = 216;
+    const bmpPixels = new Uint8Array(bmpWidth * bmpHeight);
+    bmpPixels.fill(backgroundColor);
 
-    // For each text event, render text into compositor
-    let textTilesRendered = 0;
-    const maxTiles = (clip.duration() - 3) * 18 * 50; // Rough upper bound
-
-    for (let eventIdx = 0; eventIdx < textEvents.length && textTilesRendered < maxTiles; eventIdx++) {
+    // For each text event, render text into the BMP
+    for (let eventIdx = 0; eventIdx < textEvents.length; eventIdx++) {
       const event = textEvents[eventIdx];
-      
-      if (!event)
-        continue;
+      if (!event) continue;
 
       // Get position and dimensions from event
-      // xOffset, yOffset are in pixels; convert to tiles
       const boxLeftPixel = event.xOffset || 0;
       const boxTopPixel = event.yOffset || 0;
-      const boxWidthPixel = event.width || 288;  // Full screen width if not specified
-
-      const boxLeftTile = Math.floor(boxLeftPixel / 6);
-      const boxTopTile = Math.floor(boxTopPixel / 12);
-      const boxWidthTiles = Math.ceil(boxWidthPixel / 6);
-
-      if (CDGMagic_CDGExporter.DEBUG)
-        console.debug(`[schedule_text_clip] Event ${eventIdx}: box=tile(${boxLeftTile},${boxTopTile}) width=${boxWidthTiles}`);
+      const boxWidthPixel = event.width || 288;
 
       // Split text into lines
       const lines = textContent.split('\n');
 
-      for (let lineIdx = 0; lineIdx < lines.length && textTilesRendered < maxTiles; lineIdx++) {
+      // Render each line into the BMP
+      for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
         const line = lines[lineIdx]!;
-        
-        // Skip empty lines
-        if (line.length === 0) {
-          continue;
-        }
+        if (line.length === 0) continue;
 
-        // Calculate text width in tiles (each character is approximately 1 tile)
-        const textWidthTiles = line.length;
+        // Each character rendered as approximately 5 pixels wide (with 1 pixel spacing)
+        // But we need to center the entire line within the box
+        const textWidthPixels = line.length * 6; // 6 pixels per character including spacing
 
-        // Center the text horizontally within the box
-        const centeredStartTile = boxLeftTile + Math.floor((boxWidthTiles - textWidthTiles) / 2);
+        // Center text horizontally within box
+        const centeredStartPixel = boxLeftPixel + Math.floor((boxWidthPixel - textWidthPixels) / 2);
 
-        // Vertical position: top of box + line number
-        const lineTile = boxTopTile + lineIdx;
+        // Vertical position: top of box + line offset (12 pixels per line)
+        const lineTopPixel = boxTopPixel + lineIdx * 12;
 
-        if (CDGMagic_CDGExporter.DEBUG)
-          console.debug(`[schedule_text_clip] Line ${lineIdx}: "${line.substring(0, 20)}" at tile(${centeredStartTile},${lineTile})`);
-
-        // Render each character in the line to compositor
-        for (let charIdx = 0; charIdx < line.length && charIdx < boxWidthTiles && textTilesRendered < maxTiles; charIdx++) {
+        // Render each character
+        for (let charIdx = 0; charIdx < line.length; charIdx++) {
           const char = line[charIdx]!;
+          const charLeftPixel = centeredStartPixel + charIdx * 6;
+          const charTopPixel = lineTopPixel;
 
-          // Calculate tile position
-          const tileX = centeredStartTile + charIdx;
-          const tileY = lineTile;
-
-          // Skip if out of screen bounds
-          if (tileX < 0 || tileX >= 50 || tileY < 0 || tileY >= 18) {
-            continue;
-          }
-
-          // Render character to tile using TextRenderer
+          // Render character into BMP using TextRenderer
           const tileData = renderTextToTile(char, foregroundColor, backgroundColor);
-          
-          // Convert tile data to compositor block format (72 pixels)
-          // tileData = [color1, color2, bitmap_array]
-          const compositorBlock = new Uint16Array(72);
           const color1 = tileData[0] as number;
           const color2 = tileData[1] as number;
-          const bitmapData = tileData[2] as Uint8Array;
+          const bitmap = tileData[2] as Uint8Array;
 
-          // Each bitmap byte contains 6 pixels (one per bit)
+          // Draw character bitmap into BMP (6x12 pixels)
           for (let row = 0; row < 12; row++) {
-            const byte = bitmapData[row] || 0;
+            const byte = bitmap[row] || 0;
+            const pixelY = charTopPixel + row;
+            
+            if (pixelY >= bmpHeight) break; // Out of bounds
+
             for (let col = 0; col < 6; col++) {
+              const pixelX = charLeftPixel + col;
+              if (pixelX >= bmpWidth) break; // Out of bounds
+
               const bit = (byte >> (5 - col)) & 1;
               const pixelColor = bit ? color1 : color2;
-              const pixelIdx = row * 6 + col;
-              compositorBlock[pixelIdx] = pixelColor;
+              const pixelIndex = pixelY * bmpWidth + pixelX;
+              bmpPixels[pixelIndex] = pixelColor;
             }
           }
-
-          // Write to compositor at z-layer 1 (above background, layer 0)
-          compositor.write_block(tileX, tileY, 1, compositorBlock);
-          textTilesRendered++;
         }
       }
     }
 
-    // Encode composited blocks using MultiColorEncoder pipeline
-    // Convert compositor output to VRAM and generate packets
-    let packetsScheduled = 0;
-    const SCREEN_TILES_WIDE = 50;
-    const SCREEN_TILES_HIGH = 18;
-    const maxPackets = clip.duration() - 3;
-    const startPacket = clip.start_pack() + 3;
-
-    for (let block_y = 0; block_y < SCREEN_TILES_HIGH && packetsScheduled < maxPackets; block_y++) {
-      for (let block_x = 0; block_x < SCREEN_TILES_WIDE && packetsScheduled < maxPackets; block_x++) {
-        // Read composited block from compositor
-        const composited_block = compositor.read_composited_block(block_x, block_y);
-
-        // Convert Uint16Array from compositor to Uint8Array for VRAM (values 0-255 only)
-        const composited_block_8bit = new Uint8Array(72);
-        for (let i = 0; i < 72; i++) {
-          composited_block_8bit[i] = composited_block[i] < 256 ? composited_block[i] : 0;
-        }
-
-        // Check if block differs from VRAM
-        if (vram.block_matches(block_x, block_y, composited_block_8bit)) {
-          continue;
-        }
-
-        // Use MultiColorEncoder for sophisticated encoding
-        const encoding = encode_block(composited_block);
-
-        // Generate packets from encoding instructions
-        for (const instr of encoding.instructions) {
-          if (packetsScheduled >= maxPackets) {
-            vram.write_block(block_x, block_y, composited_block_8bit);
-            break;
-          }
-
-          const packet = this.create_cdg_packet_from_encoding_instruction(
-            instr,
-            block_x,
-            block_y
-          );
-          this.add_scheduled_packet(startPacket + packetsScheduled, packet);
-          packetsScheduled++;
-        }
-
-        // Update VRAM with newly written block
-        vram.write_block(block_x, block_y, composited_block_8bit);
-      }
-    }
+    // Create BMP data structure
+    const bmpData = {
+      width: bmpWidth,
+      height: bmpHeight,
+      bitsPerPixel: 8,
+      palette: this.internal_palette.slice(0, 16),
+      pixels: bmpPixels
+    };
 
     if (CDGMagic_CDGExporter.DEBUG)
-      console.debug(`[schedule_text_clip] Rendered ${textTilesRendered} text tiles, scheduled ${packetsScheduled} packets`);
+      console.debug('[schedule_text_clip] Created virtual BMP (300x216) with text rendered');
+
+    // Convert BMP to FontBlocks (this will use default transition if not specified)
+    const fontblocks = bmp_to_fontblocks(
+      bmpData,
+      clip.start_pack() + 3,
+      undefined, // No custom transition for text
+      (clip as any).track_options?.(),
+      CDGMagic_CDGExporter.DEBUG
+    );
+
+    if (CDGMagic_CDGExporter.DEBUG)
+      console.debug(`[schedule_text_clip] Converted to ${fontblocks.length} FontBlocks`);
+
+    // Write FontBlocks to compositor
+    this.write_fontblocks_to_compositor(fontblocks);
+
+    // Encode composited blocks using MultiColorEncoder pipeline
+    this.encode_composited_blocks_to_packets(clip.start_pack() + 3, clip.duration() - 3);
   }
 
   /**
