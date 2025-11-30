@@ -16,6 +16,7 @@ import { bmp_to_fontblocks      } from "@/ts/cd+g-magic/BMPToFontBlockConverter"
 import { loadTransitionFile     } from "@/ts/cd+g-magic/TransitionFileReader";
 import { renderTextToTile       } from "@/ts/cd+g-magic/TextRenderer";
 import { CompositorBuffer       } from "@/ts/cd+g-magic/CompositorBuffer";
+import { VRAMBuffer             } from "@/ts/cd+g-magic/VRAMBuffer";
 import type { TransitionData    } from "@/ts/cd+g-magic/TransitionFileReader";
 
 /**
@@ -90,6 +91,9 @@ class CDGMagic_CDGExporter {
   // Multi-layer compositor buffer (Phase 1.3: Compositor Integration)
   private internal_compositor: CompositorBuffer | null;
 
+  // VRAM buffer for change detection (Phase 2: Rendering Pipeline)
+  private internal_vram: VRAMBuffer | null;
+
   /**
    * Constructor: Create exporter
    *
@@ -103,6 +107,7 @@ class CDGMagic_CDGExporter {
     this.internal_duration_packets = duration_packets;
     this.internal_use_reference_prelude = false;
     this.internal_compositor = null;
+    this.internal_vram = null;
   }
 
   /**
@@ -219,6 +224,10 @@ class CDGMagic_CDGExporter {
     // This will receive all clip data and composite layers before generating packets
     this.internal_compositor = new CompositorBuffer(300, 216);
     this.internal_compositor.set_preset_index(0);
+
+    // Initialize VRAM buffer (Phase 2: Rendering Pipeline Optimization)
+    // This tracks on-screen state to detect which blocks changed
+    this.internal_vram = new VRAMBuffer(300, 216);
 
     // Note: Do NOT add prelude at packet 0. Each clip (BMPClip, etc.) handles its own
     // palette setup at its start time. This matches the reference C++ implementation
@@ -1233,16 +1242,17 @@ class CDGMagic_CDGExporter {
   }
 
   /**
-   * Read composited blocks and encode to packets (Phase 1.3)
+   * Read composited blocks and encode to packets (Phase 1.3 + Phase 2)
    *
    * Extracts composited blocks from the compositor and encodes them as CD+G packets.
+   * Only writes packets for blocks that differ from current VRAM state (Phase 2 optimization).
    * This replaces direct FontBlock-to-packet encoding when compositor is enabled.
    *
    * @param start_packet Starting packet number
    * @param max_packets Maximum packets available for tiles
    */
   private encode_composited_blocks_to_packets(start_packet: number, max_packets: number): void {
-    if (!this.internal_compositor) return;
+    if (!this.internal_compositor || !this.internal_vram) return;
 
     let packets_scheduled = 0;
     const SCREEN_TILES_WIDE = 50;
@@ -1255,24 +1265,43 @@ class CDGMagic_CDGExporter {
         // Read composited block from compositor
         const composited_block = this.internal_compositor.read_composited_block(block_x, block_y);
 
+        // Convert Uint16Array from compositor to Uint8Array for VRAM (values 0-255 only)
+        const composited_block_8bit = new Uint8Array(72);
+        for (let i = 0; i < 72; i++) {
+          // Transparency (256) becomes 0 for VRAM comparison
+          composited_block_8bit[i] = composited_block[i] < 256 ? composited_block[i] : 0;
+        }
+
+        // Phase 2: Check if block differs from current VRAM state
+        if (this.internal_vram.block_matches(block_x, block_y, composited_block_8bit)) {
+          // Block is identical to on-screen, skip writing
+          continue;
+        }
+
+        // Block differs from VRAM, need to write packet(s)
         // Convert to FontBlock for encoding (simplified - just get top 2 colors)
         const color_set = new Set<number>();
         for (let i = 0; i < 72; i++) {
           if (composited_block[i] !== CompositorBuffer.get_transparency()) {
-            color_set.add(composited_block[i]);
+            color_set.add(composited_block[i] & 0xFF);
           }
         }
 
         const colors = Array.from(color_set).slice(0, 2);
 
         if (colors.length === 0) {
-          // Empty block, skip
-          continue;
+          // Empty block - write as single color with preset
+          const color = 0;
+          const packet = this.create_copy_font_packet(color, color, block_x, block_y, false);
+          this.add_scheduled_packet(start_packet + packets_scheduled, packet);
+          this.internal_vram.write_block(block_x, block_y, composited_block_8bit);
+          packets_scheduled++;
         } else if (colors.length === 1) {
-          // Single color
+          // Single color - all pixels same
           const color = colors[0];
           const packet = this.create_copy_font_packet(color, color, block_x, block_y, true);
           this.add_scheduled_packet(start_packet + packets_scheduled, packet);
+          this.internal_vram.write_block(block_x, block_y, composited_block_8bit);
           packets_scheduled++;
         } else {
           // Two colors: encode pixel data
@@ -1286,6 +1315,7 @@ class CDGMagic_CDGExporter {
             block_y
           );
           this.add_scheduled_packet(start_packet + packets_scheduled, packet);
+          this.internal_vram.write_block(block_x, block_y, composited_block_8bit);
           packets_scheduled++;
         }
       }
