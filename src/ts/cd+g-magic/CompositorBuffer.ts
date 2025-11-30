@@ -146,10 +146,10 @@ class CompositorBuffer {
    *
    * @param block_x X coordinate in tiles (0-49)
    * @param block_y Y coordinate in tiles (0-17)
-   * @returns 72-byte array (6×12 pixels, one per byte)
+   * @returns 72-element Uint16Array (6×12 pixels, one per element)
    */
-  public read_composited_block(block_x: number, block_y: number): Uint8Array {
-    const result = new Uint8Array(72);  // 6×12 pixels
+  public read_composited_block(block_x: number, block_y: number): Uint16Array {
+    const result = new Uint16Array(72);  // 6×12 pixels
     let idx = 0;
 
     for (let py = 0; py < 12; py++) {
@@ -171,13 +171,13 @@ class CompositorBuffer {
    * @param block_x X coordinate in tiles (0-49)
    * @param block_y Y coordinate in tiles (0-17)
    * @param z Layer/track index (0-7)
-   * @param pixel_data 72-byte array (6×12 pixels, one per byte)
+   * @param pixel_data 72-element Uint16Array (values 0-255=opaque, 256=transparent)
    */
   public write_block(
     block_x: number,
     block_y: number,
     z: number,
-    pixel_data: Uint8Array
+    pixel_data: Uint16Array
   ): void {
     if (pixel_data.length !== 72) {
       console.warn(`[CompositorBuffer.write_block] Invalid pixel_data length: ${pixel_data.length}, expected 72`);
