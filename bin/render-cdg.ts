@@ -13,13 +13,16 @@
  *   npx ts-node bin/render-cdg.ts cdg-projects/sample_project_04.cmp /tmp/output.cdg cdg-projects/sample_project_04.cdg
  */
 
-import fs from 'fs';
+import fs   from 'fs';
 import path from 'path';
-import { CMPParser } from '../src/ts/cd+g-magic/CMPParser';
-import { PathNormalizationFacade } from '../src/ts/cd+g-magic/PathNormalizationFacade';
-import { convertToMediaClip } from '../src/ts/cd+g-magic/ClipConverter';
-import { CDGMagic_CDGExporter } from '../src/ts/cd+g-magic/CDGMagic_CDGExporter';
-import { extractBMPPalette } from '../src/ts/cd+g-magic/BMPPaletteLoader';
+import { CMPParser                } from '../src/ts/cd+g-magic/CMPParser';
+import { PathNormalizationFacade  } from '../src/ts/cd+g-magic/PathNormalizationFacade';
+import { convertToMediaClip       } from '../src/ts/cd+g-magic/ClipConverter';
+import { CDGMagic_CDGExporter     } from '../src/ts/cd+g-magic/CDGMagic_CDGExporter';
+import { extractBMPPalette        } from '../src/ts/cd+g-magic/BMPPaletteLoader';
+
+// ALLOW Exporter to announce debug info
+CDGMagic_CDGExporter.DEBUG = true;
 
 interface RenderOptions {
   inputCMP: string;

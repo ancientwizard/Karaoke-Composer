@@ -14,9 +14,9 @@
  * instead of sequential left-to-right top-to-bottom order.
  */
 
-import { CDGMagic_FontBlock } from '@/ts/cd+g-magic/CDGMagic_FontBlock';
-import type { TransitionData } from '@/ts/cd+g-magic/TransitionFileReader';
+import { CDGMagic_FontBlock   } from '@/ts/cd+g-magic/CDGMagic_FontBlock';
 import { getDefaultTransition } from '@/ts/cd+g-magic/TransitionFileReader';
+import type { TransitionData  } from '@/ts/cd+g-magic/TransitionFileReader';
 
 export interface BMPData {
   width: number;
@@ -43,11 +43,9 @@ export interface BMPData {
  * @param transition Optional transition ordering (default: sequential)
  * @returns Array of FontBlock instances (max 900 for full screen)
  */
-export function bmp_to_fontblocks(
-  bmpData: BMPData,
-  start_pack: number,
-  transition?: TransitionData
-): CDGMagic_FontBlock[] {
+export function bmp_to_fontblocks( bmpData: BMPData, start_pack: number, transition?: TransitionData, DEBUG: boolean = false )
+  : CDGMagic_FontBlock[]
+{
   const TILE_WIDTH = 6;
   const TILE_HEIGHT = 12;
   const VRAM_WIDTH = 300;
@@ -98,11 +96,12 @@ export function bmp_to_fontblocks(
     fontblocks.push(fontblock);
   }
 
-  console.debug(
-    `[bmp_to_fontblocks] Converted BMP to ${fontblocks.length} FontBlocks ` +
-    `(transition: ${transition ? 'custom' : 'default'}, ` +
-    `packets ${start_pack}-${start_pack + fontblocks.length - 1})`
-  );
+  if (DEBUG)
+    console.debug(
+      `[bmp_to_fontblocks] Converted BMP to ${fontblocks.length} FontBlocks ` +
+      `(transition: ${transition ? 'custom' : 'default'}, ` +
+      `packets ${start_pack}-${start_pack + fontblocks.length - 1})`
+    );
 
   return fontblocks;
 }

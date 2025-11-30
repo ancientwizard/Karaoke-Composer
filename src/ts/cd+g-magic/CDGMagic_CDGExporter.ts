@@ -11,11 +11,11 @@ import { CDGMagic_TextClip      } from "@/ts/cd+g-magic/CDGMagic_TextClip";
 import { CDGMagic_ScrollClip    } from "@/ts/cd+g-magic/CDGMagic_ScrollClip";
 import { CDGMagic_PALGlobalClip } from "@/ts/cd+g-magic/CDGMagic_PALGlobalClip";
 import { CDGMagic_BMPClip       } from "@/ts/cd+g-magic/CDGMagic_BMPClip";
-import { readBMP }              from "@/ts/cd+g-magic/BMPReader";
-import { bmp_to_fontblocks }    from "@/ts/cd+g-magic/BMPToFontBlockConverter";
-import { loadTransitionFile, getDefaultTransition } from "@/ts/cd+g-magic/TransitionFileReader";
-import type { TransitionData } from "@/ts/cd+g-magic/TransitionFileReader";
-import { renderTextToTile }     from "@/ts/cd+g-magic/TextRenderer";
+import { readBMP                } from "@/ts/cd+g-magic/BMPReader";
+import { bmp_to_fontblocks      } from "@/ts/cd+g-magic/BMPToFontBlockConverter";
+import { loadTransitionFile     } from "@/ts/cd+g-magic/TransitionFileReader";
+import { renderTextToTile       } from "@/ts/cd+g-magic/TextRenderer";
+import type { TransitionData    } from "@/ts/cd+g-magic/TransitionFileReader";
 
 /**
  * CD+G Instruction Codes (byte 1 of packet) for TV Graphics mode (0x09)
@@ -42,10 +42,10 @@ const CDG_COMMAND = 0x09;
  * CD+G Packet Structure (24 bytes)
  */
 interface CDGPacket {
-  command: number;           // Byte 0: Command code
-  instruction: number;       // Byte 1: Instruction/subtype
-  payload: Uint8Array;       // Bytes 4-19: 16-byte payload
-  parity1: number;           // Bytes 2-3: Parity
+  command: number;           // Byte      0: Command code
+  instruction: number;       // Byte      1: Instruction/subtype
+  payload: Uint8Array;       // Bytes  4-19: 16-byte payload
+  parity1: number;           // Bytes   2-3: Parity
   parity2: number;           // Bytes 20-23: Parity
 }
 
@@ -67,6 +67,9 @@ interface CDGPacket {
  */
 export
 class CDGMagic_CDGExporter {
+  // Output console.debug() only when true
+  public static DEBUG: boolean = false;
+
   // Packet schedule: packet_index → array of packets at that index
   private internal_packet_schedule: Map<number, CDGPacket[]>;
 
@@ -267,7 +270,8 @@ class CDGMagic_CDGExporter {
     packet.payload[1] = 0;  // x_offset = 0
     packet.payload[2] = 0;  // y_offset = 0
 
-    console.debug(`[inject_scroll_reset_packets] Injecting SCROLL_COPY at packet ${scroll_reset_packet}`);
+    if (CDGMagic_CDGExporter.DEBUG)
+      console.debug(`[inject_scroll_reset_packets] Injecting SCROLL_COPY at packet ${scroll_reset_packet}`);
     this.add_scheduled_packet(scroll_reset_packet, packet);
   }
 
@@ -284,13 +288,15 @@ class CDGMagic_CDGExporter {
    * @param clip TextClip to schedule
    */
   private schedule_text_clip(clip: CDGMagic_TextClip): void {
-    console.debug('[schedule_text_clip] Starting TextClip at packet', clip.start_pack(), 'duration:', clip.duration());
+    if (CDGMagic_CDGExporter.DEBUG)
+      console.debug('[schedule_text_clip] Starting TextClip at packet', clip.start_pack(), 'duration:', clip.duration());
 
     // Get text events from clip
     const textEvents = (clip as any)._events || [];
     
     if (textEvents.length === 0) {
-      console.debug('[schedule_text_clip] No text events found');
+      if (CDGMagic_CDGExporter.DEBUG)
+        console.debug('[schedule_text_clip] No text events found');
       // Still schedule minimal packets for initialization
       this.add_scheduled_packet(clip.start_pack(), this.create_load_low_packet(0, 1, 2, 3, 4, 5, 6, 7));
       this.add_scheduled_packet(clip.start_pack() + 1, this.create_load_high_packet(8, 9, 10, 11, 12, 13, 14, 15));
@@ -306,7 +312,8 @@ class CDGMagic_CDGExporter {
     foregroundColor = Math.min(15, Math.max(0, foregroundColor));
     backgroundColor = Math.min(15, Math.max(0, backgroundColor));
 
-    console.debug(`[schedule_text_clip] Rendering text: "${textContent.substring(0, 40)}" with FG=${foregroundColor}, BG=${backgroundColor}`);
+    if (CDGMagic_CDGExporter.DEBUG)
+      console.debug(`[schedule_text_clip] Rendering text: "${textContent.substring(0, 40)}" with FG=${foregroundColor}, BG=${backgroundColor}`);
 
     // Load palette with current colors
     this.add_scheduled_packet(clip.start_pack(), this.create_load_low_packet(0, 1, 2, 3, 4, 5, 6, 7));
@@ -322,9 +329,8 @@ class CDGMagic_CDGExporter {
     for (let eventIdx = 0; eventIdx < textEvents.length && packetsScheduled < maxPackets; eventIdx++) {
       const event = textEvents[eventIdx];
       
-      if (!event) {
+      if (!event)
         continue;
-      }
 
       // Get position and dimensions from event
       // xOffset, yOffset are in pixels; convert to tiles
@@ -338,7 +344,8 @@ class CDGMagic_CDGExporter {
       const boxWidthTiles = Math.ceil(boxWidthPixel / 6);
       const boxHeightTiles = Math.ceil(boxHeightPixel / 12);
 
-      console.debug(`[schedule_text_clip] Event ${eventIdx}: box=tile(${boxLeftTile},${boxTopTile}) size=${boxWidthTiles}x${boxHeightTiles}`);
+      if (CDGMagic_CDGExporter.DEBUG)
+        console.debug(`[schedule_text_clip] Event ${eventIdx}: box=tile(${boxLeftTile},${boxTopTile}) size=${boxWidthTiles}x${boxHeightTiles}`);
 
       // Split text into lines
       const lines = textContent.split('\n');
@@ -366,7 +373,8 @@ class CDGMagic_CDGExporter {
         // Vertical position: top of box + line number
         const lineTile = boxTopTile + lineIdx;
 
-        console.debug(`[schedule_text_clip] Line ${lineIdx}: "${line.substring(0, 20)}" centered at tile(${centeredStartTile},${lineTile})`);
+        if (CDGMagic_CDGExporter.DEBUG)
+          console.debug(`[schedule_text_clip] Line ${lineIdx}: "${line.substring(0, 20)}" centered at tile(${centeredStartTile},${lineTile})`);
 
         // Render each character in the line as a tile
         for (let charIdx = 0; charIdx < line.length && charIdx < boxWidthTiles && packetsScheduled < maxPackets; charIdx++) {
@@ -396,14 +404,12 @@ class CDGMagic_CDGExporter {
         totalLinesRendered++;
       }
 
-      if (totalLinesRendered > 0) {
-        console.debug(`[schedule_text_clip] Event ${eventIdx}: rendered ${totalLinesRendered} lines, ${packetsScheduled} tiles total`);
-      }
+      if (totalLinesRendered > 0 && CDGMagic_CDGExporter.DEBUG)
+          console.debug(`[schedule_text_clip] Event ${eventIdx}: rendered ${totalLinesRendered} lines, ${packetsScheduled} tiles total`);
     }
 
-    if (packetsScheduled > 0) {
+    if (packetsScheduled > 0 && CDGMagic_CDGExporter.DEBUG)
       console.debug(`[schedule_text_clip] Rendered ${packetsScheduled} text tile packets total`);
-    }
   }
 
   /**
@@ -419,6 +425,7 @@ class CDGMagic_CDGExporter {
       clip.x_offset(),
       clip.y_offset()
     );
+
     this.add_scheduled_packet(clip.start_pack(), scroll_pkt);
 
     // Schedule scroll execute packet
@@ -443,7 +450,8 @@ class CDGMagic_CDGExporter {
    * @param clip BMPClip to schedule
    */
   private schedule_bmp_clip(clip: CDGMagic_BMPClip): void {
-    console.debug('[schedule_bmp_clip] Starting BMPClip at packet', clip.start_pack(), 'duration:', clip.duration());
+    if (CDGMagic_CDGExporter.DEBUG)
+      console.debug('[schedule_bmp_clip] Starting BMPClip at packet', clip.start_pack(), 'duration:', clip.duration());
     
     // Load BMP FIRST to get its palette
     // BMPClip stores events with bmp_path
@@ -460,7 +468,8 @@ class CDGMagic_CDGExporter {
 
           // Update palette with BMP's palette BEFORE scheduling palette packets
           this.internal_palette = bmpData.palette.slice(0, 16);
-          console.debug(`[schedule_bmp_clip] Loaded BMP: ${bmpPath} (${bmpData.width}x${bmpData.height})`);
+          if (CDGMagic_CDGExporter.DEBUG)
+            console.debug(`[schedule_bmp_clip] Loaded BMP: ${bmpPath} (${bmpData.width}x${bmpData.height})`);
 
           // Now schedule palette packets with the BMP's colors
           this.add_scheduled_packet(clip.start_pack(), this.create_load_low_packet(0, 1, 2, 3, 4, 5, 6, 7));
@@ -476,21 +485,27 @@ class CDGMagic_CDGExporter {
               const loaded = loadTransitionFile(transitionPath);
               if (loaded) {
                 transitionData = loaded;
-                console.debug(`[schedule_bmp_clip] Loaded transition: ${transitionPath} (${transitionData.length} blocks)`);
+                if (CDGMagic_CDGExporter.DEBUG)
+                  console.debug(`[schedule_bmp_clip] Loaded transition: ${transitionPath} (${transitionData.length} blocks)`);
               }
-            } catch (transError) {
+            }
+
+            catch (transError) {
               console.warn(`[schedule_bmp_clip] Failed to load transition ${transitionPath}: ${transError}`);
               transitionData = undefined; // Fall back to default
             }
           }
 
           // Convert BMP to FontBlocks with transition ordering (if available)
-          const fontblocks = bmp_to_fontblocks(bmpData, clip.start_pack() + 3, transitionData);
-          console.debug(`[schedule_bmp_clip] Converted BMP to ${fontblocks.length} FontBlocks`);
+          const fontblocks = bmp_to_fontblocks(bmpData, clip.start_pack() + 3, transitionData, CDGMagic_CDGExporter.DEBUG);
+          if (CDGMagic_CDGExporter.DEBUG)
+            console.debug(`[schedule_bmp_clip] Converted BMP to ${fontblocks.length} FontBlocks`);
 
           // Encode FontBlocks as CD+G packets and schedule them
           this.encode_fontblocks_to_packets(fontblocks, clip.start_pack() + 3, clip.duration() - 3);
-        } catch (error) {
+        }
+
+        catch (error) {
           console.warn(`[schedule_bmp_clip] Failed to load BMP ${bmpPath}: ${error}`);
           
           // Fall back to default palette and empty screen
@@ -515,11 +530,9 @@ class CDGMagic_CDGExporter {
    * @param start_packet Starting packet number
    * @param max_packets Maximum packets available
    */
-  private encode_fontblocks_to_packets(
-    fontblocks: any[],
-    start_packet: number,
-    max_packets: number
-  ): void {
+  private encode_fontblocks_to_packets( fontblocks: any[], start_packet: number, max_packets: number )
+    : void
+  {
     let packets_scheduled = 0;
     let blocks_skipped = 0;
 
@@ -559,13 +572,13 @@ class CDGMagic_CDGExporter {
         this.add_scheduled_packet(start_packet + packets_scheduled, packet);
         packets_scheduled++;
         
-        if (idx === 0) {
+        if (idx === 0 && CDGMagic_CDGExporter.DEBUG)
           console.debug(`[encode_fontblocks] Block(${block_x},${block_y}) has ${num_colors} colors, encoded as 2-color`);
-        }
       }
     }
 
-    console.debug(`[encode_fontblocks] Processed ${fontblocks.length} FontBlocks (${blocks_skipped} empty), scheduled ${packets_scheduled} packets`);
+    if (CDGMagic_CDGExporter.DEBUG)
+      console.debug(`[encode_fontblocks] Processed ${fontblocks.length} FontBlocks (${blocks_skipped} empty), scheduled ${packets_scheduled} packets`);
   }
 
   /**
@@ -575,13 +588,9 @@ class CDGMagic_CDGExporter {
    * @param tile_y Tile Y coordinate (0-17)
    * @param is_filled Whether all bits should be set (0x3F)
    */
-  private create_copy_font_packet(
-    color: number,
-    color2: number,
-    tile_x: number,
-    tile_y: number,
-    is_filled: boolean
-  ): CDGPacket {
+  private create_copy_font_packet( color: number, color2: number, tile_x: number, tile_y: number, is_filled: boolean )
+    : CDGPacket
+  {
     const payload = new Uint8Array(16);
 
     // Colors
@@ -688,7 +697,8 @@ class CDGMagic_CDGExporter {
       }
     }
 
-    console.debug(`[render_bmp_to_tiles] Rendered ${packets_scheduled} tile packets`);
+    if (CDGMagic_CDGExporter.DEBUG)
+      console.debug(`[render_bmp_to_tiles] Rendered ${packets_scheduled} tile packets`);
   }
 
   /**
@@ -737,9 +747,8 @@ class CDGMagic_CDGExporter {
     const color2 = colors[1] || color1;
 
     // Debug first few tiles
-    if (tile_x === 0 && tile_y === 0) {
+    if (tile_x === 0 && tile_y === 0 && CDGMagic_CDGExporter.DEBUG)
       console.debug(`[sample_bmp_tile] Tile(0,0): bmp_pos=(${bmp_x},${bmp_y}), colors=${color1},${color2}, colorCounts=${colorCounts.size}`);
-    }
 
     // Generate pixel data using the two colors
     const pixelData = new Uint8Array(12);
@@ -854,7 +863,8 @@ class CDGMagic_CDGExporter {
       }
     }
 
-    console.debug('[add_test_pattern_tiles] Created', tiles_created, 'tile packets. Sample positions:', tile_positions);
+    if (CDGMagic_CDGExporter.DEBUG)
+      console.debug('[add_test_pattern_tiles] Created', tiles_created, 'tile packets. Sample positions:', tile_positions);
   }
 
   /**
