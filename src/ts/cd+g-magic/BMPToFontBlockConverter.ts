@@ -15,6 +15,7 @@
  */
 
 import { CDGMagic_FontBlock   } from '@/ts/cd+g-magic/CDGMagic_FontBlock';
+import { CDGMagic_TrackOptions } from '@/ts/cd+g-magic/CDGMagic_TrackOptions_Core';
 import { getDefaultTransition } from '@/ts/cd+g-magic/TransitionFileReader';
 import type { TransitionData  } from '@/ts/cd+g-magic/TransitionFileReader';
 
@@ -41,11 +42,17 @@ export interface BMPData {
  * @param bmpData BMP pixel data from BMPReader
  * @param start_pack Starting packet number for first block
  * @param transition Optional transition ordering (default: sequential)
+ * @param track_options Optional track options for z-layer and channel assignment
+ * @param DEBUG Optional debug logging
  * @returns Array of FontBlock instances (max 900 for full screen)
  */
-export function bmp_to_fontblocks( bmpData: BMPData, start_pack: number, transition?: TransitionData, DEBUG: boolean = false )
-  : CDGMagic_FontBlock[]
-{
+export function bmp_to_fontblocks(
+  bmpData: BMPData,
+  start_pack: number,
+  transition?: TransitionData,
+  track_options?: CDGMagic_TrackOptions,
+  DEBUG: boolean = false
+): CDGMagic_FontBlock[] {
   const TILE_WIDTH = 6;
   const TILE_HEIGHT = 12;
   const VRAM_WIDTH = 300;
@@ -71,6 +78,12 @@ export function bmp_to_fontblocks( bmpData: BMPData, start_pack: number, transit
 
     // Create FontBlock for this position
     const fontblock = new CDGMagic_FontBlock(block_x, block_y, block_start_pack);
+
+    // Assign z-layer and channel from track options (for compositor)
+    if (track_options) {
+      fontblock.z_location(track_options.track());
+      fontblock.channel(track_options.channel());
+    }
 
     // Sample BMP pixels for each pixel in the 6×12 block
     for (let pixel_y = 0; pixel_y < TILE_HEIGHT; pixel_y++) {

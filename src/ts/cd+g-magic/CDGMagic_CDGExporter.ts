@@ -507,7 +507,13 @@ class CDGMagic_CDGExporter {
           }
 
           // Convert BMP to FontBlocks with transition ordering (if available)
-          const fontblocks = bmp_to_fontblocks(bmpData, clip.start_pack() + 19, transitionData, CDGMagic_CDGExporter.DEBUG);
+          const fontblocks = bmp_to_fontblocks(
+            bmpData,
+            clip.start_pack() + 19,
+            transitionData,
+            (clip as any).track_options?.(),  // Pass track options for z_location and channel assignment
+            CDGMagic_CDGExporter.DEBUG
+          );
           if (CDGMagic_CDGExporter.DEBUG)
             console.debug(`[schedule_bmp_clip] Converted BMP to ${fontblocks.length} FontBlocks`);
 
