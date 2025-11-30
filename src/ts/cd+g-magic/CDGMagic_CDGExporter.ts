@@ -15,6 +15,7 @@ import { readBMP                } from "@/ts/cd+g-magic/BMPReader";
 import { bmp_to_fontblocks      } from "@/ts/cd+g-magic/BMPToFontBlockConverter";
 import { loadTransitionFile     } from "@/ts/cd+g-magic/TransitionFileReader";
 import { renderTextToTile       } from "@/ts/cd+g-magic/TextRenderer";
+import { CompositorBuffer       } from "@/ts/cd+g-magic/CompositorBuffer";
 import type { TransitionData    } from "@/ts/cd+g-magic/TransitionFileReader";
 
 /**
@@ -86,6 +87,9 @@ class CDGMagic_CDGExporter {
   private internal_duration_packets: number;
   private internal_use_reference_prelude: boolean;
 
+  // Multi-layer compositor buffer (Phase 1.3: Compositor Integration)
+  private internal_compositor: CompositorBuffer | null;
+
   /**
    * Constructor: Create exporter
    *
@@ -98,6 +102,7 @@ class CDGMagic_CDGExporter {
     this.internal_total_packets = 0;
     this.internal_duration_packets = duration_packets;
     this.internal_use_reference_prelude = false;
+    this.internal_compositor = null;
   }
 
   /**
@@ -209,6 +214,11 @@ class CDGMagic_CDGExporter {
   schedule_packets(): number {
     // Clear existing schedule
     this.internal_packet_schedule.clear();
+
+    // Initialize multi-layer compositor (Phase 1.3)
+    // This will receive all clip data and composite layers before generating packets
+    this.internal_compositor = new CompositorBuffer(300, 216);
+    this.internal_compositor.set_preset_index(0);
 
     // Note: Do NOT add prelude at packet 0. Each clip (BMPClip, etc.) handles its own
     // palette setup at its start time. This matches the reference C++ implementation
@@ -517,8 +527,9 @@ class CDGMagic_CDGExporter {
           if (CDGMagic_CDGExporter.DEBUG)
             console.debug(`[schedule_bmp_clip] Converted BMP to ${fontblocks.length} FontBlocks`);
 
-          // Encode FontBlocks as CD+G packets and schedule them
-          this.encode_fontblocks_to_packets(fontblocks, clip.start_pack() + 19, clip.duration() - 19);
+          // Phase 1.3: Write FontBlocks to compositor and encode composited result
+          this.write_fontblocks_to_compositor(fontblocks);
+          this.encode_composited_blocks_to_packets(clip.start_pack() + 19, clip.duration() - 19);
         }
 
         catch (error) {
@@ -1187,6 +1198,149 @@ class CDGMagic_CDGExporter {
       this.internal_palette.length === 16 &&
       this.internal_packet_schedule.size > 0
     );
+  }
+
+  /**
+   * Write FontBlocks to compositor buffer (Phase 1.3)
+   *
+   * Writes each FontBlock to its corresponding layer in the compositor.
+   * This enables proper compositing of overlapping clips before encoding to packets.
+   *
+   * @param fontblocks Array of FontBlocks to composite
+   */
+  private write_fontblocks_to_compositor(fontblocks: any[]): void {
+    if (!this.internal_compositor) return;
+
+    for (const fontblock of fontblocks) {
+      const block_x = fontblock.x_location();
+      const block_y = fontblock.y_location();
+      const z_layer = fontblock.z_location();
+
+      // Extract 72 pixels from FontBlock (6×12 tile)
+      const pixel_data = new Uint16Array(72);
+      let idx = 0;
+
+      for (let py = 0; py < 12; py++) {
+        for (let px = 0; px < 6; px++) {
+          const pixel_color = fontblock.pixel_value(px, py);
+          pixel_data[idx++] = pixel_color;
+        }
+      }
+
+      // Write block to compositor at its z-layer
+      this.internal_compositor.write_block(block_x, block_y, z_layer, pixel_data);
+    }
+  }
+
+  /**
+   * Read composited blocks and encode to packets (Phase 1.3)
+   *
+   * Extracts composited blocks from the compositor and encodes them as CD+G packets.
+   * This replaces direct FontBlock-to-packet encoding when compositor is enabled.
+   *
+   * @param start_packet Starting packet number
+   * @param max_packets Maximum packets available for tiles
+   */
+  private encode_composited_blocks_to_packets(start_packet: number, max_packets: number): void {
+    if (!this.internal_compositor) return;
+
+    let packets_scheduled = 0;
+    const SCREEN_TILES_WIDE = 50;
+    const SCREEN_TILES_HIGH = 18;
+
+    for (let block_y = 0; block_y < SCREEN_TILES_HIGH; block_y++) {
+      for (let block_x = 0; block_x < SCREEN_TILES_WIDE; block_x++) {
+        if (packets_scheduled >= max_packets) return;
+
+        // Read composited block from compositor
+        const composited_block = this.internal_compositor.read_composited_block(block_x, block_y);
+
+        // Convert to FontBlock for encoding (simplified - just get top 2 colors)
+        const color_set = new Set<number>();
+        for (let i = 0; i < 72; i++) {
+          if (composited_block[i] !== CompositorBuffer.get_transparency()) {
+            color_set.add(composited_block[i]);
+          }
+        }
+
+        const colors = Array.from(color_set).slice(0, 2);
+
+        if (colors.length === 0) {
+          // Empty block, skip
+          continue;
+        } else if (colors.length === 1) {
+          // Single color
+          const color = colors[0];
+          const packet = this.create_copy_font_packet(color, color, block_x, block_y, true);
+          this.add_scheduled_packet(start_packet + packets_scheduled, packet);
+          packets_scheduled++;
+        } else {
+          // Two colors: encode pixel data
+          const color0 = colors[0];
+          const color1 = colors[1];
+          const packet = this.create_two_color_composited_packet(
+            composited_block,
+            color0,
+            color1,
+            block_x,
+            block_y
+          );
+          this.add_scheduled_packet(start_packet + packets_scheduled, packet);
+          packets_scheduled++;
+        }
+      }
+    }
+
+    if (CDGMagic_CDGExporter.DEBUG)
+      console.debug(`[encode_composited_blocks] Scheduled ${packets_scheduled} packets from composited blocks`);
+  }
+
+  /**
+   * Create a 2-color packet from composited block data
+   *
+   * @param composited_block Uint16Array of 72 pixels from compositor
+   * @param color0 First color index
+   * @param color1 Second color index
+   * @param tile_x Tile X coordinate
+   * @param tile_y Tile Y coordinate
+   * @returns CDG packet
+   */
+  private create_two_color_composited_packet(
+    composited_block: Uint16Array,
+    color0: number,
+    color1: number,
+    tile_x: number,
+    tile_y: number
+  ): CDGPacket {
+    const payload = new Uint8Array(16);
+
+    // Colors
+    payload[0] = color0 & 0x0f;
+    payload[1] = color1 & 0x0f;
+
+    // Coordinates
+    payload[2] = tile_y & 0x1f;
+    payload[3] = tile_x & 0x3f;
+
+    // Pixel data - bit encoding from composited block
+    for (let row = 0; row < 12; row++) {
+      let byte = 0;
+      for (let col = 0; col < 6; col++) {
+        const idx = row * 6 + col;
+        const pixel_color = composited_block[idx];
+        const bit = pixel_color === color1 ? 1 : 0;
+        byte |= (bit << (5 - col));
+      }
+      payload[4 + row] = byte;
+    }
+
+    return {
+      command: CDG_COMMAND,
+      instruction: CDGInstruction.TILE_BLOCK,
+      payload,
+      parity1: 0,
+      parity2: 0,
+    };
   }
 }
 
