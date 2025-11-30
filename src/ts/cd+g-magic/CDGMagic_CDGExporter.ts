@@ -827,51 +827,35 @@ class CDGMagic_CDGExporter {
    * Creates a colorful test pattern filling as much of the screen as possible
    * given the number of available packets.
    *
+   * Screen layout:
+   * - 50 tiles wide (X: 0-49)
+   * - 18 tiles high (Y: 0-17)
+   * - Each packet is one tile (6×12 pixels)
+   *
    * @param start_packet Starting packet number for test pattern
    * @param max_tiles Maximum number of tiles to create (limited by clip duration)
    */
   private add_test_pattern_tiles(start_packet: number, max_tiles: number): void {
-    // Create a visible test pattern: fill screen with colored tiles
-    // Screen is 300×216 pixels = 50 tiles wide × 18 tiles high = 900 tiles max
     let packet_offset = 0;
     let tiles_created = 0;
     const tile_positions: Array<{x: number; y: number; color: number}> = [];
 
-    // Fill screen with colored tiles, up to max_tiles limit
-    for (let y = 0; y < 18 && tiles_created < max_tiles; y++) {
-      for (let x = 0; x < 50 && tiles_created < max_tiles; x++) {
-        // Use different colors for each tile to create a visible grid pattern
-        const color1 = ((x + y) % 7) + 1;  // Cycle through colors 1-7
-        const color2 = ((x + y + 3) % 7) + 1;
+    // Fill screen with colored tiles, creating a visible grid pattern
+    for (let tile_y = 0; tile_y < 18 && tiles_created < max_tiles; tile_y++) {
+      for (let tile_x = 0; tile_x < 50 && tiles_created < max_tiles; tile_x++) {
+        // Generate test pattern colors
+        const color1 = ((tile_x + tile_y) % 7) + 1;  // Cycle through colors 1-7
+        const color2 = ((tile_x + tile_y + 3) % 7) + 1;
 
+        // Track first few tile positions for debugging
         if (tile_positions.length < 10) {
-          tile_positions.push({x, y, color: color1});
+          tile_positions.push({x: tile_x, y: tile_y, color: color1});
         }
 
-        // Create tile pixel data with all pixels using color1 (solid color)
-        const tile_data = new Uint8Array(12);
-        // All bits 0 means all 6×12 pixels use color1
-        for (let i = 0; i < 12; i++) {
-          tile_data[i] = 0;  // All pixels -> color1
-        }
+        // Create tile packet
+        const tilePacket = this.create_test_pattern_tile(tile_x, tile_y, color1, color2);
+        this.add_scheduled_packet(start_packet + packet_offset, tilePacket);
 
-        // Create COPY_FONT packet for this tile
-        const payload = new Uint8Array(16);
-        payload[0] = color1 & 0x0f;
-        payload[1] = color2 & 0x0f;
-        payload[2] = y & 0xff;
-        payload[3] = x & 0xff;
-        payload.set(tile_data, 4);
-
-        const packet: CDGPacket = {
-          command: CDG_COMMAND,            // Always 0x09 for TV Graphics
-          instruction: CDGInstruction.TILE_BLOCK,  // 0x06 = COPY_FONT
-          payload,
-          parity1: 0,
-          parity2: 0,
-        };
-
-        this.add_scheduled_packet(start_packet + packet_offset, packet);
         packet_offset++;
         tiles_created++;
       }
@@ -879,6 +863,47 @@ class CDGMagic_CDGExporter {
 
     if (CDGMagic_CDGExporter.DEBUG)
       console.debug('[add_test_pattern_tiles] Created', tiles_created, 'tile packets. Sample positions:', tile_positions);
+  }
+
+  /**
+   * Create a single test pattern tile packet
+   *
+   * @param tile_x X coordinate (0-49)
+   * @param tile_y Y coordinate (0-17)
+   * @param color1 Primary color index (0-15)
+   * @param color2 Secondary color index (0-15)
+   * @returns TILE_BLOCK packet
+   */
+  private create_test_pattern_tile(
+    tile_x: number,
+    tile_y: number,
+    color1: number,
+    color2: number
+  ): CDGPacket {
+    const payload = new Uint8Array(16);
+
+    // Tile block packet structure:
+    // Bytes 0-1: color indices
+    // Bytes 2-3: Y and X tile coordinates
+    // Bytes 4-15: pixel bitmap data
+    payload[0] = color1 & 0x0f;
+    payload[1] = color2 & 0x0f;
+    payload[2] = tile_y & 0x1f;  // Y: 5 bits (0-17)
+    payload[3] = tile_x & 0x3f;  // X: 6 bits (0-49)
+
+    // Generate pixel data: all bits set to 0 means all pixels use color1
+    // (bit 0 = color1, bit 1 = color2)
+    for (let row = 0; row < 12; row++) {
+      payload[4 + row] = 0x00;  // All pixels -> color1
+    }
+
+    return {
+      command: CDG_COMMAND,
+      instruction: CDGInstruction.TILE_BLOCK,
+      payload,
+      parity1: 0,
+      parity2: 0,
+    };
   }
 
   /**
