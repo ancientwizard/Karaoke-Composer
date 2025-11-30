@@ -208,6 +208,11 @@ class CDGMagic_CDGExporter {
     // palette setup at its start time. This matches the reference C++ implementation
     // and ensures proper synchronization of graphics data.
 
+    // Inject synthetic PALGlobalClip events to reset scroll offsets
+    // C++ creates these automatically; TypeScript must add them explicitly
+    // Reference: CDGMagic_PALGlobalClip::CDGMagic_PALGlobalClip() with start_offset=250
+    this.inject_scroll_reset_packets();
+
     // Process each clip
     for (const clip of this.internal_clips) {
       if (clip instanceof CDGMagic_TextClip) {
@@ -227,6 +232,41 @@ class CDGMagic_CDGExporter {
     this.pad_to_duration();
 
     return this.internal_total_packets;
+  }
+
+  /**
+   * Inject synthetic SCROLL_COPY packets to reset offsets
+   *
+   * The C++ application creates PALGlobalClip events automatically with:
+   * - start_offset = 250 (absolute packet position on track 0)
+   * - x_scroll = 0, y_scroll = 0
+   * 
+   * This generates SCROLL_COPY (0x18) packets to reset scroll state.
+   * The packet is placed at absolute packet 250 (not relative to clip start).
+   */
+  private inject_scroll_reset_packets(): void {
+    // The C++ reference implementation places the scroll reset at packet 250 (absolute)
+    // This is about 833ms from the beginning of the track (300 packets/second)
+    // See CDGMagic_PALGlobalClip constructor: start_offset = 250
+    const scroll_reset_packet = 250;
+
+    // Create SCROLL_COPY packet: sets x_scroll=0, y_scroll=0
+    // Packet format: [0x09, 0x18, data[0], data[1], ...]
+    // data[1] = x_offset, data[2] = y_offset
+    const packet: CDGPacket = {
+      command: CDG_COMMAND,
+      instruction: CDGInstruction.SCROLL_COPY,
+      payload: new Uint8Array(16),  // All zeros
+      parity1: 0,
+      parity2: 0,
+    };
+
+    // Set scroll offsets to 0 in data[1] and data[2]
+    packet.payload[1] = 0;  // x_offset = 0
+    packet.payload[2] = 0;  // y_offset = 0
+
+    console.debug(`[inject_scroll_reset_packets] Injecting SCROLL_COPY at packet ${scroll_reset_packet}`);
+    this.add_scheduled_packet(scroll_reset_packet, packet);
   }
 
   /**
