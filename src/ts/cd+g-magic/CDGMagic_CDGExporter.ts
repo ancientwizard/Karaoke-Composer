@@ -106,24 +106,25 @@ class CDGMagic_CDGExporter {
    * @returns Array of [R, G, B] tuples for colors 0-15
    */
   private init_default_palette(): Array<[number, number, number]> {
-    // CD+G standard palette: 16 colors, 6-bit per channel (0-63)
+    // CD+G standard palette: 16 colors, 8-bit RGB per channel (0-255)
+    // Divided by 17 to get 4-bit values during packet encoding
     const palette: Array<[number, number, number]> = [
-      [0, 0, 0],       // 0: Black
-      [0, 0, 63],      // 1: Blue
-      [63, 0, 0],      // 2: Red
-      [63, 0, 63],     // 3: Magenta
-      [0, 63, 0],      // 4: Green
-      [0, 63, 63],     // 5: Cyan
-      [63, 63, 0],     // 6: Yellow
-      [63, 63, 63],    // 7: White
-      [0, 0, 0],       // 8-15: Repeat or custom
-      [0, 0, 63],
-      [63, 0, 0],
-      [63, 0, 63],
-      [0, 63, 0],
-      [0, 63, 63],
-      [63, 63, 0],
-      [63, 63, 63],
+      [0, 0, 0],           // 0: Black
+      [0, 0, 255],         // 1: Blue
+      [255, 0, 0],         // 2: Red
+      [255, 0, 255],       // 3: Magenta
+      [0, 255, 0],         // 4: Green
+      [0, 255, 255],       // 5: Cyan
+      [255, 255, 0],       // 6: Yellow
+      [255, 255, 255],     // 7: White
+      [0, 0, 0],           // 8-15: Repeat or custom
+      [0, 0, 255],
+      [255, 0, 0],
+      [255, 0, 255],
+      [0, 255, 0],
+      [0, 255, 255],
+      [255, 255, 0],
+      [255, 255, 255],
     ];
     return palette;
   }
@@ -453,8 +454,9 @@ class CDGMagic_CDGExporter {
     if (CDGMagic_CDGExporter.DEBUG)
       console.debug('[schedule_bmp_clip] Starting BMPClip at packet', clip.start_pack(), 'duration:', clip.duration());
     
-    // Load BMP FIRST to get its palette
-    // BMPClip stores events with bmp_path
+    // Load BMP to extract spatial layout (pixel indices) AND palette colors
+    // The BMP file contains the actual RGB colors for each palette entry
+    // CD+G palette packets (LOAD_LOW/LOAD_HIGH) load these into display slots
     if ((clip as any)._bmp_events && (clip as any)._bmp_events.length > 0) {
       const bmpEvent = (clip as any)._bmp_events[0];
       const bmpPath = bmpEvent.bmp_path || bmpEvent.bmpPath || bmpEvent.path;
@@ -462,16 +464,18 @@ class CDGMagic_CDGExporter {
       
       if (bmpPath && fs.existsSync(bmpPath)) {
         try {
-          // Load BMP file
+          // Load BMP file for pixel data AND palette colors
           const bmpBuffer = fs.readFileSync(bmpPath);
           const bmpData = readBMP(new Uint8Array(bmpBuffer));
 
-          // Update palette with BMP's palette BEFORE scheduling palette packets
+          // Use the BMP's actual palette colors (not standard palette!)
+          // The BMP palette contains the real colors to display
           this.internal_palette = bmpData.palette.slice(0, 16);
           if (CDGMagic_CDGExporter.DEBUG)
-            console.debug(`[schedule_bmp_clip] Loaded BMP: ${bmpPath} (${bmpData.width}x${bmpData.height})`);
+            console.debug(`[schedule_bmp_clip] Loaded BMP: ${bmpPath} (${bmpData.width}x${bmpData.height}), palette entries 0-15: [${this.internal_palette.map(([r,g,b]) => `(${r},${g},${b})`).join(', ')}]`);
 
-          // Now schedule palette packets with the BMP's colors
+          // Schedule palette packets with the BMP's actual colors
+          // This maps BMP pixel indices to the display colors defined in the BMP file
           this.add_scheduled_packet(clip.start_pack(), this.create_load_low_packet(0, 1, 2, 3, 4, 5, 6, 7));
           this.add_scheduled_packet(clip.start_pack() + 1, this.create_load_high_packet(8, 9, 10, 11, 12, 13, 14, 15));
 
@@ -921,17 +925,18 @@ class CDGMagic_CDGExporter {
     const payload = new Uint8Array(16);
     for (let i = 0; i < 8; i++) {
       const color_index = colors[i] || 0;
-      const [r_6bit, g_6bit, b_6bit] = this.internal_palette[color_index];
+      const [r_8bit, g_8bit, b_8bit] = this.internal_palette[color_index];
 
-      // Convert 6-bit Red and Blue to 4-bit (shift right by 2)
-      const r_4bit = (r_6bit >> 2) & 0x0f;
-      const b_4bit = (b_6bit >> 2) & 0x0f;
+      // Convert 8-bit RGB to 4-bit using division by 17 (matching C++ reference)
+      const r_4bit = Math.floor(r_8bit / 17) & 0x0f;
+      const g_4bit = Math.floor(g_8bit / 17) & 0x0f;
+      const b_4bit = Math.floor(b_8bit / 17) & 0x0f;
 
       // Encode byte 0: Red (bits 5-2) + Green upper 2 bits (bits 1-0)
-      payload[i * 2] = (r_4bit << 2) | ((g_6bit >> 4) & 0x03);
+      payload[i * 2] = (r_4bit << 2) | ((g_4bit >> 2) & 0x03);
 
-      // Encode byte 1: Blue (bits 3-0) + Green lower 4 bits (bits 5-4)
-      payload[i * 2 + 1] = (b_4bit & 0x0f) | ((g_6bit & 0x0f) << 4);
+      // Encode byte 1: Blue (bits 3-0) + Green lower 2 bits (bits 5-4)
+      payload[i * 2 + 1] = (b_4bit & 0x0f) | ((g_4bit & 0x03) << 4);
     }
 
     return {
@@ -956,17 +961,18 @@ class CDGMagic_CDGExporter {
     for (let i = 0; i < 8; i++) {
       const color_index = (colors[i] || 0) % 8; // Clamp to 0-7 offset
       const palette_index = 8 + color_index;
-      const [r_6bit, g_6bit, b_6bit] = this.internal_palette[palette_index];
+      const [r_8bit, g_8bit, b_8bit] = this.internal_palette[palette_index];
 
-      // Convert 6-bit Red and Blue to 4-bit (shift right by 2)
-      const r_4bit = (r_6bit >> 2) & 0x0f;
-      const b_4bit = (b_6bit >> 2) & 0x0f;
+      // Convert 8-bit RGB to 4-bit using division by 17 (matching C++ reference)
+      const r_4bit = Math.floor(r_8bit / 17) & 0x0f;
+      const g_4bit = Math.floor(g_8bit / 17) & 0x0f;
+      const b_4bit = Math.floor(b_8bit / 17) & 0x0f;
 
       // Encode byte 0: Red (bits 5-2) + Green upper 2 bits (bits 1-0)
-      payload[i * 2] = (r_4bit << 2) | ((g_6bit >> 4) & 0x03);
+      payload[i * 2] = (r_4bit << 2) | ((g_4bit >> 2) & 0x03);
 
-      // Encode byte 1: Blue (bits 3-0) + Green lower 4 bits (bits 5-4)
-      payload[i * 2 + 1] = (b_4bit & 0x0f) | ((g_6bit & 0x0f) << 4);
+      // Encode byte 1: Blue (bits 3-0) + Green lower 2 bits (bits 5-4)
+      payload[i * 2 + 1] = (b_4bit & 0x0f) | ((g_4bit & 0x03) << 4);
     }
 
     return {

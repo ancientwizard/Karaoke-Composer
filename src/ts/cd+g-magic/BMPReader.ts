@@ -9,7 +9,7 @@ export interface BMPData {
   width: number;
   height: number;
   bitsPerPixel: number;
-  palette: Array<[number, number, number]>; // RGB palette (6-bit CD+G format)
+  palette: Array<[number, number, number]>; // RGB palette (8-bit format from BMP)
   pixels: Uint8Array; // Pixel data indexed into palette
 }
 
@@ -89,17 +89,13 @@ function extractPalette(
       continue;
     }
 
-    // BMP stores as BGRA, convert to RGB and 8-bit to 6-bit
+    // BMP stores as BGRA, keep as 8-bit RGB (will be converted during palette encoding)
     const b_8bit = buffer[idx]!;
     const g_8bit = buffer[idx + 1]!;
     const r_8bit = buffer[idx + 2]!;
 
-    // Convert 8-bit to 6-bit
-    const r_6bit = Math.round((r_8bit / 255) * 63);
-    const g_6bit = Math.round((g_8bit / 255) * 63);
-    const b_6bit = Math.round((b_8bit / 255) * 63);
-
-    palette.push([r_6bit, g_6bit, b_6bit]);
+    // Keep 8-bit values - conversion to 4-bit happens during CD+G packet encoding
+    palette.push([r_8bit, g_8bit, b_8bit]);
   }
 
   // Pad to at least 16 colors for CD+G
