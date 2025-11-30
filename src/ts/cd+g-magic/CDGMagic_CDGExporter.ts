@@ -17,6 +17,7 @@ import { loadTransitionFile     } from "@/ts/cd+g-magic/TransitionFileReader";
 import { renderTextToTile       } from "@/ts/cd+g-magic/TextRenderer";
 import { CompositorBuffer       } from "@/ts/cd+g-magic/CompositorBuffer";
 import { VRAMBuffer             } from "@/ts/cd+g-magic/VRAMBuffer";
+import { encode_block           } from "@/ts/cd+g-magic/MultiColorEncoder";
 import type { TransitionData    } from "@/ts/cd+g-magic/TransitionFileReader";
 
 /**
@@ -1279,45 +1280,29 @@ class CDGMagic_CDGExporter {
         }
 
         // Block differs from VRAM, need to write packet(s)
-        // Convert to FontBlock for encoding (simplified - just get top 2 colors)
-        const color_set = new Set<number>();
-        for (let i = 0; i < 72; i++) {
-          if (composited_block[i] !== CompositorBuffer.get_transparency()) {
-            color_set.add(composited_block[i] & 0xFF);
+        // Use MultiColorEncoder for sophisticated encoding
+        const encoding = encode_block(composited_block);
+
+        // Generate packets from encoding instructions
+        for (const instr of encoding.instructions) {
+          if (packets_scheduled >= max_packets) {
+            // Write current VRAM state and return
+            this.internal_vram.write_block(block_x, block_y, composited_block_8bit);
+            return;
           }
-        }
 
-        const colors = Array.from(color_set).slice(0, 2);
-
-        if (colors.length === 0) {
-          // Empty block - write as single color with preset
-          const color = 0;
-          const packet = this.create_copy_font_packet(color, color, block_x, block_y, false);
-          this.add_scheduled_packet(start_packet + packets_scheduled, packet);
-          this.internal_vram.write_block(block_x, block_y, composited_block_8bit);
-          packets_scheduled++;
-        } else if (colors.length === 1) {
-          // Single color - all pixels same
-          const color = colors[0];
-          const packet = this.create_copy_font_packet(color, color, block_x, block_y, true);
-          this.add_scheduled_packet(start_packet + packets_scheduled, packet);
-          this.internal_vram.write_block(block_x, block_y, composited_block_8bit);
-          packets_scheduled++;
-        } else {
-          // Two colors: encode pixel data
-          const color0 = colors[0];
-          const color1 = colors[1];
-          const packet = this.create_two_color_composited_packet(
-            composited_block,
-            color0,
-            color1,
+          // Create packet based on instruction type
+          const packet = this.create_cdg_packet_from_encoding_instruction(
+            instr,
             block_x,
             block_y
           );
           this.add_scheduled_packet(start_packet + packets_scheduled, packet);
-          this.internal_vram.write_block(block_x, block_y, composited_block_8bit);
           packets_scheduled++;
         }
+
+        // Update VRAM with newly written block
+        this.internal_vram.write_block(block_x, block_y, composited_block_8bit);
       }
     }
 
@@ -1367,6 +1352,44 @@ class CDGMagic_CDGExporter {
     return {
       command: CDG_COMMAND,
       instruction: CDGInstruction.TILE_BLOCK,
+      payload,
+      parity1: 0,
+      parity2: 0,
+    };
+  }
+
+  /**
+   * Create CDG packet from MultiColorEncoder instruction
+   *
+   * @param instr Encoding instruction with colors and pixel bits
+   * @param tile_x Tile X coordinate
+   * @param tile_y Tile Y coordinate
+   * @returns CDG packet
+   */
+  private create_cdg_packet_from_encoding_instruction(
+    instr: { instruction: 'COPY_FONT' | 'XOR_FONT'; color_0: number; color_1: number; pixel_bits: Uint8Array },
+    tile_x: number,
+    tile_y: number
+  ): CDGPacket
+  {
+    const payload = new Uint8Array(16);
+
+    // Colors
+    payload[0] = instr.color_0 & 0x0f;
+    payload[1] = instr.color_1 & 0x0f;
+
+    // Coordinates
+    payload[2] = tile_y & 0x1f;
+    payload[3] = tile_x & 0x3f;
+
+    // Pixel bits (12 bytes, one per row)
+    for (let i = 0; i < 12; i++) {
+      payload[4 + i] = instr.pixel_bits[i] & 0x3f;
+    }
+
+    return {
+      command: CDG_COMMAND,
+      instruction: instr.instruction === 'COPY_FONT' ? CDGInstruction.TILE_BLOCK : CDGInstruction.XOR_FONT,
       payload,
       parity1: 0,
       parity2: 0,
