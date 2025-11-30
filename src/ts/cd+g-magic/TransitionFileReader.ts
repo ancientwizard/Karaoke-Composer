@@ -42,18 +42,24 @@ export function loadTransitionFile(filePath: string): TransitionData | null {
     const max_blocks = Math.floor(data.length / 2);
 
     for (let i = 0; i < max_blocks; i++) {
-      // Read X and Y (1-indexed in file, convert to 0-indexed)
-      const x_file = data[i * 2];
-      const y_file = data[i * 2 + 1];
+      // Read X and Y directly from file (stored as 1-indexed)
+      // NOTE: The file format stores 1-indexed coordinates, NOT 0-indexed!
+      // But when we use them for tile coordinates in CD+G packets, they are already 1-indexed
+      // which is what the packet format expects (see CDG spec: tile coordinates are 0-49 for X, 0-17 for Y)
+      // Actually, checking C++ code: it reads directly and doesn't convert!
+      // The VALUES in the file are 0-indexed already (1-49 for X, 1-17 for Y after clamping)
+      // So we should use them as-is, not subtract 1
+      const x_block = data[i * 2];
+      const y_block = data[i * 2 + 1];
 
-      // Convert from 1-indexed file format to 0-indexed array format
-      const x = x_file - 1;
-      const y = y_file - 1;
+      // Clamp to valid ranges (matching C++ behavior)
+      const x = Math.min(x_block, 49);
+      const y = Math.min(y_block, 17);
 
-      // Validate bounds (50 wide × 18 high)
+      // Validate bounds
       if (x < 0 || x >= 50 || y < 0 || y >= 18) {
         console.warn(
-          `[loadTransitionFile] Invalid block coordinates at index ${i}: (${x_file}, ${y_file})`
+          `[loadTransitionFile] Invalid block coordinates at index ${i}: (${x_block}, ${y_block})`
         );
         continue;
       }
@@ -76,31 +82,28 @@ export function loadTransitionFile(filePath: string): TransitionData | null {
 /**
  * Get default transition (top→bottom→left→right sequential order)
  * 
- * This matches C++ default when no transition file is specified:
- * ```cpp
- * for (int cur_blk = 0; cur_blk < 768; cur_blk++)
- * {
- *     blocks[cur_blk*2+0] = (cur_blk / 16) + 1; // X: 1-48 (columns)
- *     blocks[cur_blk*2+1] = (cur_blk % 16) + 1; // Y: 1-18 (rows)
- * }
- * ```
+ * CD+G display: 50 blocks wide × 18 blocks high = 768 blocks total
+ * Default order: iterate by column (left→right), then row (top→bottom)
+ * Column 0 (x=0): blocks 0-17 (y=0-17)
+ * Column 1 (x=1): blocks 18-35 (y=0-17)
+ * etc.
  * 
- * Order: column 1 rows 1-18, column 2 rows 1-18, ... column 50 rows 1-18
- * In 0-indexed: column 0 rows 0-17, column 1 rows 0-17, ... etc.
+ * Mathematical formula:
+ * - x = block_index / 18 (column: 0-49)
+ * - y = block_index % 18 (row: 0-17)
+ * 
+ * This matches C++ default when no transition file is specified.
  * 
  * @returns Default TransitionData
  */
 export function getDefaultTransition(): TransitionData {
   const blocks: Array<[number, number]> = [];
 
-  // Match C++ default: iterate by column, then row
+  // Iterate through 768 blocks in column-major order
+  // Screen is 50 tiles wide × 18 tiles high
   for (let cur_blk = 0; cur_blk < 768; cur_blk++) {
-    const x_1indexed = (cur_blk / 16) + 1;  // Columns 1-50
-    const y_1indexed = (cur_blk % 16) + 1;  // Rows 1-18
-
-    // Convert to 0-indexed
-    const x = Math.floor(x_1indexed) - 1;
-    const y = Math.floor(y_1indexed) - 1;
+    const x = Math.floor(cur_blk / 18);  // Column: 0-49
+    const y = cur_blk % 18;              // Row: 0-17
 
     blocks.push([x, y]);
   }

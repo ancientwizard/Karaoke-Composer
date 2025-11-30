@@ -651,13 +651,15 @@ class CDGMagic_CDGExporter {
     payload[3] = tile_x & 0x3f;
 
     // Pixel data - bit encoding
+    // Following C++ reference: bits are arranged as (5-col), with leftmost pixel at bit 5
     for (let row = 0; row < 12; row++) {
       let byte = 0;
       for (let col = 0; col < 6; col++) {
         const pixel_color = fontblock.pixel_value(col, row);
         // Bit is 1 if pixel is color1, 0 if color0
         const bit = pixel_color === color1 ? 1 : 0;
-        byte = (byte << 1) | bit;
+        // Shift bit to correct position: leftmost pixel (col=0) goes to bit 5
+        byte |= (bit << (5 - col));
       }
       payload[4 + row] = byte;
     }
@@ -765,6 +767,7 @@ class CDGMagic_CDGExporter {
       console.debug(`[sample_bmp_tile] Tile(0,0): bmp_pos=(${bmp_x},${bmp_y}), colors=${color1},${color2}, colorCounts=${colorCounts.size}`);
 
     // Generate pixel data using the two colors
+    // Following C++ reference: bits are arranged as (5-x_pos), with leftmost pixel at bit 5
     const pixelData = new Uint8Array(12);
     for (let py = 0; py < TILE_HEIGHT; py++) {
       let byte = 0;
@@ -782,7 +785,8 @@ class CDGMagic_CDGExporter {
           }
         }
 
-        byte = (byte << 1) | bit;
+        // Shift bit to correct position: leftmost pixel (px=0) goes to bit 5
+        byte |= (bit << (5 - px));
       }
       pixelData[py] = byte;
     }
