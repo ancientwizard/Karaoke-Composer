@@ -480,26 +480,36 @@ class CDGMagic_CDGExporter {
         `fontPixelHeight=${fontPixelHeight}, lineHeight=${lineHeight}, linesPerPage=${linesPerPage}`
       );
 
-    // C++ PATTERN: For each LINE, create a separate BMPObject
+    // C++ PATTERN: Create one full-screen BMP for all lines, positioned at correct Y offsets
+    const screenWidth = 288;
+    const screenHeight = 192;  // CD+G playable area (216 - 24 for safe zone)
+    const screenBmpPixels = new Uint8Array(screenWidth * screenHeight);
+    screenBmpPixels.fill(backgroundColor);
+
+    // Render each line at its vertical offset
     for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
       const lineText = lines[lineIdx] || '';
       if (lineText.length === 0) continue;
 
-      // Create line-specific BMP (288 × lineHeight)
-      const lineWidth = 288;
-      const lineBmpPixels = new Uint8Array(lineWidth * lineHeight);
-      lineBmpPixels.fill(backgroundColor);
+      // Calculate Y position for this line
+      // y_offset = (line_index % lines_per_page) * line_height + 12
+      const lineYPixels = (lineIdx % linesPerPage) * lineHeight + 12;
+      if (lineYPixels + lineHeight > screenHeight) continue;  // Skip if off-screen
 
-      // C++ PATTERN: Center text horizontally and vertically within line
       // Calculate text width using actual character widths
       let textWidthPixels = 0;
       for (const char of lineText) {
         textWidthPixels += getCharacterWidth(char, fontSize);
       }
       
-      const leftStart = Math.floor((lineWidth - textWidthPixels) / 2);
-      // Center vertically: top_start = (line_height - font_height) / 2 + font_height
-      const topStart = Math.floor((lineHeight - fontPixelHeight) / 2) + fontPixelHeight;
+      const leftStart = Math.floor((screenWidth - textWidthPixels) / 2);
+      // Center vertically within line: top_start = (line_height - font_height) / 2 + font_height
+      const topStart = Math.floor((lineHeight - fontPixelHeight) / 2) + fontPixelHeight + lineYPixels;
+
+      if (CDGMagic_CDGExporter.DEBUG)
+        console.debug(
+          `[schedule_text_clip] Line ${lineIdx}: y=${lineYPixels}, topStart=${topStart}, text="${lineText.substring(0, 30)}"`
+        );
 
       // Render each character of the line using pre-rendered fonts
       let charPixelX = leftStart;
@@ -518,19 +528,19 @@ class CDGMagic_CDGExporter {
           // Calculate top position for this character (baseline alignment)
           const charTopPixel = topStart - charHeight;  // Align to baseline
 
-          // Draw character bitmap into line BMP
+          // Draw character bitmap into screen BMP
           for (let srcY = 0; srcY < charHeight; srcY++) {
             for (let srcX = 0; srcX < charWidth; srcX++) {
               const srcIdx = srcY * charWidth + srcX;
               const pixelX = charPixelX + srcX;
               const pixelY = charTopPixel + srcY;
 
-              if (pixelX >= lineWidth || pixelY < 0 || pixelY >= lineHeight) continue;
+              if (pixelX >= screenWidth || pixelY < 0 || pixelY >= screenHeight) continue;
 
               const gray = srcData[srcIdx];
               const pixelColor = gray > 127 ? foregroundColor : backgroundColor;
-              const pixelIndex = pixelY * lineWidth + pixelX;
-              lineBmpPixels[pixelIndex] = pixelColor;
+              const pixelIndex = pixelY * screenWidth + pixelX;
+              screenBmpPixels[pixelIndex] = pixelColor;
             }
           }
 
@@ -542,60 +552,55 @@ class CDGMagic_CDGExporter {
           const color2 = tileData[1] as number;
           const bitmap = tileData[2] as Uint8Array;
 
-          // Draw character bitmap into line BMP (6×12 pixels)
+          // Draw character bitmap into screen BMP (6×12 pixels)
           const charTopPixel = topStart - 12;
           for (let row = 0; row < 12; row++) {
             const byte = bitmap[row] || 0;
             const pixelY = charTopPixel + row;
 
-            if (pixelY < 0 || pixelY >= lineHeight) continue;
+            if (pixelY < 0 || pixelY >= screenHeight) continue;
 
             for (let col = 0; col < 6; col++) {
               const pixelX = charPixelX + col;
-              if (pixelX >= lineWidth) break;
+              if (pixelX >= screenWidth) break;
 
               const bit = (byte >> (5 - col)) & 1;
               const pixelColor = bit ? color1 : color2;
-              const pixelIndex = pixelY * lineWidth + pixelX;
-              lineBmpPixels[pixelIndex] = pixelColor;
+              const pixelIndex = pixelY * screenWidth + pixelX;
+              screenBmpPixels[pixelIndex] = pixelColor;
             }
           }
 
           charPixelX += 6;  // Fallback uses 6-pixel width
         }
       }
+    }
 
-      // Create BMP data for this line
-      const lineBmpData = {
-        width: lineWidth,
-        height: lineHeight,
-        bitsPerPixel: 8,
-        palette: this.internal_palette.slice(0, 16),
-        pixels: lineBmpPixels
-      };
+    // Create BMP data for the full screen
+    const screenBmpData = {
+      width: screenWidth,
+      height: screenHeight,
+      bitsPerPixel: 8,
+      palette: this.internal_palette.slice(0, 16),
+      pixels: screenBmpPixels
+    };
 
-      // Convert line BMP to FontBlocks
-      const fontblocks = bmp_to_fontblocks(
-        lineBmpData,
-        clip.start_pack() + 3 + lineIdx,  // Each line at different start_pack
-        undefined,  // Use default transition
-        (clip as any).track_options?.(),
-        CDGMagic_CDGExporter.DEBUG
+    // Convert full-screen BMP to FontBlocks
+    const fontblocks = bmp_to_fontblocks(
+      screenBmpData,
+      clip.start_pack() + 3,
+      undefined,  // Use default transition
+      (clip as any).track_options?.(),
+      CDGMagic_CDGExporter.DEBUG
+    );
+
+    if (CDGMagic_CDGExporter.DEBUG)
+      console.debug(
+        `[schedule_text_clip] Converted ${lines.length} lines to ${fontblocks.length} FontBlocks`
       );
 
-      // C++ PATTERN: Set Y offset for TITLES mode
-      // y_offset = (curr_line_num % lines_per_page) * line_height + 12
-      const yOffset = (lineIdx % linesPerPage) * lineHeight + 12;
-
-      if (CDGMagic_CDGExporter.DEBUG)
-        console.debug(
-          `[schedule_text_clip] Line ${lineIdx}: "${lineText.substring(0, 30)}", ` +
-          `${fontblocks.length} blocks, yOffset=${yOffset}`
-        );
-
-      // Queue FontBlocks for this line
-      this.queue_fontblocks_for_progressive_writing(fontblocks);
-    }
+    // Queue FontBlocks
+    this.queue_fontblocks_for_progressive_writing(fontblocks);
   }
 
   /**
