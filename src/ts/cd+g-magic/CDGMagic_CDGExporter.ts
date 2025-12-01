@@ -415,12 +415,12 @@ class CDGMagic_CDGExporter {
   /**
    * Schedule packets for TextClip
    *
-   * @param clip TextClip to schedule
-   */
-  /**
-   * Schedule packets for TextClip
-   *
-   * Renders text to tile blocks and schedules them as TILE_BLOCK packets
+   * Follows C++ reference implementation (CDGMagic_TextClip.cpp):
+   * - Renders text using configured font properties
+   * - For TITLES mode: each line rendered separately at vertical offset
+   * - Calculates line_height based on font_size + border_size
+   * - Creates one BMPObject per line (stored as separate event)
+   * - Properly centers text (both horizontal and vertical)
    *
    * @param clip TextClip to schedule
    */
@@ -428,131 +428,135 @@ class CDGMagic_CDGExporter {
     if (CDGMagic_CDGExporter.DEBUG)
       console.debug('[schedule_text_clip] Starting TextClip at packet', clip.start_pack(), 'duration:', clip.duration());
 
-    // Get text events from clip
-    const textEvents = (clip as any)._events || [];
-    
-    if (textEvents.length === 0) {
-      if (CDGMagic_CDGExporter.DEBUG)
-        console.debug('[schedule_text_clip] No text events found');
-      // Still schedule minimal packets for initialization
-      this.add_scheduled_packet(clip.start_pack(), this.create_load_low_packet(0, 1, 2, 3, 4, 5, 6, 7));
-      this.add_scheduled_packet(clip.start_pack() + 1, this.create_load_high_packet(8, 9, 10, 11, 12, 13, 14, 15));
-      return;
-    }
-
-    // Get text content and rendering properties from clip data
+    // Get text properties
     const textContent = clip.text_content();
     let foregroundColor = clip.foreground_color();
     let backgroundColor = clip.background_color();
+    const fontIndex = clip.font_index();
+    const fontSize = clip.font_size();
+    const outlineColor = (clip as any).outline_color?.() || 0;
+    const antialiasMode = clip.antialias_mode();
+    const karaokeMode = (clip as any).karaoke_mode?.() || 0;  // 0 = TITLES
 
-    // Clamp to 0-15 range (CD+G palette indices)
+    // Clamp colors to palette range
     foregroundColor = Math.min(15, Math.max(0, foregroundColor));
     backgroundColor = Math.min(15, Math.max(0, backgroundColor));
 
     if (CDGMagic_CDGExporter.DEBUG)
-      console.debug(`[schedule_text_clip] Rendering text: "${textContent.substring(0, 40)}" with FG=${foregroundColor}, BG=${backgroundColor}`);
+      console.debug(
+        `[schedule_text_clip] Font: index=${fontIndex}, size=${fontSize}, ` +
+        `FG=${foregroundColor}, BG=${backgroundColor}, ` +
+        `outline=${outlineColor}, aa=${antialiasMode}, karaoke=${karaokeMode}`
+      );
 
-    // Load palette with current colors
+    // Load palette
     this.add_scheduled_packet(clip.start_pack(), this.create_load_low_packet(0, 1, 2, 3, 4, 5, 6, 7));
     this.add_scheduled_packet(clip.start_pack() + 1, this.create_load_high_packet(8, 9, 10, 11, 12, 13, 14, 15));
 
-    // Schedule memory preset to ensure screen is initialized
+    // Schedule memory preset
     this.add_scheduled_packet(clip.start_pack() + 2, this.create_memory_preset_packet(0));
 
-    // Create a virtual BMP for text rendering (300x216 pixels)
-    const bmpWidth = 300;
-    const bmpHeight = 216;
-    const bmpPixels = new Uint8Array(bmpWidth * bmpHeight);
-    bmpPixels.fill(backgroundColor);
+    // Split text into lines
+    const lines = textContent.split('\n');
 
-    // For each text event, render text into the BMP
-    for (let eventIdx = 0; eventIdx < textEvents.length; eventIdx++) {
-      const event = textEvents[eventIdx];
-      if (!event) continue;
+    // C++ PATTERN: Calculate line height based on font size
+    // int blk_height = ceil((font_size + border_size*2) / 12.0);
+    // int line_height = blk_height * 12;
+    const borderSize = 0;  // For now, no borders
+    const maxBorderSize = borderSize;
+    const actualTextHeight = fontSize + maxBorderSize * 2;
+    const blkHeight = Math.ceil(actualTextHeight / 12.0);
+    const lineHeight = blkHeight * 12;
 
-      // Get position and dimensions from event
-      const boxLeftPixel = event.xOffset || 0;
-      const boxTopPixel = event.yOffset || 0;
-      const boxWidthPixel = event.width || 288;
+    // Calculate lines per page
+    const linesPerPage = Math.floor(192 / lineHeight);
 
-      // Split text into lines
-      const lines = textContent.split('\n');
+    if (CDGMagic_CDGExporter.DEBUG)
+      console.debug(
+        `[schedule_text_clip] Line metrics: fontSize=${fontSize}, ` +
+        `textHeight=${actualTextHeight}, blkHeight=${blkHeight}, ` +
+        `lineHeight=${lineHeight}, linesPerPage=${linesPerPage}`
+      );
 
-      // Render each line into the BMP
-      for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
-        const line = lines[lineIdx]!;
-        if (line.length === 0) continue;
+    // C++ PATTERN: For each LINE, create a separate BMPObject
+    for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+      const lineText = lines[lineIdx] || '';
+      if (lineText.length === 0) continue;
 
-        // Each character rendered as approximately 5 pixels wide (with 1 pixel spacing)
-        // But we need to center the entire line within the box
-        const textWidthPixels = line.length * 6; // 6 pixels per character including spacing
+      // Create line-specific BMP (288 × lineHeight)
+      const lineWidth = 288;
+      const lineBmpPixels = new Uint8Array(lineWidth * lineHeight);
+      lineBmpPixels.fill(backgroundColor);
 
-        // Center text horizontally within box
-        const centeredStartPixel = boxLeftPixel + Math.floor((boxWidthPixel - textWidthPixels) / 2);
+      // C++ PATTERN: Center text horizontally and vertically within line
+      // left_start = (line_width - text_width) / 2
+      // top_start = (line_height - font_height) / 2 + font_height - descent
+      const textWidthPixels = lineText.length * 6;  // Approximate: 6 pixels per char
+      const leftStart = Math.floor((lineWidth - textWidthPixels) / 2);
+      const topStart = Math.floor((lineHeight - fontSize) / 2) + fontSize;  // Simplified descent
 
-        // Vertical position: top of box + line offset (12 pixels per line)
-        const lineTopPixel = boxTopPixel + lineIdx * 12;
+      // Render each character of the line
+      for (let charIdx = 0; charIdx < lineText.length; charIdx++) {
+        const char = lineText[charIdx]!;
+        const charLeftPixel = leftStart + charIdx * 6;
+        const charTopPixel = topStart;
 
-        // Render each character
-        for (let charIdx = 0; charIdx < line.length; charIdx++) {
-          const char = line[charIdx]!;
-          const charLeftPixel = centeredStartPixel + charIdx * 6;
-          const charTopPixel = lineTopPixel;
+        // Render character to line BMP
+        const tileData = renderTextToTile(char, foregroundColor, backgroundColor);
+        const color1 = tileData[0] as number;
+        const color2 = tileData[1] as number;
+        const bitmap = tileData[2] as Uint8Array;
 
-          // Render character into BMP using TextRenderer
-          const tileData = renderTextToTile(char, foregroundColor, backgroundColor);
-          const color1 = tileData[0] as number;
-          const color2 = tileData[1] as number;
-          const bitmap = tileData[2] as Uint8Array;
+        // Draw character bitmap into line BMP (6×12 pixels)
+        for (let row = 0; row < 12; row++) {
+          const byte = bitmap[row] || 0;
+          const pixelY = charTopPixel + row;
 
-          // Draw character bitmap into BMP (6x12 pixels)
-          for (let row = 0; row < 12; row++) {
-            const byte = bitmap[row] || 0;
-            const pixelY = charTopPixel + row;
-            
-            if (pixelY >= bmpHeight) break; // Out of bounds
+          if (pixelY >= lineHeight) break;
 
-            for (let col = 0; col < 6; col++) {
-              const pixelX = charLeftPixel + col;
-              if (pixelX >= bmpWidth) break; // Out of bounds
+          for (let col = 0; col < 6; col++) {
+            const pixelX = charLeftPixel + col;
+            if (pixelX >= lineWidth) break;
 
-              const bit = (byte >> (5 - col)) & 1;
-              const pixelColor = bit ? color1 : color2;
-              const pixelIndex = pixelY * bmpWidth + pixelX;
-              bmpPixels[pixelIndex] = pixelColor;
-            }
+            const bit = (byte >> (5 - col)) & 1;
+            const pixelColor = bit ? color1 : color2;
+            const pixelIndex = pixelY * lineWidth + pixelX;
+            lineBmpPixels[pixelIndex] = pixelColor;
           }
         }
       }
+
+      // Create BMP data for this line
+      const lineBmpData = {
+        width: lineWidth,
+        height: lineHeight,
+        bitsPerPixel: 8,
+        palette: this.internal_palette.slice(0, 16),
+        pixels: lineBmpPixels
+      };
+
+      // Convert line BMP to FontBlocks
+      const fontblocks = bmp_to_fontblocks(
+        lineBmpData,
+        clip.start_pack() + 3 + lineIdx,  // Each line at different start_pack
+        undefined,  // Use default transition
+        (clip as any).track_options?.(),
+        CDGMagic_CDGExporter.DEBUG
+      );
+
+      // C++ PATTERN: Set Y offset for TITLES mode
+      // y_offset = (curr_line_num % lines_per_page) * line_height + 12
+      const yOffset = (lineIdx % linesPerPage) * lineHeight + 12;
+
+      if (CDGMagic_CDGExporter.DEBUG)
+        console.debug(
+          `[schedule_text_clip] Line ${lineIdx}: "${lineText.substring(0, 30)}", ` +
+          `${fontblocks.length} blocks, yOffset=${yOffset}`
+        );
+
+      // Queue FontBlocks for this line
+      this.queue_fontblocks_for_progressive_writing(fontblocks);
     }
-
-    // Create BMP data structure
-    const bmpData = {
-      width: bmpWidth,
-      height: bmpHeight,
-      bitsPerPixel: 8,
-      palette: this.internal_palette.slice(0, 16),
-      pixels: bmpPixels
-    };
-
-    if (CDGMagic_CDGExporter.DEBUG)
-      console.debug('[schedule_text_clip] Created virtual BMP (300x216) with text rendered');
-
-    // Convert BMP to FontBlocks (this will use default transition if not specified)
-    const fontblocks = bmp_to_fontblocks(
-      bmpData,
-      clip.start_pack() + 3,
-      undefined, // Use default (sequential) transition for text
-      (clip as any).track_options?.(),
-      CDGMagic_CDGExporter.DEBUG
-    );
-
-    if (CDGMagic_CDGExporter.DEBUG)
-      console.debug(`[schedule_text_clip] Converted to ${fontblocks.length} FontBlocks`);
-
-    // CRITICAL: Queue FontBlocks for time-based progressive writing
-    // This ensures transitions work and text is revealed progressively
-    this.queue_fontblocks_for_progressive_writing(fontblocks);
   }
 
   /**
@@ -1432,74 +1436,6 @@ class CDGMagic_CDGExporter {
       // Write block to compositor at its z-layer
       this.internal_compositor.write_block(block_x, block_y, z_layer, pixel_data);
     }
-  }
-
-  /**
-   * Read composited blocks and encode to packets (Phase 1.3 + Phase 2)
-   *
-   * Extracts composited blocks from the compositor and encodes them as CD+G packets.
-   * Only writes packets for blocks that differ from current VRAM state (Phase 2 optimization).
-   * This replaces direct FontBlock-to-packet encoding when compositor is enabled.
-   *
-   * @param start_packet Starting packet number
-   * @param max_packets Maximum packets available for tiles
-   */
-  private encode_composited_blocks_to_packets(start_packet: number, max_packets: number): void {
-    if (!this.internal_compositor || !this.internal_vram) return;
-
-    let packets_scheduled = 0;
-    const SCREEN_TILES_WIDE = 50;
-    const SCREEN_TILES_HIGH = 18;
-
-    for (let block_y = 0; block_y < SCREEN_TILES_HIGH; block_y++) {
-      for (let block_x = 0; block_x < SCREEN_TILES_WIDE; block_x++) {
-        if (packets_scheduled >= max_packets) return;
-
-        // Read composited block from compositor
-        const composited_block = this.internal_compositor.read_composited_block(block_x, block_y);
-
-        // Convert Uint16Array from compositor to Uint8Array for VRAM (values 0-255 only)
-        const composited_block_8bit = new Uint8Array(72);
-        for (let i = 0; i < 72; i++) {
-          // Transparency (256) becomes 0 for VRAM comparison
-          composited_block_8bit[i] = composited_block[i] < 256 ? composited_block[i] : 0;
-        }
-
-        // Phase 2: Check if block differs from current VRAM state
-        if (this.internal_vram.block_matches(block_x, block_y, composited_block_8bit)) {
-          // Block is identical to on-screen, skip writing
-          continue;
-        }
-
-        // Block differs from VRAM, need to write packet(s)
-        // Use MultiColorEncoder for sophisticated encoding
-        const encoding = encode_block(composited_block);
-
-        // Generate packets from encoding instructions
-        for (const instr of encoding.instructions) {
-          if (packets_scheduled >= max_packets) {
-            // Write current VRAM state and return
-            this.internal_vram.write_block(block_x, block_y, composited_block_8bit);
-            return;
-          }
-
-          // Create packet based on instruction type
-          const packet = this.create_cdg_packet_from_encoding_instruction(
-            instr,
-            block_x,
-            block_y
-          );
-          this.add_scheduled_packet(start_packet + packets_scheduled, packet);
-          packets_scheduled++;
-        }
-
-        // Update VRAM with newly written block
-        this.internal_vram.write_block(block_x, block_y, composited_block_8bit);
-      }
-    }
-
-    if (CDGMagic_CDGExporter.DEBUG)
-      console.debug(`[encode_composited_blocks] Scheduled ${packets_scheduled} packets from composited blocks`);
   }
 
   /**
