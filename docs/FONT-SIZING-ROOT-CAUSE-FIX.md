@@ -69,10 +69,10 @@ for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
 
 ### The Fix
 
-Create **one full-screen BMP (288×192)** for the entire text clip, position each line at its correct Y offset, then convert once to FontBlocks.
+Create **one full-screen BMP (288×216)** for the entire text clip, position each line at its correct Y offset, then convert once to FontBlocks.
 
 **Key changes:**
-1. **Single BMP**: 288×192 pixels (covers entire playable area)
+1. **Single BMP**: 288×216 pixels (full screen)
 2. **Per-line Y positioning**: 
    ```
    lineYPixels = (lineIdx % linesPerPage) * lineHeight + 12
@@ -85,7 +85,7 @@ Create **one full-screen BMP (288×192)** for the entire text clip, position eac
 ```typescript
 // NEW (CORRECT): Full-screen BMP
 const screenWidth = 288;
-const screenHeight = 192;  // CD+G playable area
+const screenHeight = 216;  // Full CD+G height
 const screenBmpPixels = new Uint8Array(screenWidth * screenHeight);
 screenBmpPixels.fill(backgroundColor);
 
@@ -125,30 +125,22 @@ const fontblocks = bmp_to_fontblocks(screenBmpData, ...);
 For 12pt font with 8 lines per page:
 - `fontPixelHeight = 14px`
 - `lineHeight = 24px`
-- Line 0: Y pixels 12-36 (24px tall)
-- Line 1: Y pixels 36-60 (24px tall)
-- ... etc
-- Full screen: 192 pixels (12 + 8×24 = 12 + 192)
-- Scaling in `bmp_to_fontblocks()`: `24px / 192px = 0.125`
-- Character height: `14px * 0.125 = 1.75px` ✗ Still wrong!
+- `linesPerPage = 8`
+- Screen dimensions: 288×216 pixels (full CD+G height)
 
-**WAIT - The scaling is still wrong!**
+**Line positioning (yOffset formula):**
+- Line 0: Y = 12 + 0×24 = 12 pixels
+- Line 1: Y = 12 + 1×24 = 36 pixels
+- Line 2: Y = 12 + 2×24 = 60 pixels
+- ...
+- Line 7: Y = 12 + 7×24 = 180 pixels
+- Line 7 bottom: 180 + 24 = 204 pixels < 216 ✓
 
-Actually, the formula in `bmp_to_fontblocks()` is:
-```typescript
-const src_y = Math.floor((block_y * TILE_HEIGHT + pixel_y) * bmp_scale_y);
-```
-
-With screenHeight=192:
-- `bmp_scale_y = 192 / 216 = 0.889`
-- For block_y=0: pixels 0-11 map to: floor(0-11 * 0.889) = 0-10 ✓
-- For block_y=1: pixels 0-11 map to: floor(12-23 * 0.889) = 10-20 ✓
-
-So the scaling works correctly! The key insight:
-- The BMP height (192px) represents CD+G's playable area (bottom 192 of 216)
-- FontBlocks fill the entire 300×216 space
-- Scaling `192→216` is done by `bmp_to_fontblocks()`
-- Characters in BMP at pixels 0-14 (14px tall) map to blocks covering those pixels
+**BMP scaling to FontBlocks:**
+- BMP size: 288×216 pixels
+- Target screen: 300×216 pixels (via bmp_to_fontblocks)
+- Scaling factor: 216px BMP → 216px screen = 1.0 (no scaling)
+- Character height: 14px × 1.0 = 14px ✓ (correct!)
 
 ### Test Results
 
@@ -231,11 +223,11 @@ For example with 12pt fonts:
 - ✅ All existing tests pass
 - ✅ Sample project CDG generation works
 
-## Summary
+### Summary
 
 **Root Cause**: Per-line BMPs (288×24) being scaled to full screen (300×216), causing fonts to be 5-8x too large.
 
-**Solution**: Single full-screen BMP (288×192) with lines positioned at correct Y offsets using the formula: `yOffset = (lineIdx % linesPerPage) * lineHeight + 12`.
+**Solution**: Single full-screen BMP (288×216) with lines positioned at correct Y offsets using the formula: `yOffset = (lineIdx % linesPerPage) * lineHeight + 12`.
 
 **Result**: Fonts now render at correct size (14-21px), all tests passing, CDG generation successful.
 
