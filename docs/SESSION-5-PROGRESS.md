@@ -174,20 +174,20 @@ Session 5 focused on comprehensive architectural analysis and foundational imple
 
 ## References
 
-- **C++ Architecture**: CDGMagic_GraphicsEncoder*.cpp (source files studied)
-- **Layer Compositing**: `CDGMagic_GraphicsEncoder__compositor.cpp` lines 99-157
-- **FontBlock Rendering**: `CDGMagic_GraphicsEncoder__write_fontblock.cpp`
-- **Packet Generation**: `CDGMagic_GraphicsEncoder.cpp` lines 250-344
+- **C++ Architecture**    : `CDGMagic_GraphicsEncoder*.cpp` (source files studied)
+- **Layer Compositing**   : `CDGMagic_GraphicsEncoder__compositor.cpp` lines 99-157
+- **FontBlock Rendering** : `CDGMagic_GraphicsEncoder__write_fontblock.cpp`
+- **Packet Generation**   : `CDGMagic_GraphicsEncoder.cpp` lines 250-344
 
 ## File Structure
 
 ```
 src/ts/cd+g-magic/
-├── CompositorBuffer.ts                    ✓ NEW
-├── BMPToFontBlockConverter.ts            ✓ MODIFIED (added track_options)
-├── CDGMagic_CDGExporter.ts               ✓ MODIFIED (pass track_options)
-├── CDGMagic_FontBlock.ts                 (has z_location, channel already)
-├── CDGMagic_TrackOptions_Core.ts         (has track(), channel() already)
+├── CompositorBuffer.ts                     ✓ NEW
+├── BMPToFontBlockConverter.ts              ✓ MODIFIED (added track_options)
+├── CDGMagic_CDGExporter.ts                 ✓ MODIFIED (pass track_options)
+├── CDGMagic_FontBlock.ts                   (has z_location, channel already)
+├── CDGMagic_TrackOptions_Core.ts           (has track(), channel() already)
 └── ...
 
 docs/

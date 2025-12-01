@@ -41,6 +41,9 @@ Code generation rules (examples)
 - Dependencies: add to package.json and update lockfile. Prefer small, well-maintained packages.
 - Tests: include at least one unit test demonstrating main behavior. Use mocks for external I/O.
 
+Code execution
+ - Use npx tsx 
+
 Behavioral rules for the agent
 - Preserve existing code style unless AGENTS.md or requester directs a refactor.
 

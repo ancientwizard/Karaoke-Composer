@@ -1,15 +1,133 @@
 /**
  * Text Renderer for CD+G
  *
- * Converts text strings to CD+G tile blocks (6x12 pixel tiles).
- * Uses a simple bitmap font approach for basic text rendering.
+ * Converts text strings to CD+G pixel data.
+ * Supports pre-rendered bitmap fonts (12pt, 18pt, 24pt) as primary method,
+ * with fallback to simple 5x7 bitmap font.
  */
 
+// Pre-rendered font data (lazy loaded)
+let font12: any = null;
+let font18: any = null;
+let font24: any = null;
+
 /**
- * Simple 5x7 bitmap font data (ASCII characters 32-126)
- * Each character is stored as 7 bytes (one for each row), with 5 bits per row for the glyph
- * This is a simplified version - a real implementation would use a proper font
+ * Get character data from pre-rendered font
+ * Loads font lazily on first use
  */
+function getCharacterFromFont(
+  char: string,
+  fontSize: number
+): { code: number; char: string; width: number; height: number; data: Uint8Array } | null {
+  let font = null;
+
+  try {
+    switch (fontSize) {
+      case 12:
+        if (!font12) {
+          font12 = require('@/fonts/monospace/12/index.ts');
+        }
+        font = font12;
+        break;
+      case 18:
+        if (!font18) {
+          font18 = require('@/fonts/monospace/18/index.ts');
+        }
+        font = font18;
+        break;
+      case 24:
+        if (!font24) {
+          font24 = require('@/fonts/monospace/24/index.ts');
+        }
+        font = font24;
+        break;
+      default:
+        return null;
+    }
+
+    if (!font) return null;
+
+    const charCode = char.charCodeAt(0);
+    return font.getCharacter(charCode) || null;
+  } catch (e) {
+    console.warn(`Failed to load font ${fontSize}pt:`, e);
+    return null;
+  }
+}
+
+/**
+ * Render a character from pre-rendered font data to a target BMP region
+ * Scales the pre-rendered character to the target region if needed
+ */
+export function renderCharacterFromFontToRegion(
+  char: string,
+  fontSize: number,
+  targetWidth: number,
+  targetHeight: number,
+  foregroundColor: number,
+  backgroundColor: number
+): Uint8Array | null {
+  const charData = getCharacterFromFont(char, fontSize);
+  if (!charData) {
+    return null;
+  }
+
+  const srcData = charData.data;
+  const srcWidth = charData.width;
+  const srcHeight = charData.height;
+
+  // Create target bitmap
+  const dstData = new Uint8Array(targetWidth * targetHeight);
+  dstData.fill(backgroundColor);
+
+  // Simple nearest-neighbor scaling
+  const scaleX = srcWidth / targetWidth;
+  const scaleY = srcHeight / targetHeight;
+
+  for (let dstY = 0; dstY < targetHeight; dstY++) {
+    for (let dstX = 0; dstX < targetWidth; dstX++) {
+      const srcX = Math.floor(dstX * scaleX);
+      const srcY = Math.floor(dstY * scaleY);
+
+      if (srcX < srcWidth && srcY < srcHeight) {
+        const srcIdx = srcY * srcWidth + srcX;
+        const gray = srcData[srcIdx];
+        const color = gray > 127 ? foregroundColor : backgroundColor;
+        const dstIdx = dstY * targetWidth + dstX;
+        dstData[dstIdx] = color;
+      }
+    }
+  }
+
+  return dstData;
+}
+
+/**
+ * Get character width in pixels for a given font size
+ */
+export function getCharacterWidth(char: string, fontSize: number): number {
+  const charData = getCharacterFromFont(char, fontSize);
+  return charData ? charData.width : 6;  // Default to 6 if not found
+}
+
+/**
+ * Get font height in pixels
+ */
+export function getFontHeight(fontSize: number): number {
+  switch (fontSize) {
+    case 12:
+      return 12;
+    case 18:
+      return 18;
+    case 24:
+      return 24;
+    default:
+      return 12;
+  }
+}
+
+// Simple 5x7 bitmap font data (ASCII characters 32-126)
+// Used as fallback when pre-rendered fonts are not available
 const SIMPLE_FONT_5x7 = {
   // Space
   ' ': [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],

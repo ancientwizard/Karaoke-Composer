@@ -14,7 +14,9 @@ import { CDGMagic_BMPClip       } from "@/ts/cd+g-magic/CDGMagic_BMPClip";
 import { readBMP                } from "@/ts/cd+g-magic/BMPReader";
 import { bmp_to_fontblocks      } from "@/ts/cd+g-magic/BMPToFontBlockConverter";
 import { loadTransitionFile     } from "@/ts/cd+g-magic/TransitionFileReader";
-import { renderTextToTile       } from "@/ts/cd+g-magic/TextRenderer";
+import {
+  renderTextToTile,   renderCharacterFromFontToRegion,
+  getCharacterWidth,  getFontHeight } from "@/ts/cd+g-magic/TextRenderer";
 import { CompositorBuffer       } from "@/ts/cd+g-magic/CompositorBuffer";
 import { VRAMBuffer             } from "@/ts/cd+g-magic/VRAMBuffer";
 import { encode_block           } from "@/ts/cd+g-magic/MultiColorEncoder";
@@ -491,39 +493,71 @@ class CDGMagic_CDGExporter {
       // C++ PATTERN: Center text horizontally and vertically within line
       // left_start = (line_width - text_width) / 2
       // top_start = (line_height - font_height) / 2 + font_height - descent
-      const textWidthPixels = lineText.length * 6;  // Approximate: 6 pixels per char
+      let textWidthPixels = 0;
+      for (const char of lineText) {
+        textWidthPixels += getCharacterWidth(char, fontSize);
+      }
       const leftStart = Math.floor((lineWidth - textWidthPixels) / 2);
       const topStart = Math.floor((lineHeight - fontSize) / 2) + fontSize;  // Simplified descent
 
-      // Render each character of the line
+      // Render each character of the line using pre-rendered fonts
+      let charPixelX = leftStart;
       for (let charIdx = 0; charIdx < lineText.length; charIdx++) {
         const char = lineText[charIdx]!;
-        const charLeftPixel = leftStart + charIdx * 6;
+        const charWidth = getCharacterWidth(char, fontSize);
         const charTopPixel = topStart;
 
-        // Render character to line BMP
-        const tileData = renderTextToTile(char, foregroundColor, backgroundColor);
-        const color1 = tileData[0] as number;
-        const color2 = tileData[1] as number;
-        const bitmap = tileData[2] as Uint8Array;
+        // Try to use pre-rendered font first
+        const charBitmap = renderCharacterFromFontToRegion(
+          char,
+          fontSize,
+          charWidth,
+          fontSize,
+          foregroundColor,
+          backgroundColor
+        );
 
-        // Draw character bitmap into line BMP (6×12 pixels)
-        for (let row = 0; row < 12; row++) {
-          const byte = bitmap[row] || 0;
-          const pixelY = charTopPixel + row;
+        if (charBitmap) {
+          // Draw pre-rendered character bitmap into line BMP
+          for (let srcY = 0; srcY < fontSize; srcY++) {
+            for (let srcX = 0; srcX < charWidth; srcX++) {
+              const srcIdx = srcY * charWidth + srcX;
+              const pixelX = charPixelX + srcX;
+              const pixelY = charTopPixel + srcY;
 
-          if (pixelY >= lineHeight) break;
+              if (pixelX >= lineWidth || pixelY >= lineHeight) continue;
 
-          for (let col = 0; col < 6; col++) {
-            const pixelX = charLeftPixel + col;
-            if (pixelX >= lineWidth) break;
+              const pixelIndex = pixelY * lineWidth + pixelX;
+              lineBmpPixels[pixelIndex] = charBitmap[srcIdx]!;
+            }
+          }
+        } else {
+          // Fallback to old tile-based rendering if font not found
+          const tileData = renderTextToTile(char, foregroundColor, backgroundColor);
+          const color1 = tileData[0] as number;
+          const color2 = tileData[1] as number;
+          const bitmap = tileData[2] as Uint8Array;
 
-            const bit = (byte >> (5 - col)) & 1;
-            const pixelColor = bit ? color1 : color2;
-            const pixelIndex = pixelY * lineWidth + pixelX;
-            lineBmpPixels[pixelIndex] = pixelColor;
+          // Draw character bitmap into line BMP (6×12 pixels)
+          for (let row = 0; row < 12 && row < fontSize; row++) {
+            const byte = bitmap[row] || 0;
+            const pixelY = charTopPixel + row;
+
+            if (pixelY >= lineHeight) break;
+
+            for (let col = 0; col < 6 && col < charWidth; col++) {
+              const pixelX = charPixelX + col;
+              if (pixelX >= lineWidth) break;
+
+              const bit = (byte >> (5 - col)) & 1;
+              const pixelColor = bit ? color1 : color2;
+              const pixelIndex = pixelY * lineWidth + pixelX;
+              lineBmpPixels[pixelIndex] = pixelColor;
+            }
           }
         }
+
+        charPixelX += charWidth;
       }
 
       // Create BMP data for this line

@@ -142,13 +142,13 @@ shouldPalette          - Enable palette effects
 
 ## Quick Reference: The 5 Issues
 
-| Issue | Impact | Fix Complexity | Blockers |
-|-------|--------|---------------|----|
-| Palette (BLACK!) | 15-20% | Medium | Understand where colors come from |
-| Text effects | 10-15% | High | Need FLTK equivalent or custom rendering |
-| TextClip props | 5-8% | Low | Just wire up existing properties |
-| BMP properties | 3-5% | Low | Use xOffset/yOffset in scheduling |
-| Test transitions | 1-2% | Low | Already implemented, just verify |
+| Issue            | Impact | Fix Complexity | Blockers                          |
+|------------------|--------|----------------|-----------------------------------|
+| Palette (BLACK!) | 15-20% | Medium         | Understand where colors come from |
+| Text effects     | 10-15% | High    | Need FLTK equivalent or custom rendering |
+| TextClip props   |   5-8% | Low            | Just wire up existing properties  |
+| BMP properties   |   3-5% | Low            | Use xOffset/yOffset in scheduling |
+| Test transitions |   1-2% | Low            | Already implemented, just verify  |
 
 ---
 

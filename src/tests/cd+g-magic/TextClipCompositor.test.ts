@@ -6,11 +6,11 @@
  */
 
 import { CDGMagic_CDGExporter } from "@/ts/cd+g-magic/CDGMagic_CDGExporter";
-import { CDGMagic_TextClip } from "@/ts/cd+g-magic/CDGMagic_TextClip";
-import { CompositorBuffer } from "@/ts/cd+g-magic/CompositorBuffer";
-import { VRAMBuffer } from "@/ts/cd+g-magic/VRAMBuffer";
-import { encode_block } from "@/ts/cd+g-magic/MultiColorEncoder";
-import { renderTextToTile } from "@/ts/cd+g-magic/TextRenderer";
+import { CDGMagic_TextClip    } from "@/ts/cd+g-magic/CDGMagic_TextClip";
+import { CompositorBuffer     } from "@/ts/cd+g-magic/CompositorBuffer";
+import { VRAMBuffer           } from "@/ts/cd+g-magic/VRAMBuffer";
+import { encode_block         } from "@/ts/cd+g-magic/MultiColorEncoder";
+import { renderTextToTile     } from "@/ts/cd+g-magic/TextRenderer";
 
 describe("TextClip + Compositor + MultiColorEncoder Integration", () => {
   describe("TextClip Compositor Pipeline", () => {

@@ -14,10 +14,10 @@
  * instead of sequential left-to-right top-to-bottom order.
  */
 
-import { CDGMagic_FontBlock   } from '@/ts/cd+g-magic/CDGMagic_FontBlock';
-import { CDGMagic_TrackOptions } from '@/ts/cd+g-magic/CDGMagic_TrackOptions_Core';
-import { getDefaultTransition } from '@/ts/cd+g-magic/TransitionFileReader';
-import type { TransitionData  } from '@/ts/cd+g-magic/TransitionFileReader';
+import { CDGMagic_FontBlock     } from '@/ts/cd+g-magic/CDGMagic_FontBlock';
+import { CDGMagic_TrackOptions  } from '@/ts/cd+g-magic/CDGMagic_TrackOptions_Core';
+import { getDefaultTransition   } from '@/ts/cd+g-magic/TransitionFileReader';
+import type { TransitionData    } from '@/ts/cd+g-magic/TransitionFileReader';
 
 export interface BMPData {
   width: number;
