@@ -84,15 +84,15 @@ This means:
 
 ### Text Properties Used (Currently Unused in TS)
 
-| Property | Purpose | TS Status |
-|----------|---------|-----------|
+| Property           | Purpose | TS Status |
+|--------------------|---------|-----------|
 | `font_size` (1-72) | Controls rendered text size | ❌ IGNORED (always 6×12) |
-| `font_index` | Font selection | ❌ IGNORED (always SIMPLE_FONT_5x7) |
-| `outline_color` | Color for text outlines | ❌ IGNORED |
-| `antialias_mode` | Enable 4-offset anti-aliasing | ❌ IGNORED |
-| `karaoke_mode` | Display mode (TITLES, LYRICS, 5-line, etc.) | ⚠️ PARTIALLY USED |
+| `font_index`       | Font selection | ❌ IGNORED (always SIMPLE_FONT_5x7) |
+| `outline_color`    | Color for text outlines | ❌ IGNORED |
+| `antialias_mode`   | Enable 4-offset anti-aliasing | ❌ IGNORED |
+| `karaoke_mode`     | Display mode (TITLES, LYRICS, 5-line, etc.) | ⚠️ PARTIALLY USED |
 | `square_size` / `round_size` | Outline sizes | ❌ NOT AVAILABLE |
-| `highlight_mode` | Karaoke highlight effect | ⚠️ NOT IMPLEMENTED |
+| `highlight_mode`   | Karaoke highlight effect | ⚠️ NOT IMPLEMENTED |
 
 ## Current Implementation Issues
 
@@ -175,10 +175,10 @@ const lineTopPixel = boxTopPixel + lineIdx * 12;
 
 ## Recommended Path Forward
 
-1. **Phase 1** (COMPLETE): Transitions working ✅
-2. **Phase 2** (CURRENT): Improve text positioning/centering
-3. **Phase 3** (OPTIONAL): Support variable font sizes
-4. **Phase 4** (FUTURE): Implement outline/antialiasing effects
+1. **Phase 1** (COMPLETE) : Transitions working ✅
+2. **Phase 2** (CURRENT)  : Improve text positioning/centering
+3. **Phase 3** (OPTIONAL) : Support variable font sizes
+4. **Phase 4** (FUTURE)   : Implement outline/antialiasing effects
 
 ## Testing Notes
 

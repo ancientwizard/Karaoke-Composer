@@ -11,6 +11,60 @@ let font12: any = null;
 let font18: any = null;
 let font24: any = null;
 
+// Font metadata cache
+let fontMetadata: Record<number, any> = {};
+
+/**
+ * Get font module and metadata for a size
+ */
+function getFontModule(fontSize: number): any | null {
+  try {
+    switch (fontSize) {
+      case 12:
+        if (!font12) {
+          font12 = require('@/fonts/monospace/12/index.ts');
+        }
+        return font12;
+      case 18:
+        if (!font18) {
+          font18 = require('@/fonts/monospace/18/index.ts');
+        }
+        return font18;
+      case 24:
+        if (!font24) {
+          font24 = require('@/fonts/monospace/24/index.ts');
+        }
+        return font24;
+      default:
+        return null;
+    }
+  } catch (e) {
+    console.warn(`Failed to load font ${fontSize}pt:`, e);
+    return null;
+  }
+}
+
+/**
+ * Get font metadata (height, avgWidth, etc.)
+ */
+function loadFontMetadata(fontSize: number): { width: number; height: number } | null {
+  if (fontMetadata[fontSize]) {
+    return fontMetadata[fontSize];
+  }
+
+  const font = getFontModule(fontSize);
+  if (!font || !font.FONT_METADATA) {
+    return null;
+  }
+
+  fontMetadata[fontSize] = {
+    width: font.FONT_METADATA.avgWidth,
+    height: font.FONT_METADATA.height
+  };
+
+  return fontMetadata[fontSize];
+}
+
 /**
  * Get character data from pre-rendered font
  * Loads font lazily on first use
@@ -19,44 +73,36 @@ function getCharacterFromFont(
   char: string,
   fontSize: number
 ): { code: number; char: string; width: number; height: number; data: Uint8Array } | null {
-  let font = null;
+  const font = getFontModule(fontSize);
+  if (!font) return null;
 
-  try {
-    switch (fontSize) {
-      case 12:
-        if (!font12) {
-          font12 = require('@/fonts/monospace/12/index.ts');
-        }
-        font = font12;
-        break;
-      case 18:
-        if (!font18) {
-          font18 = require('@/fonts/monospace/18/index.ts');
-        }
-        font = font18;
-        break;
-      case 24:
-        if (!font24) {
-          font24 = require('@/fonts/monospace/24/index.ts');
-        }
-        font = font24;
-        break;
-      default:
-        return null;
-    }
+  const charCode = char.charCodeAt(0);
+  return font.getCharacter(charCode) || null;
+}
 
-    if (!font) return null;
-
-    const charCode = char.charCodeAt(0);
-    return font.getCharacter(charCode) || null;
-  } catch (e) {
-    console.warn(`Failed to load font ${fontSize}pt:`, e);
+/**
+ * Get pre-rendered character at native size (no scaling)
+ * Returns {width, height, pixels} for direct rendering
+ */
+export function getRawCharacterFromFont(
+  char: string,
+  fontSize: number
+): { width: number; height: number; data: Uint8Array } | null {
+  const charData = getCharacterFromFont(char, fontSize);
+  if (!charData) {
     return null;
   }
+
+  return {
+    width: charData.width,
+    height: charData.height,
+    data: charData.data
+  };
 }
 
 /**
  * Render a character from pre-rendered font data to a target BMP region
+ * DEPRECATED: Use getRawCharacterFromFont instead - don't scale fonts
  * Scales the pre-rendered character to the target region if needed
  */
 export function renderCharacterFromFontToRegion(
@@ -114,13 +160,19 @@ export function getCharacterWidth(char: string, fontSize: number): number {
  * Get font height in pixels
  */
 export function getFontHeight(fontSize: number): number {
+  const meta = loadFontMetadata(fontSize);
+  if (meta) {
+    return meta.height;
+  }
+
+  // Fallback to hardcoded values
   switch (fontSize) {
     case 12:
-      return 12;
+      return 14;
     case 18:
-      return 18;
+      return 21;
     case 24:
-      return 24;
+      return 21;
     default:
       return 12;
   }

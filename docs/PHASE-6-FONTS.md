@@ -22,8 +22,8 @@ src/fonts/monospace/
 ```
 
 Each module exports:
-- `FONT_METADATA`: Font name, size, avgWidth, height
-- `CHARACTERS`: Map of code point → CharacterData
+- `FONT_METADATA`     : Font name, size, avgWidth, height
+- `CHARACTERS`        : Map of code point → CharacterData
 - `getCharacter(code)`: Retrieve character data
 - `getAllCharacters()`: Get all characters
 

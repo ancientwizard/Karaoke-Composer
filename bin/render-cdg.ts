@@ -22,7 +22,7 @@ import { CDGMagic_CDGExporter     } from '../src/ts/cd+g-magic/CDGMagic_CDGExpor
 import { extractBMPPalette        } from '../src/ts/cd+g-magic/BMPPaletteLoader';
 
 // ALLOW Exporter to announce debug info
-CDGMagic_CDGExporter.DEBUG = true;
+// CDGMagic_CDGExporter.DEBUG = true;
 
 interface RenderOptions {
   inputCMP: string;

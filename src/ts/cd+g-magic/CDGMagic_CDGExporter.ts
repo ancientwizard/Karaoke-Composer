@@ -15,8 +15,12 @@ import { readBMP                } from "@/ts/cd+g-magic/BMPReader";
 import { bmp_to_fontblocks      } from "@/ts/cd+g-magic/BMPToFontBlockConverter";
 import { loadTransitionFile     } from "@/ts/cd+g-magic/TransitionFileReader";
 import {
-  renderTextToTile,   renderCharacterFromFontToRegion,
-  getCharacterWidth,  getFontHeight } from "@/ts/cd+g-magic/TextRenderer";
+  renderTextToTile,
+  getRawCharacterFromFont,
+  renderCharacterFromFontToRegion,
+  getCharacterWidth,
+  getFontHeight
+} from "@/ts/cd+g-magic/TextRenderer";
 import { CompositorBuffer       } from "@/ts/cd+g-magic/CompositorBuffer";
 import { VRAMBuffer             } from "@/ts/cd+g-magic/VRAMBuffer";
 import { encode_block           } from "@/ts/cd+g-magic/MultiColorEncoder";
@@ -27,15 +31,15 @@ import type { TransitionData    } from "@/ts/cd+g-magic/TransitionFileReader";
  * Command byte (byte 0) is always 0x09 for TV Graphics mode
  */
 enum CDGInstruction {
-  MEMORY_PRESET    = 0x01,  // Screen clear/preset
-  BORDER_PRESET    = 0x02,  // Border color
-  TILE_BLOCK       = 0x06,  // Tile data update (COPY_FONT)
-  XOR_FONT         = 0x26,  // XOR font block
-  SCROLL_PRESET    = 0x14,  // Scroll setup
-  SCROLL_COPY      = 0x18,  // Scroll execute
+  MEMORY_PRESET     = 0x01,  // Screen clear/preset
+  BORDER_PRESET     = 0x02,  // Border color
+  TILE_BLOCK        = 0x06,  // Tile data update (COPY_FONT)
+  XOR_FONT          = 0x26,  // XOR font block
+  SCROLL_PRESET     = 0x14,  // Scroll setup
+  SCROLL_COPY       = 0x18,  // Scroll execute
   TRANSPARENT_COLOR = 0x1C, // Set transparent color index
-  LOAD_LOW         = 0x1E,  // Load palette entries 0-7 (LOAD_CLUT_LO)
-  LOAD_HIGH        = 0x1F,  // Load palette entries 8-15 (LOAD_CLUT_HI)
+  LOAD_LOW          = 0x1E,  // Load palette entries 0-7 (LOAD_CLUT_LO)
+  LOAD_HIGH         = 0x1F,  // Load palette entries 8-15 (LOAD_CLUT_HI)
 }
 
 /**
@@ -461,23 +465,19 @@ class CDGMagic_CDGExporter {
     // Split text into lines
     const lines = textContent.split('\n');
 
-    // C++ PATTERN: Calculate line height based on font size
-    // int blk_height = ceil((font_size + border_size*2) / 12.0);
-    // int line_height = blk_height * 12;
-    const borderSize = 0;  // For now, no borders
-    const maxBorderSize = borderSize;
-    const actualTextHeight = fontSize + maxBorderSize * 2;
-    const blkHeight = Math.ceil(actualTextHeight / 12.0);
+    // Get actual font dimensions (in pixels, not points)
+    const fontPixelHeight = getFontHeight(fontSize);
+    
+    // For CD+G layout, still use tile grid for alignment
+    // but text height is based on actual font metrics
+    const blkHeight = Math.ceil(fontPixelHeight / 12.0);
     const lineHeight = blkHeight * 12;
-
-    // Calculate lines per page
     const linesPerPage = Math.floor(192 / lineHeight);
 
     if (CDGMagic_CDGExporter.DEBUG)
       console.debug(
-        `[schedule_text_clip] Line metrics: fontSize=${fontSize}, ` +
-        `textHeight=${actualTextHeight}, blkHeight=${blkHeight}, ` +
-        `lineHeight=${lineHeight}, linesPerPage=${linesPerPage}`
+        `[schedule_text_clip] Font: index=${fontIndex}, size=${fontSize}, ` +
+        `fontPixelHeight=${fontPixelHeight}, lineHeight=${lineHeight}, linesPerPage=${linesPerPage}`
       );
 
     // C++ PATTERN: For each LINE, create a separate BMPObject
@@ -491,46 +491,50 @@ class CDGMagic_CDGExporter {
       lineBmpPixels.fill(backgroundColor);
 
       // C++ PATTERN: Center text horizontally and vertically within line
-      // left_start = (line_width - text_width) / 2
-      // top_start = (line_height - font_height) / 2 + font_height - descent
+      // Calculate text width using actual character widths
       let textWidthPixels = 0;
       for (const char of lineText) {
         textWidthPixels += getCharacterWidth(char, fontSize);
       }
+      
       const leftStart = Math.floor((lineWidth - textWidthPixels) / 2);
-      const topStart = Math.floor((lineHeight - fontSize) / 2) + fontSize;  // Simplified descent
+      // Center vertically: top_start = (line_height - font_height) / 2 + font_height
+      const topStart = Math.floor((lineHeight - fontPixelHeight) / 2) + fontPixelHeight;
 
       // Render each character of the line using pre-rendered fonts
       let charPixelX = leftStart;
       for (let charIdx = 0; charIdx < lineText.length; charIdx++) {
         const char = lineText[charIdx]!;
-        const charWidth = getCharacterWidth(char, fontSize);
-        const charTopPixel = topStart;
+        
+        // Get native pre-rendered character data
+        const charData = getRawCharacterFromFont(char, fontSize);
+        
+        if (charData) {
+          // Use pre-rendered font at native size
+          const charWidth = charData.width;
+          const charHeight = charData.height;
+          const srcData = charData.data;
 
-        // Try to use pre-rendered font first
-        const charBitmap = renderCharacterFromFontToRegion(
-          char,
-          fontSize,
-          charWidth,
-          fontSize,
-          foregroundColor,
-          backgroundColor
-        );
+          // Calculate top position for this character (baseline alignment)
+          const charTopPixel = topStart - charHeight;  // Align to baseline
 
-        if (charBitmap) {
-          // Draw pre-rendered character bitmap into line BMP
-          for (let srcY = 0; srcY < fontSize; srcY++) {
+          // Draw character bitmap into line BMP
+          for (let srcY = 0; srcY < charHeight; srcY++) {
             for (let srcX = 0; srcX < charWidth; srcX++) {
               const srcIdx = srcY * charWidth + srcX;
               const pixelX = charPixelX + srcX;
               const pixelY = charTopPixel + srcY;
 
-              if (pixelX >= lineWidth || pixelY >= lineHeight) continue;
+              if (pixelX >= lineWidth || pixelY < 0 || pixelY >= lineHeight) continue;
 
+              const gray = srcData[srcIdx];
+              const pixelColor = gray > 127 ? foregroundColor : backgroundColor;
               const pixelIndex = pixelY * lineWidth + pixelX;
-              lineBmpPixels[pixelIndex] = charBitmap[srcIdx]!;
+              lineBmpPixels[pixelIndex] = pixelColor;
             }
           }
+
+          charPixelX += charWidth;
         } else {
           // Fallback to old tile-based rendering if font not found
           const tileData = renderTextToTile(char, foregroundColor, backgroundColor);
@@ -539,13 +543,14 @@ class CDGMagic_CDGExporter {
           const bitmap = tileData[2] as Uint8Array;
 
           // Draw character bitmap into line BMP (6×12 pixels)
-          for (let row = 0; row < 12 && row < fontSize; row++) {
+          const charTopPixel = topStart - 12;
+          for (let row = 0; row < 12; row++) {
             const byte = bitmap[row] || 0;
             const pixelY = charTopPixel + row;
 
-            if (pixelY >= lineHeight) break;
+            if (pixelY < 0 || pixelY >= lineHeight) continue;
 
-            for (let col = 0; col < 6 && col < charWidth; col++) {
+            for (let col = 0; col < 6; col++) {
               const pixelX = charPixelX + col;
               if (pixelX >= lineWidth) break;
 
@@ -555,9 +560,9 @@ class CDGMagic_CDGExporter {
               lineBmpPixels[pixelIndex] = pixelColor;
             }
           }
-        }
 
-        charPixelX += charWidth;
+          charPixelX += 6;  // Fallback uses 6-pixel width
+        }
       }
 
       // Create BMP data for this line
