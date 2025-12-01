@@ -15,11 +15,28 @@ let font24: any = null;
 let fontMetadata: Record<number, any> = {};
 
 /**
+ * Map requested font size to available font size
+ * We only have fonts for 12, 18, 24pt
+ * @param fontSize Requested font size (in points)
+ * @returns Nearest available font size
+ */
+function mapFontSize(fontSize: number): number {
+  // Snap to nearest available size
+  if (fontSize >= 21) {
+    return 24;
+  } else if (fontSize >= 15) {
+    return 18;
+  }
+  return 12;
+}
+
+/**
  * Get font module and metadata for a size
  */
 function getFontModule(fontSize: number): any | null {
+  const mappedSize = mapFontSize(fontSize);
   try {
-    switch (fontSize) {
+    switch (mappedSize) {
       case 12:
         if (!font12) {
           font12 = require('@/fonts/monospace/12/index.ts');
@@ -160,13 +177,22 @@ export function getCharacterWidth(char: string, fontSize: number): number {
  * Get font height in pixels
  */
 export function getFontHeight(fontSize: number): number {
-  const meta = loadFontMetadata(fontSize);
+  // Map requested size to available font size
+  // Snap to nearest available (12, 18, 24)
+  let mappedSize = 12;
+  if (fontSize >= 21) {
+    mappedSize = 24;
+  } else if (fontSize >= 15) {
+    mappedSize = 18;
+  }
+
+  const meta = loadFontMetadata(mappedSize);
   if (meta) {
     return meta.height;
   }
 
-  // Fallback to hardcoded values
-  switch (fontSize) {
+  // Fallback to hardcoded values (shouldn't reach here with valid mapped size)
+  switch (mappedSize) {
     case 12:
       return 14;
     case 18:
