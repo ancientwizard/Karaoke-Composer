@@ -482,7 +482,7 @@ class CDGMagic_CDGExporter {
 
     // C++ PATTERN: Create one full-screen BMP for all lines, positioned at correct Y offsets
     const screenWidth = 288;
-    const screenHeight = 192;  // CD+G playable area (216 - 24 for safe zone)
+    const screenHeight = 216;  // Full CD+G height
     const screenBmpPixels = new Uint8Array(screenWidth * screenHeight);
     screenBmpPixels.fill(backgroundColor);
 
