@@ -95,6 +95,14 @@ class CDGMagic_CDGExporter {
   // VRAM buffer for change detection (Phase 2: Rendering Pipeline)
   private internal_vram: VRAMBuffer | null;
 
+  // FontBlock queue for time-based writing (ensures progressive transitions)
+  // Sorted by start_pack value; blocks written only when their time arrives
+  private internal_fontblock_queue: Array<{
+    fontblock: any;
+    start_pack: number;
+    written: boolean;
+  }> = [];
+
   /**
    * Constructor: Create exporter
    *
@@ -109,6 +117,7 @@ class CDGMagic_CDGExporter {
     this.internal_use_reference_prelude = false;
     this.internal_compositor = null;
     this.internal_vram = null;
+    this.internal_fontblock_queue = [];
   }
 
   /**
@@ -220,6 +229,7 @@ class CDGMagic_CDGExporter {
   schedule_packets(): number {
     // Clear existing schedule
     this.internal_packet_schedule.clear();
+    this.internal_fontblock_queue = [];  // Reset FontBlock queue
 
     // Initialize multi-layer compositor (Phase 1.3)
     // This will receive all clip data and composite layers before generating packets
@@ -239,7 +249,7 @@ class CDGMagic_CDGExporter {
     // Reference: CDGMagic_PALGlobalClip::CDGMagic_PALGlobalClip() with start_offset=250
     this.inject_scroll_reset_packets();
 
-    // Process each clip
+    // Process each clip - queues FontBlocks instead of writing immediately
     for (const clip of this.internal_clips) {
       if (clip instanceof CDGMagic_TextClip) {
         this.schedule_text_clip(clip);
@@ -254,10 +264,116 @@ class CDGMagic_CDGExporter {
       }
     }
 
+    // CRITICAL: Process FontBlocks incrementally, respecting their start_pack() values
+    // This implements progressive transition reveals matching C++ reference behavior
+    this.process_fontblocks_incrementally();
+
     // Pad to target duration
     this.pad_to_duration();
 
     return this.internal_total_packets;
+  }
+
+  /**
+   * Process queued FontBlocks incrementally across the timeline
+   *
+   * Implements C++ encoder's packet-by-packet processing where blocks are written
+   * only when their scheduled time arrives. This ensures proper transition effects.
+   *
+   * Algorithm:
+   * 1. Sort FontBlocks by start_pack() (already done in queue_fontblocks_for_progressive_writing)
+   * 2. For each packet in timeline, write blocks due at that time
+   * 3. Encode only newly-written blocks (via VRAM change detection)
+   *
+   * This matches the C++ reference implementation's:
+   *   while (current_pack < current_length) {
+   *     if (playout_queue.front()->start_pack() <= current_pack) {
+   *       write_fontblock(current_pack, block);
+   *       current_pack = write_fontblock(...);
+   *     }
+   *     current_pack++;
+   *   }
+   */
+  private process_fontblocks_incrementally(): void {
+    if (!this.internal_compositor || !this.internal_vram || this.internal_fontblock_queue.length === 0) {
+      return;
+    }
+
+    // Get max packet number from scheduled packets
+    const max_packet = Math.max(
+      ...Array.from(this.internal_packet_schedule.keys()),
+      this.internal_total_packets
+    );
+
+    // Step through each packet and process due FontBlocks
+    for (let current_pack = 0; current_pack < max_packet + 300; current_pack++) {
+      // Check if any FontBlocks are due at this packet
+      this.process_due_fontblocks(current_pack);
+
+      // Encode any blocks that changed at this packet
+      this.encode_changed_blocks_to_packets(current_pack);
+    }
+
+    if (CDGMagic_CDGExporter.DEBUG)
+      console.debug(`[process_fontblocks_incrementally] Processed ${this.internal_fontblock_queue.length} FontBlocks incrementally`);
+  }
+
+  /**
+   * Encode blocks that changed at current_pack to CD+G packets
+   *
+   * Uses change detection via VRAM to only write blocks that were modified.
+   * Packets are scheduled at the current_pack position.
+   *
+   * @param current_pack Current packet position
+   */
+  private encode_changed_blocks_to_packets(current_pack: number): void {
+    if (!this.internal_compositor || !this.internal_vram) return;
+
+    const SCREEN_TILES_WIDE = 50;
+    const SCREEN_TILES_HIGH = 18;
+    let packets_added = 0;
+
+    for (let block_y = 0; block_y < SCREEN_TILES_HIGH; block_y++) {
+      for (let block_x = 0; block_x < SCREEN_TILES_WIDE; block_x++) {
+        // Read composited block from compositor
+        const composited_block = this.internal_compositor.read_composited_block(block_x, block_y);
+
+        // Convert Uint16Array from compositor to Uint8Array for VRAM (values 0-255 only)
+        const composited_block_8bit = new Uint8Array(72);
+        for (let i = 0; i < 72; i++) {
+          // Transparency (256) becomes 0 for VRAM comparison
+          composited_block_8bit[i] = composited_block[i] < 256 ? composited_block[i] : 0;
+        }
+
+        // Phase 2: Check if block differs from current VRAM state
+        if (this.internal_vram.block_matches(block_x, block_y, composited_block_8bit)) {
+          // Block is identical to on-screen, skip writing
+          continue;
+        }
+
+        // Block differs from VRAM, need to write packet(s)
+        // Use MultiColorEncoder for sophisticated encoding
+        const encoding = encode_block(composited_block);
+
+        // Generate packets from encoding instructions
+        for (const instr of encoding.instructions) {
+          // Create packet based on instruction type
+          const packet = this.create_cdg_packet_from_encoding_instruction(
+            instr,
+            block_x,
+            block_y
+          );
+          this.add_scheduled_packet(current_pack, packet);
+          packets_added++;
+        }
+
+        // Update VRAM with newly written block
+        this.internal_vram.write_block(block_x, block_y, composited_block_8bit);
+      }
+    }
+
+    if (packets_added > 0 && CDGMagic_CDGExporter.DEBUG)
+      console.debug(`[encode_changed_blocks] Pack ${current_pack}: added ${packets_added} packets`);
   }
 
   /**
@@ -426,7 +542,7 @@ class CDGMagic_CDGExporter {
     const fontblocks = bmp_to_fontblocks(
       bmpData,
       clip.start_pack() + 3,
-      undefined, // No custom transition for text
+      undefined, // Use default (sequential) transition for text
       (clip as any).track_options?.(),
       CDGMagic_CDGExporter.DEBUG
     );
@@ -434,11 +550,9 @@ class CDGMagic_CDGExporter {
     if (CDGMagic_CDGExporter.DEBUG)
       console.debug(`[schedule_text_clip] Converted to ${fontblocks.length} FontBlocks`);
 
-    // Write FontBlocks to compositor
-    this.write_fontblocks_to_compositor(fontblocks);
-
-    // Encode composited blocks using MultiColorEncoder pipeline
-    this.encode_composited_blocks_to_packets(clip.start_pack() + 3, clip.duration() - 3);
+    // CRITICAL: Queue FontBlocks for time-based progressive writing
+    // This ensures transitions work and text is revealed progressively
+    this.queue_fontblocks_for_progressive_writing(fontblocks);
   }
 
   /**
@@ -545,9 +659,11 @@ class CDGMagic_CDGExporter {
           if (CDGMagic_CDGExporter.DEBUG)
             console.debug(`[schedule_bmp_clip] Converted BMP to ${fontblocks.length} FontBlocks`);
 
-          // Phase 1.3: Write FontBlocks to compositor and encode composited result
-          this.write_fontblocks_to_compositor(fontblocks);
-          this.encode_composited_blocks_to_packets(clip.start_pack() + 19, clip.duration() - 19);
+          // CRITICAL: Queue FontBlocks for time-based progressive writing instead of writing immediately
+          // This ensures transitions work by spreading blocks across packets based on their start_pack() values
+          // Matches C++ reference implementation: blocks written only when their scheduled time arrives
+          this.queue_fontblocks_for_progressive_writing(fontblocks);
+
         }
 
         catch (error) {
@@ -1226,6 +1342,74 @@ class CDGMagic_CDGExporter {
    *
    * @param fontblocks Array of FontBlocks to composite
    */
+  /**
+   * Queue FontBlocks for progressive time-based writing
+   *
+   * Instead of writing all blocks to compositor immediately, queue them based on their
+   * start_pack() value. This enables proper transition effects where blocks are revealed
+   * progressively over time (matching C++ reference implementation behavior).
+   *
+   * @param fontblocks Array of FontBlock instances to queue
+   */
+  private queue_fontblocks_for_progressive_writing(fontblocks: any[]): void {
+    for (const fontblock of fontblocks) {
+      const start_pack = fontblock.start_pack();
+      this.internal_fontblock_queue.push({
+        fontblock,
+        start_pack,
+        written: false,
+      });
+    }
+
+    // Sort queue by start_pack for orderly processing
+    this.internal_fontblock_queue.sort((a, b) => a.start_pack - b.start_pack);
+
+    if (CDGMagic_CDGExporter.DEBUG)
+      console.debug(`[queue_fontblocks] Queued ${fontblocks.length} FontBlocks for progressive writing`);
+  }
+
+  /**
+   * Process queued FontBlocks that should be written at current_pack
+   *
+   * Called during packet generation to check which blocks should be rendered.
+   * This implements the C++ encoder's "write blocks whose time has arrived" pattern.
+   *
+   * @param current_pack Current packet position
+   */
+  private process_due_fontblocks(current_pack: number): void {
+    if (!this.internal_compositor || this.internal_fontblock_queue.length === 0) return;
+
+    // Find and write all blocks that should be written by current_pack
+    for (let i = 0; i < this.internal_fontblock_queue.length; i++) {
+      const entry = this.internal_fontblock_queue[i];
+      if (entry.written) continue;  // Already processed
+      if (entry.start_pack > current_pack) break;  // Future blocks (queue is sorted)
+
+      const fontblock = entry.fontblock;
+      const block_x = fontblock.x_location();
+      const block_y = fontblock.y_location();
+      const z_layer = fontblock.z_location();
+
+      // Extract 72 pixels from FontBlock (6×12 tile)
+      const pixel_data = new Uint16Array(72);
+      let idx = 0;
+
+      for (let py = 0; py < 12; py++) {
+        for (let px = 0; px < 6; px++) {
+          const pixel_color = fontblock.pixel_value(px, py);
+          pixel_data[idx++] = pixel_color;
+        }
+      }
+
+      // Write block to compositor at its z-layer
+      this.internal_compositor.write_block(block_x, block_y, z_layer, pixel_data);
+      entry.written = true;
+
+      if (CDGMagic_CDGExporter.DEBUG)
+        console.debug(`[process_due_fontblocks] Wrote block(${block_x},${block_y}) at pack ${current_pack}`);
+    }
+  }
+
   private write_fontblocks_to_compositor(fontblocks: any[]): void {
     if (!this.internal_compositor) return;
 
