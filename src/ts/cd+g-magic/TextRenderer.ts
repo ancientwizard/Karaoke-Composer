@@ -6,10 +6,10 @@
  * with fallback to simple 5x7 bitmap font.
  */
 
-// Pre-rendered font data (lazy loaded)
-let font12: any = null;
-let font18: any = null;
-let font24: any = null;
+// Import font modules at module load time (ESM)
+import * as font12Module from '@/fonts/monospace/12/index';
+import * as font18Module from '@/fonts/monospace/18/index';
+import * as font24Module from '@/fonts/monospace/24/index';
 
 // Font metadata cache
 let fontMetadata: Record<number, any> = {};
@@ -32,26 +32,18 @@ function mapFontSize(fontSize: number): number {
 
 /**
  * Get font module and metadata for a size
+ * All fonts are imported at module load time
  */
 function getFontModule(fontSize: number): any | null {
   const mappedSize = mapFontSize(fontSize);
   try {
     switch (mappedSize) {
       case 12:
-        if (!font12) {
-          font12 = require('@/fonts/monospace/12/index.ts');
-        }
-        return font12;
+        return font12Module;
       case 18:
-        if (!font18) {
-          font18 = require('@/fonts/monospace/18/index.ts');
-        }
-        return font18;
+        return font18Module;
       case 24:
-        if (!font24) {
-          font24 = require('@/fonts/monospace/24/index.ts');
-        }
-        return font24;
+        return font24Module;
       default:
         return null;
     }

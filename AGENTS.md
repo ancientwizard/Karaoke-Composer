@@ -16,7 +16,8 @@ Global defaults
 - Module format: ESM (import/export). Target runtime: Node 18+.
 - Package manager: npm.
 - Line endings: LF. Encoding: UTF-8.
-- Bracing style: place opening brace on the next line (Allman-style).
+- Bracing style: place opening brace on the next line (Allman-style) is prefered for all new code but
+  use whatever is is theer already if it causing you syntax issues. you should be smarter than the brace
 - Indentation: 2 spaces.
 - Maximum line length: 130 characters; wrap instead of truncating.
 - Typing: prefer strict types; use explicit return types on exported functions.
@@ -54,7 +55,7 @@ Guidelines
 - Enforce TypeScript:
   - "All code files must be written as TypeScript in a .ts file.
 - Brace style:
-  - "All code must put starting { on the next line." except onliners and 
+  - "All code must put starting { on the next line." except oneliners and code already on the same line.
 - Tests:
   - "Provide a Jest test file in src/tests/"
 - Code types

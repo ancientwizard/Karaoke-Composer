@@ -30,6 +30,16 @@ export enum KaraokeModes {
 }
 
 /**
+ * Karaoke event types (from C++ CDGMagic_TextClip.h)
+ */
+export enum KaraokeEventType {
+  TEXT_ONLY = 0,      // Single text event (TITLES mode)
+  KARAOKE_ERASE = 1,  // Line erase event (line-by-line mode)
+  KARAOKE_DRAW = 2,   // Line draw event (full text)
+  KARAOKE_WIPE = 3,   // Word highlight wipe event (XOR overlay)
+}
+
+/**
  * Text event information
  */
 export interface TextEventInfo {
@@ -55,6 +65,10 @@ export class CDGMagic_TextClip extends CDGMagic_MediaClip {
   private internal_outline_color: number = 0;
   private internal_text_content: string = "";
   private internal_antialias_mode: number = 1;
+  private internal_border_index: number = 16;           // 16 = disabled (C++ behavior)
+  private internal_memory_preset_index: number = 16;    // 16 = disabled (C++ behavior)
+  private internal_box_index: number = 0;               // Screen clear color (for preset)
+  private internal_frame_index: number = 4;             // Border color
 
   /**
    * Create text clip
@@ -264,6 +278,10 @@ export class CDGMagic_TextClip extends CDGMagic_MediaClip {
     cloned.outline_color(this.internal_outline_color);
     cloned.set_text_content(this.internal_text_content);
     cloned.antialias_mode(this.internal_antialias_mode);
+    cloned.border_index(this.internal_border_index);
+    cloned.memory_preset_index(this.internal_memory_preset_index);
+    cloned.box_index(this.internal_box_index);
+    cloned.frame_index(this.internal_frame_index);
 
     return cloned;
   }
@@ -285,6 +303,10 @@ export class CDGMagic_TextClip extends CDGMagic_MediaClip {
       outline_color: this.internal_outline_color,
       text_content: this.internal_text_content,
       antialias_mode: this.internal_antialias_mode,
+      border_index: this.internal_border_index,
+      memory_preset_index: this.internal_memory_preset_index,
+      box_index: this.internal_box_index,
+      frame_index: this.internal_frame_index,
       ...parent_json,
     };
 
@@ -336,10 +358,100 @@ export class CDGMagic_TextClip extends CDGMagic_MediaClip {
       if (json_obj.antialias_mode !== undefined) {
         this.internal_antialias_mode = json_obj.antialias_mode;
       }
+      if (json_obj.border_index !== undefined) {
+        this.internal_border_index = json_obj.border_index;
+      }
+      if (json_obj.memory_preset_index !== undefined) {
+        this.internal_memory_preset_index = json_obj.memory_preset_index;
+      }
+      if (json_obj.box_index !== undefined) {
+        this.internal_box_index = json_obj.box_index;
+      }
+      if (json_obj.frame_index !== undefined) {
+        this.internal_frame_index = json_obj.frame_index;
+      }
 
       return true;
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * Get border color index
+   * Used for drawing border around screen area
+   * @returns Palette index (0-15, 16 = disabled)
+   */
+  border_index(): number;
+  /**
+   * Set border color index
+   * @param index Palette index
+   */
+  border_index(index: number): void;
+  border_index(index?: number): number | void {
+    if (index === undefined) {
+      return this.internal_border_index;
+    } else {
+      this.internal_border_index = Math.max(0, Math.min(16, index));
+      this.invalidate_graphics_cache();
+    }
+  }
+
+  /**
+   * Get memory preset index
+   * Used for clearing screen to a specific color
+   * @returns Palette index (0-15, 16 = disabled)
+   */
+  memory_preset_index(): number;
+  /**
+   * Set memory preset index
+   * @param index Palette index
+   */
+  memory_preset_index(index: number): void;
+  memory_preset_index(index?: number): number | void {
+    if (index === undefined) {
+      return this.internal_memory_preset_index;
+    } else {
+      this.internal_memory_preset_index = Math.max(0, Math.min(16, index));
+      this.invalidate_graphics_cache();
+    }
+  }
+
+  /**
+   * Get box color index (used for screen clear in preset)
+   * @returns Palette index
+   */
+  box_index(): number;
+  /**
+   * Set box color index
+   * @param index Palette index
+   */
+  box_index(index: number): void;
+  box_index(index?: number): number | void {
+    if (index === undefined) {
+      return this.internal_box_index;
+    } else {
+      this.internal_box_index = Math.max(0, Math.min(15, index));
+      this.invalidate_graphics_cache();
+    }
+  }
+
+  /**
+   * Get frame color index (used for border drawing)
+   * @returns Palette index
+   */
+  frame_index(): number;
+  /**
+   * Set frame color index
+   * @param index Palette index
+   */
+  frame_index(index: number): void;
+  frame_index(index?: number): number | void {
+    if (index === undefined) {
+      return this.internal_frame_index;
+    } else {
+      this.internal_frame_index = Math.max(0, Math.min(15, index));
+      this.invalidate_graphics_cache();
     }
   }
 }
