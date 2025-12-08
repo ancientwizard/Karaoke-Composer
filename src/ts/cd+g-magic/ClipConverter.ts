@@ -78,6 +78,22 @@ function convertTextClip(cmpClip: CMPClip): CDGMagic_TextClip | null {
     textClip.outline_color(data.outlineColor);
   }
 
+  // Set screen clear settings (from boxColor field)
+  // boxColor < 16 means screen clear is enabled with that color
+  // boxColor == 16 means screen clear is disabled
+  if (data.boxColor !== undefined) {
+    textClip.box_index(data.boxColor);
+    textClip.memory_preset_index(data.boxColor); // Same value: if < 16, enabled; if == 16, disabled
+  }
+
+  // Set border settings (from frameColor field)
+  // frameColor < 16 means border is enabled with that color
+  // frameColor == 16 means border is disabled
+  if (data.frameColor !== undefined) {
+    textClip.frame_index(data.frameColor);
+    textClip.border_index(data.frameColor); // Same value: if < 16, enabled; if == 16, disabled
+  }
+
   // Store events for the exporter to process
   if (Array.isArray(data.events)) {
     (textClip as any)._events = data.events;
@@ -108,8 +124,9 @@ function convertBMPClip(cmpClip: CMPClip): CDGMagic_BMPClip | null {
       fill_index: event.fillIndex || 0,
       composite_index: event.compositeIndex || 0,
       should_composite: event.shouldComposite || 0,
-      border_index: event.borderIndex || 0,
-      screen_index: event.screenIndex || 0,
+      border_index: event.borderIndex || 16,          // Default to disabled (16)
+      screen_index: event.screenIndex ?? 16,         // Default to disabled (16)
+      memory_preset_index: event.screenIndex ?? 16,  // Map screenIndex to memory_preset_index
       should_palette: event.shouldPalette || 0,
       transition_file: event.transitionFile || '',
       transition_length: event.transitionLength || 0,
