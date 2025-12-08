@@ -459,8 +459,19 @@ class CDGMagic_CDGExporter {
     this.add_scheduled_packet(clip.start_pack(), this.create_load_low_packet(0, 1, 2, 3, 4, 5, 6, 7));
     this.add_scheduled_packet(clip.start_pack() + 1, this.create_load_high_packet(8, 9, 10, 11, 12, 13, 14, 15));
 
-    // Schedule memory preset
-    this.add_scheduled_packet(clip.start_pack() + 2, this.create_memory_preset_packet(0));
+    // Schedule border preset (only if enabled)
+    const textBorderIndex = clip.border_index();
+    if (textBorderIndex < 16) {
+      const textBorderColor = clip.frame_index();
+      this.add_scheduled_packet(clip.start_pack() + 2, this.create_border_preset_packet(textBorderColor));
+    }
+
+    // Schedule memory preset (only if enabled)
+    const textMemoryIndex = clip.memory_preset_index();
+    if (textMemoryIndex < 16) {
+      const textClearColor = clip.box_index();
+      this.add_scheduled_packet(clip.start_pack() + 3, this.create_memory_preset_packet(textClearColor));
+    }
 
     // Split text into lines
     const lines = textContent.split('\n');
@@ -670,12 +681,25 @@ class CDGMagic_CDGExporter {
           this.add_scheduled_packet(clip.start_pack() + 1, this.create_load_high_packet(8, 9, 10, 11, 12, 13, 14, 15));
 
           // Schedule screen initialization packets (following C++ reference order)
-          // First: set border color to black
-          this.add_scheduled_packet(clip.start_pack() + 2, this.create_border_preset_packet(0));
-          // Then: schedule 16 MEMORY_PRESET packets to clear screen (C++ standard practice)
-          for (let i = 0; i < 16; i++) {
-            const pkt = this.create_memory_preset_packet(0, i);
-            this.add_scheduled_packet(clip.start_pack() + 3 + i, pkt);
+          // First: set border color (only if enabled)
+          let nextOffset = 2;
+          const bmpBorderIndex = bmpEvent.border_index ?? 16;
+          if (bmpBorderIndex < 16) {
+            const bmpBorderColor = bmpEvent.border_index;
+            this.add_scheduled_packet(clip.start_pack() + nextOffset, this.create_border_preset_packet(bmpBorderColor));
+            nextOffset++;
+          }
+
+          // Then: schedule MEMORY_PRESET packets to clear screen (only if enabled)
+          const bmpMemoryIndex = bmpEvent.memory_preset_index ?? 16;
+          if (bmpMemoryIndex < 16) {
+            const bmpClearColor = bmpMemoryIndex;
+            // Schedule 16 MEMORY_PRESET packets as per C++ standard practice
+            for (let i = 0; i < 16; i++) {
+              const pkt = this.create_memory_preset_packet(bmpClearColor, i);
+              this.add_scheduled_packet(clip.start_pack() + nextOffset + i, pkt);
+            }
+            nextOffset += 16;
           }
 
           // Load transition file if available, otherwise use default (sequential) ordering
