@@ -1,0 +1,95 @@
+
+
+// A TEXT based likeness of the UI presented by the CD+G+Magic app on Windows
+//  I believe this is best implemnted as a view/ made of sub-components
+
++------------------------------------------------------------------------------------------------+
+| 💻 BMP Clip Settings                                                                           |
++------------------------------------------------------------------------------------------------+
+| +----------------------------------------------+ +-------------------------------------------+ |
+| | bitmap preview                               | | Initial BMP start + duration filename     | |
+| |                                              | |  (optionally more follow)                 | |
+| |                                              | |                                           | |
+| |                                              | |                                           | |
+| |                                              | |                                           | |
+| |                                              | |                                           | |
+| |                                              | |                                           | |
+| |                                              | |                                           | |
+| |                                              | |                                           | |
+| |                                              | |                                           | |
+| |                                              | |                                           | |
+| |                                              | |                                           | |
+| |                                              | |                                           | |
+| +----------------------------------------------+ |                                           | |
+|                 X: 6, Y: 12                      |                                           | |
+| +-btn------------------------------+             |                                           | |
+| | Load transition...               |  Ani: [X]   |                                           | |
+| +----------------------------------+             |                                           | |
+|                                                  |                                           | |
+| Type: <Drop-Down------>     Comp: << < [N] > >>  |                                           | |
+|  Clr: <drop-down------> Fill Idx: << < [N] > >>  +-------------------------------------------+ |
+| Brdr: <Drop-Down------>   Set Palette? [X]                  Image Squence                      |
+|                                                                                                |
+|+-btn-----+ +-btn--------+ +-btn-------+                 +-btn------+ +-btn--------+            |
+|| Ok      | | Apply All  | | Set Start |                 | Add BMP  | | Remove BMP |            |
+|+---------+ +------------+ +-----------+                 +----------+ +------------+            |
++------------------------------------------------------------------------------------------------+
+
+NOTES:
+ BTN: "Ok" == close
+ BTN: "Apply All"
+ BTN: "Set Start"
+ BTN  "Add BMP"
+ BTN  "Removed BMP" (removed selected but wont remove last, one must always remain)
+
+HOVER: "Image Sequence"
+Bitmap files in this sequence.
+CLick to select, then choose options at the left.
+CRTL+Up/Down: Move selected bitmap earlier/later.
+
+HOVER: "Load transistion"
+Load a transistion file.
+You can create a transition from a grayscale, 300x216 pixel
+gradient image via the tools menu.
+
+HOVER: "Ani" checkbox
+Enable/disable trnsition "animation" preview.
+(Note: Animation speed is approixmate, actual clip will differ)
+
+HOVER: "Type"
+Type of compositioning used for the "transparent" color index.
+Opaque: Replace the current layer, composite index shows
+lower layers.
+Overlay: Composite the current image into the current layer.
+
+HOVER: "Comp"
+Color index that will be "transparent" when compositing.
+
+HOVER: "Clr"
+Optional color index used to clear the screen prior to drawing bitmap.
+
+HOVER: "Fill Idx"
+Color index used to fill area outside of bitmap.
+
+HOVER: "Brdr"
+Optional color index used to set the border prior to drawing
+bitmap.
+
+HOVER: "Set Palette?"
+Enable/disable setting of bitmap palette prior to display.
+(A palette must be set via another clip, or the screen will remain black.)
+
+HOVER: "Apply All"
+Apply the current display settings to all bmps in this sequence.
+CTRL+CLick: Apply the current X/Y offsets to all bitmaps in this sequence.
+
+HOVER: "Set Start"
+Advance to the next event, then set the start time to the current play position.
+
+HOVER: "Add BMP"
+Add another bitmap file to the end of this sequence.
+
+HOVER: "Remove BMP"
+Remove currrently selected bitmap file from this sequence.
+Shortcut: Delete
+

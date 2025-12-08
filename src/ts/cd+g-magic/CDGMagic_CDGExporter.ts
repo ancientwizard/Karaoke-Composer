@@ -48,6 +48,53 @@ enum CDGInstruction {
 const CDG_COMMAND = 0x09;
 
 /**
+ * Calculate top margin (in pixels) based on karaoke mode
+ *
+ * From C++ reference (CDGMagic_TextClip.cpp, lines 284-288):
+ * - TITLES/LYRICS/standard: 12 pixels
+ * - 5-line modes (MODE_5BLNCT, etc.): 24 pixels
+ * - 7/8-line modes (MODE_6MLINE, etc.): 36 pixels
+ * - 4-line mode (MODE_84BLIN): 108 pixels
+ *
+ * @param karaokeMode Karaoke mode enum value
+ * @returns Top margin in pixels
+ */
+function getTopMarginByMode(karaokeMode: number): number {
+  // Based on C++ enums from CDGMagic_TextClip.h
+  // KAR_MODE__5BLNCT = 0x03, KAR_MODE__5BLNFD = 0x04, etc.
+  // KAR_MODE__7MLNCT = 0x07, KAR_MODE__7MLNFD = 0x08
+  // KAR_MODE__6MLINE = 0x09, KAR_MODE__6MPAGE = 0x0A
+  // KAR_MODE__84BLIN = 0x0B
+  
+  switch (karaokeMode) {
+    // 5-line modes: bottom-justified or line-cut/fade
+    case 0x03: // KAR_MODE__5BLNCT
+    case 0x04: // KAR_MODE__5BLNFD
+    case 0x05: // KAR_MODE__5BLINE
+    case 0x06: // KAR_MODE__5BPAGE
+      return 24;
+    
+    // 7-line modes (5 effective): middle-justified, line-cut/fade
+    case 0x07: // KAR_MODE__7MLNCT
+    case 0x08: // KAR_MODE__7MLNFD
+      return 24;
+    
+    // 8-line and 6-line modes: middle-justified
+    case 0x09: // KAR_MODE__6MLINE
+    case 0x0A: // KAR_MODE__6MPAGE
+      return 36;
+    
+    // 4-line mode: bottom-justified
+    case 0x0B: // KAR_MODE__84BLIN
+      return 108;
+    
+    // Default: TITLES (0x00), LYRICS (0x01), KARAOKE (0x02)
+    default:
+      return 12;
+  }
+}
+
+/**
  * CD+G Packet Structure (24 bytes)
  */
 interface CDGPacket {
@@ -474,10 +521,15 @@ class CDGMagic_CDGExporter {
     const lineHeight = blkHeight * 12;
     const linesPerPage = Math.floor(192 / lineHeight);
 
+    // Get top margin based on karaoke mode (from C++ reference)
+    // Different modes have different vertical positioning
+    const topMargin = getTopMarginByMode(karaokeMode);
+
     if (CDGMagic_CDGExporter.DEBUG)
       console.debug(
         `[schedule_text_clip] Font: index=${fontIndex}, size=${fontSize}, ` +
-        `fontPixelHeight=${fontPixelHeight}, lineHeight=${lineHeight}, linesPerPage=${linesPerPage}`
+        `fontPixelHeight=${fontPixelHeight}, lineHeight=${lineHeight}, linesPerPage=${linesPerPage}, ` +
+        `topMargin=${topMargin}`
       );
 
     // C++ PATTERN: Create one full-screen BMP for all lines, positioned at correct Y offsets
@@ -492,8 +544,8 @@ class CDGMagic_CDGExporter {
       if (lineText.length === 0) continue;
 
       // Calculate Y position for this line
-      // y_offset = (line_index % lines_per_page) * line_height + 12
-      const lineYPixels = (lineIdx % linesPerPage) * lineHeight + 12;
+      // C++ formula: y_offset = (line_index % lines_per_page) * line_height + top_margin
+      const lineYPixels = (lineIdx % linesPerPage) * lineHeight + topMargin;
       if (lineYPixels + lineHeight > screenHeight) continue;  // Skip if off-screen
 
       // Calculate text width using actual character widths

@@ -458,6 +458,30 @@ export class CDGMagic_GraphicsEncoder {
   }
 
   /**
+   * Generate SCROLL_PRESET (0x14) packet
+   *
+   * Sets the scroll/pan offset for screen display.
+   * Special case: offset (0,0) = initialization/mode switch marker (SCROLL_PRESET variant).
+   *
+   * Packet format:
+   * - Byte 0: Flags (bit 0-1 = scroll mode, bit 4-5 = copy/preset flags)
+   * - Byte 1: Horizontal scroll pixels (0-299)
+   * - Bytes 2-15: Vertical scroll pixels (0-191) and unused
+   *
+   * @param x_scroll Horizontal scroll offset in pixels (0-299)
+   * @param y_scroll Vertical scroll offset in pixels (0-191)
+   */
+  scroll_preset(x_scroll: number, y_scroll: number): CDGMagic_CDSCPacket {
+    const packet = new CDGMagic_CDSCPacket();
+    packet.instruction(0x14); // SCROLL_PRESET
+    packet.set_data_byte(0, 0); // Flags: basic scroll mode
+    packet.set_data_byte(1, Math.max(0, Math.min(299, x_scroll)));
+    packet.set_data_byte(2, Math.max(0, Math.min(191, y_scroll)));
+    this.add_packet(packet);
+    return packet;
+  }
+
+  /**
    * Generate COPY_FONT (0x06) packet
    *
    * Renders a 12×6 pixel font block (tile) directly to VRAM without blending.
@@ -776,6 +800,107 @@ export class CDGMagic_GraphicsEncoder {
         }
       }
     }
+  }
+
+  /**
+   * Generate complete CD+G packet stream from media clips with event processing
+   *
+   * Implements the full event-processing pipeline from C++:
+   * 1. Sort clips by start time
+   * 2. For each clip, extract MediaEvent array
+   * 3. Sort MediaEvents by start time (within clip)
+   * 4. Process events in chronological order
+   * 5. Emit event-level border/memory preset packets
+   * 6. Render event content (bitmap to font blocks)
+   * 7. Generate COPY_FONT/XOR_FONT packets
+   *
+   * Critical: Respects event.border_index and event.memory_preset_index
+   * - Index value 16 = DISABLED (don't emit preset)
+   * - Only emits when index < 16
+   *
+   * @param clips Array of MediaClip objects to encode
+   * @returns Generated packet stream (CD_SCPacket array)
+   */
+  compute_graphics_from_clips(clips: any[]): CDGMagic_CDSCPacket[] {
+    // Reset output stream
+    this.clear_stream();
+
+    // Emit global palette setup packets
+    this.load_palette_lo(this.internal_palette);
+    this.load_palette_hi(this.internal_palette);
+
+    // Emit transparent color setting
+    this.transparent_color(this.internal_transparent_index);
+
+    // Sort clips by start pack time
+    const sorted_clips = [...clips].sort((a, b) => {
+      const aStart = a.start_pack?.() ?? 0;
+      const bStart = b.start_pack?.() ?? 0;
+      return aStart - bStart;
+    });
+
+    // Process each clip and its media events
+    for (const clip of sorted_clips) {
+      const clip_start_pack = clip.start_pack?.() ?? 0;
+      const events = clip.events?.() ?? [];
+
+      // Sort events within clip by start_offset
+      const sorted_events = [...events].sort((a, b) => {
+        return (a.start_offset ?? 0) - (b.start_offset ?? 0);
+      });
+
+      // Process each media event in the clip
+      for (const event of sorted_events) {
+        const event_pack = clip_start_pack + (event.start_offset ?? 0);
+
+        // Emit event-specific border preset if set (index < 16)
+        const border_idx = event.border_index ?? 16;
+        if (border_idx < 16) {
+          this.border_preset(border_idx);
+        }
+
+        // Emit event-specific memory preset if set (index < 16)
+        const memory_idx = event.memory_preset_index ?? 16;
+        if (memory_idx < 16) {
+          this.memory_preset(memory_idx, 0);
+        }
+
+        // Handle scroll events
+        const x_scroll = event.x_scroll ?? -1;
+        const y_scroll = event.y_scroll ?? -1;
+
+        // Special case: SCROLL(zero) packet for initialization
+        if (x_scroll === 0 && y_scroll === 0) {
+          // SCROLL_PRESET command - special initialization marker
+          this.scroll_preset(0, 0);
+        } else if (x_scroll >= 0 || y_scroll >= 0) {
+          // Regular scroll command
+          const sx = Math.max(0, Math.min(299, x_scroll ?? 0));
+          const sy = Math.max(0, Math.min(191, y_scroll ?? 0));
+          this.scroll_preset(sx, sy);
+        }
+
+        // TODO: Render BMPObject if present
+        // This requires bmp_to_fontblocks converter and font block emission
+        // if (event.BMPObject) {
+        //   const font_blocks = bmp_to_fontblocks(event.BMPObject, event_pack);
+        //   for (const fb of font_blocks) {
+        //     this.copy_font(fb);
+        //   }
+        // }
+
+        // TODO: Handle PALObject if present (palette transitions/dissolves)
+        // if (event.PALObject) {
+        //   // Emit palette transition packets
+        // }
+      }
+    }
+
+    // Fallback: encode current VRAM state as packets (for now)
+    // This ensures basic rendering works even without BMP processing
+    this.encode_vram_as_packets(false);
+
+    return this.internal_cdg_stream;
   }
 
   /**

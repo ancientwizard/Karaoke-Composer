@@ -1,0 +1,162 @@
+
+// A TEXT based likeness of the UI presented by the CD+G+Magic app on Windows
+//  I believe this is best implemnted as a view/ made of sub-components
+
++------------------------------------------------------------------------------------------------+
+| 💻 CD+G Tile/Lyrics Editing                                                                    |
++------------------------------------------------------------------------------------------------+
+| User enters text in this               |                                          |   Cur Pos  |
+|  text area                             |            User text displays            |            |
+|                                        |               here based on              |    Ln: 1   |
+|                                        |             configuration below          |    Pg: 1   |
+|                                        |                                          |    Rw: 1   |
+|                                        |                                          |            |
+|                                        |                                          |            |
+|                                        |                                          |            |
+|                                        |                                          |            |
+|                                        |------------------------------------------+            |
+|                                        |                X: 6, Y: 23                            |
+|                                        |                                                       |
+|                                        |  <CONTROL AREA BELOW>                                 |
+|                                        |                                                       |
+|                                        |                                                       |
+|                                        |                                                       |
+|                                        |                                                       |
+|                                        |                                                       |
+|                                        |                                                       |
+|                                        |                                                       |
+|                                        |                                                       |
++----------------------------------------+                                                       |
+|+-btn-----+ +-btn--------+ +-btn-------+                                                        |
+|| Ok      | | Fix Timing | | Set Start |                                                        |
+|+---------+ +------------+ +-----------+                                                        |
++------------------------------------------------------------------------------------------------+
+
+NOTES:
+ BTN: "Ok" == close
+ BTN: "Fix Timing"
+ BTN: "Set Start"
+
+HOVER: "Fix Timing"
+Attempt to automatically set best draw/erase times based on the wipe timing.
+CTRL-Click: Also set consecutive durations based on their start time.
+SHIFT-Click: Alternate style line-by-line draw/erase timing.
+(Note: Karaoke Mode ONLY / May or may not work well.)
+
+HOVER: "Set Start"
+Advance to next event, then set the start time to the current play position.
+CTRL (when focused): Set the end time of the current wipe in karakoe mode.
+Shortcut: F9
+
++-- CONTROL AREA -----------------------------------+
+| +-btn---------+                      +-btn------+ |
+| | Render Text |  BMP: << < [N] > >>  |  Play    | |
+| +-------------+                      +----------+ |
+| Font Face: <Drop-Down------------->    AA: [X]    |
+| Font Size: << < [N] > >>      Type: <Drop-Down->  |
+|   Sq Size: << < [N] > >>      Wipe: <Drop-Down->  |
+|  Rnd Size: << < [N] > >>   Palette: <Drop-Down->  |
+|    Fg Idx: << < [N] > >>    Ol Idx: << < [N] > >> |
+|    Bg Idx: << < [N] > >>   Box Idx: << < [N] > >> |
+|   Fil Idx: << < [N] > >>   Frm Idx: << < [N] > >> |
+|  Comp Idx: << < [N] > >>  [X] Comp?  Bw: <drop-dn>|
++---------------------------------------------------+
+
+HOVER: "Render Text"
+Render the current text using the current settings.
+(You must do this after making changes to the options below.)
+Shortcut: CTL-Enter
+
+HOVER: "BMP"
+Current line/word preview.
+
+HOVER: "Play"
+Set word display to 1,
+Start audio playback from clip begining,
+Focus Set Start button to begin timing.
+Shortcut: F12
+
+HOVER: "Font Face"
+Font face style/name.
+ B: Bold
+ I: Italic
+ P: Bold and Italic
+
+  Get the  FONT face list from the code. It's very long and may
+  very well look it up from the system. So its whatever the system has installed and offers
+
+HOVER: "AA"         
+Enable/display simeple antialiasing.
+(Uses color index forground + 1.)
+
+HOVER: "Font Size"
+Size/height of font in pixels
+
+HOVER: "Type"
+Tiles: Multiline, single page text. (No highlight.)
+Lyrics: Single line, multi-page text. (No highlight.)
+Karaoke: Multi-line, multi-page text and highlighting.
+(5 = 36 pixel high lines, 8 = 24 pixel high lines.)
+(Line = When Line finished, erase and draw next.)
+(Page = When page finished, clear screen and draw next.)
+(Cut/Fade = Line by line, no visible drawing. [Very Experimental!]
+
+HOVER: "Sq Size"
+Size (width) of square text outline.
+
+HOVER: "Wipe"
+Karaoke highlight.wipe area.
+None: Don't XOR anything.
+Text: Only the forground text index will be XORed.
+Outline: Only the outline index will be XORed.
+Both: Both forground text and outline will be XORed.
+
+HOVER: "Rnd Size"
+Size (width) of rounded text outline.
+
+HOVER: "Palette"
+Predefined palette to set at the beginning of the clip.
+None: Don't set palette. (A palette must be set via another clip
+or screen will remain black.)
+Preset <X>: Predefined palettes that may (or may not) work well
+for karaoke.
+
+HOVER: "Fg Idx"
+Foreground (main index) color index.
+
+HOVER: "Ol Idx"
+Text Outline color index.
+
+HOVER: "Bg Idx"
+Background (behind text, outline, box, and frame) color index.
+(In karaoke mode, it is recommended to set this to the Box idx.)
+
+HOVER: "Box Idx"
+Tiles Mode (0-15): Memory Preset color index.
+Tiles Mode (16-255): Disable Memort Preset.
+Lyrics Mode: Box color index.
+Karaoke Mode (0-15): Memory & Border Preset Index.
+Karaoke Mode (16-255): Disable Memory & Border Preset
+
+HOVER: "Fill Idx"
+Fill (area outside text rendering) color index.
+
+HOVER: "Frm Idx"
+Tiles Mode (0-15): Border Preset color index.
+Tiles Mode (16-255): Disable Border Preset.
+Lyrics Mode: Frame color index.
+Karaoke Mode: Wipe/Highlighting XOR index.
+(Example: Indicies 0 to 3 XOR 4 = indicies 4 to 7)
+
+HOVER: "Comp Idx"
+Composite (transparent) color index.
+
+HOVER: "Comp?" check box
+Enable Disable compositing of composit color index.
+(When deselected the entire clip is opaque.)
+
+HOVER: "Bw"  (bandwidth)
+Karaoke highlight/wipe banwidth.
+Maximum abount of bandwith used for karaoke highlighting.
+Slower songs can use more bandwidth for smoother highlight.
+

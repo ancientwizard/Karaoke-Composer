@@ -1,0 +1,80 @@
+// A TEXT based likeness of the UI presented by the CD+G+Magic app on Windows
+//  I believe this is best implemented as a view/
+
++-------------------------------------------------------------------------------------------------------------------------------------------+
+| 💻 CD+Graphics Magic                                                                                                                      |
++-------------------------------------------------------------------------------------------------------------------------------------------+
+| <F>ile  <T>ools  <W>indow  <H>elp                                                                                                         |
++-------------------------------------------------------------------------------------------------------------------------------------------+
+|  /---------------------\    | ...  narrow strip with two hoz lines with 1sec tick marks between bottom and center <see illustration>      |
+|  | 00:00.00            |    |-------------------------------------------------------------------------------------------------------------|
+|  \---------------------/    | ... audio wave form? black background with lightgreen centerline                                            |
+|                             |                                                                                                             |
+|  +-btn--------------+       |-------------------------------------------------------------------------------------------------------------|
+|  | <i> Play / Pause |       | ... appears empty                                                                                           |
+|  +------------------+       |                                                                                                             |
+|                             |-------------------------------------------------------------------------------------------------------------|
+|  +-btn--------------+   *1  |  ONE of EIGHT "layers" new items land here until the user drags to another layer                            |
+|  |  Recalculate     |       |   (this should be a component but I've adequately described it)                                             |
+|  +------------------+       |-------------------------------------------------------------------------------------------------------------|
+|                         *1  |  TWO of EIGHT                                                                                               |
+|                             |                                                                                                             |
+|  +-btn--------------+       |-------------------------------------------------------------------------------------------------------------|
+|  |   Add Text...    |   *1  |  THREE of EIGHT                                                                                             |
+|  +------------------+       |                                                                                                             |
+|                             |-------------------------------------------------------------------------------------------------------------|
+|  +-btn--------------+   *1  |  FOUR of EIGHT                                                                                              |
+|  |   Add BMP...     |       |                                                                                                             |
+|  +------------------+       |-------------------------------------------------------------------------------------------------------------|
+|                         *1  |  FIVE of EIGHT                                                                                              |
+|                             |                                                                                                             |
+|  +-btn--------------+       |-------------------------------------------------------------------------------------------------------------|
+|  |   Set WAVE...    |   *1  |  SIX of EIGHT                                                                                               |
+|  +------------------+       |                                                                                                             |
+|                             |-------------------------------------------------------------------------------------------------------------|
+|  +-btn--------------+   *1  |  SEVEN of EIGHT                                                                                             |
+|  |  Export CDG...   |       |                                                                                                             |
+|  +------------------+       |-------------------------------------------------------------------------------------------------------------|
+|                         *1  |  EIGHT of EIGHT                                                                                             |
+|SR:+-choice----------+       |                                                                                                             |
+|   |  <see below>    |       |-------------------------------------------------------------------------------------------------------------|
+|   +-----------------+       | ... Horz scroll ...                                                                                         |
++-------------------------------------------------------------------------------------------------------------------------------------------+
+
+NOTES:
+ Playback Counter HH::MM.SS
+ Playback position is marked by a virtical blue line that intersects the whole hight of the RIGHT-SIDE content
+   starting at the top of the narrow strip and ending at the top of the scroll bar
+
+ BTN: Play / Pause "obvious"
+ BTN: Recalculate <hover> == "Recalculate the preview to reflect the current timeline layout"
+ BTN: Add Text...
+      seems to add an empty "text" object to the first row but then it can be dragged to another row
+ BTN: Add BMP...
+      opens a file chooser and places it in the first row. but then can be dragged to another row.
+ BTN: Set Wave...
+      opens a file chooser to select the audio file for the project
+ BTN: Export CDG
+      opens file chooser to set where to render .cdg
+ CHOOSE: <Sample-Rate>
+   22,050 Hz
+   32,000 Hz
+   44,100 Hz <default>
+   48,000 Hz
+
+ *1 - Mask & Track Selector (not fully implemented) Defaults to track zero
+     +--------+
+     |  Mask  |
+     | - N +  | <0-15>
+     +--------+
+
+  Hover "MASK" ==
+"Static Track Font Mask
+(Not Yet implemented)"
+
+  Hover "N"    ==
+"Channel (0-15) Note not fully implemented!
+If placing content on channels other than 0,
+please verify the outpuyt using a third party player"
+
+

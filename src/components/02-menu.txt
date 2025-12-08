@@ -1,0 +1,39 @@
+
+// A TEXT based likeness of the UI presented by the CD+G+Magic app on Windows
+//  I believe this is best implemented as a component/ (but there is only one or used N times for each)
+//   (the UI will look a bifferetne as it WEB not WIndows UI based)
+
++-------------------------------------------------------------------------------------------------------------------------------------------+
+| <F>ile  <T>ools  <W>indow  <H>elp                                                                                                         |
++-------------------------------------------------------------------------------------------------------------------------------------------+
+
+
+FILE:
++----------------+
+| <N>ew Project  |
+| <O>pen Project | ctl-o
++----------------+
+| <S>ave Project | clt-s
+| Save Project as|
++----------------+
+| Exit           |
++----------------+
+
+TOOLS:
++--------------------------------+
+| <B>MP Gradent to Transition... |
++--------------------------------+
+  Aparently a utility to read a BMP that is to be used as a gradiant
+  which outputs a .cmp; opens a file chooser to pick a CMP
+  and in turn opens a filechooser to write a .cmp
+
+WINDOW:
++----------------+
+| <Pr>eview      |  opens the preview window if you have closed it
++----------------+
+
+HELP:
++----------------+
+| <A>bout        |  Obvious
++----------------+
+
