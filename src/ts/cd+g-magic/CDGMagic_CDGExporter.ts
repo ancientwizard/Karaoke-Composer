@@ -485,28 +485,55 @@ class CDGMagic_CDGExporter {
     const lineHeight = blkHeight * 12;
     const linesPerPage = Math.floor(192 / lineHeight);
 
-    // Extract positioning from CMP events (first event defines text position)
-    // These are explicit pixel coordinates from the user's editing (x=left, y=top)
+    // Extract positioning based on karaoke mode
+    // MODE_0 (TITLES): computed layout using lines_per_page formula
+    // Other modes: explicit xOffset/yOffset from CMP events
     const events = (clip as any)._events || [];
     const firstEvent = events.length > 0 ? events[0] : null;
-    let textXOffset = 6;     // Default: left margin = 6 pixels
-    let textYOffset = 12;    // Default: top margin = 12 pixels
+    let textXOffset: number;
+    let textYOffset: number;
+    let useComputedLayout = false;
 
-    if (firstEvent) {
-      if (firstEvent.xOffset !== undefined && firstEvent.xOffset !== null) {
-        textXOffset = Number(firstEvent.xOffset) || 6;
+    // KaraokeModes.MODE_0 = TITLES (default, uses computed layout)
+    if (karaokeMode === 0) {
+      // Computed layout: x=6 (left margin), y uses formula per line
+      textXOffset = 6;  // Left margin per C++ line 341
+      useComputedLayout = true;
+      textYOffset = 12; // Base offset (will be computed per line in loop)
+
+      if (CDGMagic_CDGExporter.DEBUG)
+        console.debug(`[schedule_text_clip] Using TITLES mode (karaoke_mode=0) computed layout`);
+    } else {
+      // Other karaoke modes: use explicit xOffset/yOffset from CMP events
+      textXOffset = 6;  // Default if not specified
+      textYOffset = 12; // Default if not specified
+
+      if (firstEvent) {
+        if (firstEvent.xOffset !== undefined && firstEvent.xOffset !== null) {
+          textXOffset = Number(firstEvent.xOffset) || 6;
+        }
+        if (firstEvent.yOffset !== undefined && firstEvent.yOffset !== null) {
+          textYOffset = Number(firstEvent.yOffset) || 12;
+        }
       }
-      if (firstEvent.yOffset !== undefined && firstEvent.yOffset !== null) {
-        textYOffset = Number(firstEvent.yOffset) || 12;
-      }
+
+      if (CDGMagic_CDGExporter.DEBUG)
+        console.debug(
+          `[schedule_text_clip] Using karaoke_mode=${karaokeMode} with explicit offsets: x=${textXOffset}, y=${textYOffset}`
+        );
     }
 
-    if (CDGMagic_CDGExporter.DEBUG)
-      console.debug(
-        `[schedule_text_clip] Font: index=${fontIndex}, size=${fontSize}, ` +
-        `fontPixelHeight=${fontPixelHeight}, lineHeight=${lineHeight}, linesPerPage=${linesPerPage}, ` +
-        `textXOffset=${textXOffset}, textYOffset=${textYOffset}`
-      );
+    if (CDGMagic_CDGExporter.DEBUG) {
+      if (useComputedLayout) {
+        console.debug(
+          `[schedule_text_clip] TITLES mode: fontPixelHeight=${fontPixelHeight}, lineHeight=${lineHeight}, linesPerPage=${linesPerPage}`
+        );
+      } else {
+        console.debug(
+          `[schedule_text_clip] Mode ${karaokeMode}: textXOffset=${textXOffset}, textYOffset=${textYOffset}`
+        );
+      }
+    }
 
     // C++ PATTERN: Create one full-screen BMP for all lines, positioned at correct Y offsets
     const screenWidth = 288;
@@ -519,8 +546,16 @@ class CDGMagic_CDGExporter {
       const lineText = lines[lineIdx] || '';
       if (lineText.length === 0) continue;
 
-      // Calculate Y position for this line: textYOffset + (line_index * line_height)
-      const lineYPixels = textYOffset + (lineIdx * lineHeight);
+      // Calculate Y position based on layout mode
+      let lineYPixels: number;
+      if (useComputedLayout) {
+        // TITLES mode: y_offset = (line_index % lines_per_page) * line_height + 12
+        lineYPixels = (lineIdx % linesPerPage) * lineHeight + 12;
+      } else {
+        // Other modes: y_offset = textYOffset + (line_index * line_height)
+        lineYPixels = textYOffset + (lineIdx * lineHeight);
+      }
+
       if (lineYPixels + lineHeight > screenHeight) continue;  // Skip if off-screen
 
       // X position is explicit from CMP xOffset
