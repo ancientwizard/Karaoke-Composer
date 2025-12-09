@@ -94,6 +94,21 @@ function convertTextClip(cmpClip: CMPClip): CDGMagic_TextClip | null {
     textClip.border_index(data.frameColor); // Same value: if < 16, enabled; if == 16, disabled
   }
 
+  // Set composite color and mode for transparency
+  // compositeColor is the transparent color index (can be any 0-15+)
+  // shouldComposite controls compositing mode: 0=none, 1=replacement, 2=overlay
+  if (data.compositeColor !== undefined) {
+    (textClip as any)._composite_color = data.compositeColor;
+  }
+  if (data.shouldComposite !== undefined) {
+    (textClip as any)._should_composite = data.shouldComposite;
+  }
+
+  // Set fill color (for areas outside text rectangle)
+  if (data.fillColor !== undefined) {
+    (textClip as any)._fill_color = data.fillColor;
+  }
+
   // Store events for the exporter to process
   if (Array.isArray(data.events)) {
     (textClip as any)._events = data.events;

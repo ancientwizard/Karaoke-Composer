@@ -539,7 +539,27 @@ class CDGMagic_CDGExporter {
     const screenWidth = 288;
     const screenHeight = 216;  // Full CD+G height
     const screenBmpPixels = new Uint8Array(screenWidth * screenHeight);
-    screenBmpPixels.fill(backgroundColor);
+    // IMPORTANT: Only fill the text rectangle area, NOT the entire screen
+    // The text rectangle is bounded by (textXOffset, textYOffset, textWidth, textHeight)
+    // Get rectangle dimensions from first event
+    const rectWidth = firstEvent?.width || screenWidth;
+    const rectHeight = firstEvent?.height || (lineHeight * lines.length);
+    const rectBottom = textYOffset + rectHeight;
+
+    if (CDGMagic_CDGExporter.DEBUG) {
+      console.debug(
+        `[schedule_text_clip] Text rectangle: x=${textXOffset}, y=${textYOffset}, w=${rectWidth}, h=${rectHeight}`
+      );
+    }
+
+    // FILL ONLY the text rectangle with backgroundColor
+    // This creates the background color area for the text
+    for (let y = textYOffset; y < Math.min(rectBottom, screenHeight); y++) {
+      for (let x = 0; x < rectWidth; x++) {
+        const pixelIndex = y * screenWidth + x;
+        screenBmpPixels[pixelIndex] = backgroundColor;
+      }
+    }
 
     // Render each line at its vertical offset
     for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
@@ -655,6 +675,29 @@ class CDGMagic_CDGExporter {
       console.debug(
         `[schedule_text_clip] Converted ${lines.length} lines to ${fontblocks.length} FontBlocks`
       );
+
+    // Apply composite color and mode to all FontBlocks
+    const compositeIndex = (clip as any)._composite_color || 0;
+    const shouldComposite = (clip as any)._should_composite || 0;
+
+    if (shouldComposite > 0 && compositeIndex < 16) {
+      for (const fontblock of fontblocks) {
+        if (shouldComposite === 1) {
+          // Replacement mode: compositeIndex becomes transparent
+          fontblock.replacement_transparent_color(compositeIndex);
+        } else if (shouldComposite === 2) {
+          // Overlay mode: compositeIndex is overlaid
+          fontblock.overlay_transparent_color(compositeIndex);
+        }
+      }
+
+      if (CDGMagic_CDGExporter.DEBUG) {
+        console.debug(
+          `[schedule_text_clip] Applied composite color ${compositeIndex} ` +
+          `with mode ${shouldComposite} to ${fontblocks.length} FontBlocks`
+        );
+      }
+    }
 
     // Queue FontBlocks
     this.queue_fontblocks_for_progressive_writing(fontblocks);
