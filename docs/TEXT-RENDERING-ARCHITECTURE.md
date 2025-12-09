@@ -6,7 +6,16 @@ Text clips are NOT simple full-screen rendering. Each text event defines:
 - **Position**: (xOffset, yOffset) = top-left corner in pixels
 - **Dimensions**: (width, height) = rectangle for text rendering (width typically 288=full, height varies by line)
 - **Text content**: Actual text string
-- **Karaoke mode**: TITLES (0), or computed layout modes (100, 12, etc.)
+
+### Positioning Model
+
+All karaoke modes use the SAME positioning model:
+- **xOffset, yOffset** from CMP events are the FINAL computed positions
+- NO formula-based layout needed - CMP already has the positions
+- For single-event clips: all lines use the same position
+- For multi-event clips: each event corresponds to one line with its own position
+
+This greatly simplifies rendering: just read x/y from events and use directly!
 
 ## Color Settings (from CMP / UI)
 
@@ -23,60 +32,56 @@ Per text clip, controlled via CMP data and UI dialog:
   - 1 = replacement mode (composite color becomes transparent)
   - 2 = overlay mode (composite color is overlaid)
 
-## Layout Behavior
+## Text Rectangle Rendering
 
-### TITLES Mode (karaoke_mode=0)
-- Computed Y position: `(line_num % lines_per_page) * line_height + top_margin`
-- Uses explicit xOffset from CMP event
+✅ **IMPLEMENTED:**
+1. Text rectangle is bounded at (xOffset, yOffset) with (width, height) dimensions
+2. backgroundColor only fills the rectangle area, NOT the entire screen
+3. Compositing modes (replacement/overlay) control transparency handling
+4. Multi-event clips each get their own line positioning
 
-### Other Karaoke Modes (12, 100, etc.)
-- Pattern-based layout based on mode
-- May use explicit x/y or computed positioning
-- Need C++ reference for each mode's specific formula
+## Key Implementation Details
 
-## Key Implementation Points
+### BMP to FontBlocks Pipeline
+1. Create full-screen BMP (288×216) for font rendering
+2. Fill ONLY the text rectangle with backgroundColor (not entire screen)
+3. Render text characters into rectangle using pre-rendered font data
+4. Convert BMP to 6×12 FontBlocks using tile grid
+5. Apply composite color modes to each FontBlock
+6. Schedule FontBlocks with transition ordering for progressive rendering
 
-1. **Text rectangles are NOT full-screen**
-   - Render text at (xOffset, yOffset) position
-   - Rectangle size is (width, height) from event
-   - backgroundColor fills inside rectangle only
-   - fillColor may fill areas outside (if defined)
-
-2. **Transparency handling**
-   - compositeColor is the transparent color index
-   - Only transparent if shouldComposite > 0
-   - Mode 1: replacement (color becomes transparent)
-   - Mode 2: overlay (color overlaid on background)
-
-3. **Multiple color rendering**
-   - Text foreground color
-   - Text outline color
-   - Separate colors for each element
-
-4. **Layering / Compositing**
-   - Composite clips at same time provide background colors for duets
-   - Duet clips render text on top of composite backgrounds
-   - This is how dual-color lyric areas work
+### Composite Color Handling
+- Mode 0: No transparency (opaque)
+- Mode 1: Replacement mode - set compositeColor pixels as transparent
+- Mode 2: Overlay mode - overlay compositeColor onto background
 
 ## Reference Materials
 
 - C++ reference: `/reference/cd+g-magic/CDG_Magic/Source/`
-  - CDGMagic_TextClip.cpp (lines 341-342, 470-471 for layout)
-  - CDGMagic_GraphicsEncoder.cpp (lines 593-594 for transparency)
-  - CDGMagic_BMPObject.cpp (composite_index and xor_bandwidth)
+  - CDGMagic_TextClip.cpp (lines 341-342 for x/y offset positioning)
+  - CDGMagic_GraphicsEncoder.cpp (lines 593-594 for transparency modes)
+  - CDGMagic_BMPObject.cpp (composite handling)
 
 - UI description: `src/components/03-textclip-dialog.txt`
   - Shows UI layout and control meanings
-  - Explains each setting's purpose and behavior
+  - Explains each setting's purpose
 
 - CMP inspection: `tmp/inspect-cmp-offsets.ts`
-  - Shows actual CMP data structure
-  - Displays all properties for each clip
+  - Shows actual CMP data structure with all properties per clip
 
-## Next Steps
+## What's Left To Do
 
-1. Refactor text rendering to use text rectangles at explicit (x,y) positions
-2. Implement proper composite color transparency based on shouldComposite mode
-3. Handle backgroundColor fill inside rectangle only (not full-screen)
-4. Implement fillColor for areas outside text (if needed)
-5. Test with multi-event clips and different karaoke modes
+1. ⏳ Fill color for areas outside text rectangle (probably not critical)
+2. ⏳ Border rendering with rounded corners (separate feature)
+3. ⏳ Text outline/stroke rendering (may already be working via foregroundColor)
+4. ⏳ Transition smooth reveals (investigate if working correctly)
+5. ⏳ Test text clarity and readability with fonts matching reference size
+
+## Known Working
+
+✅ Text rectangle bounds (not full-screen)
+✅ Event-based positioning (simple and correct)
+✅ Composite color transparency with modes 1 & 2
+✅ Multi-line text with per-line positioning
+✅ Multi-event karaoke clips
+
