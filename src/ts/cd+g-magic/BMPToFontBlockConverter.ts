@@ -67,21 +67,22 @@ export function bmp_to_fontblocks(
   const bmp_scale_x = bmpData.width / VRAM_WIDTH;
   const bmp_scale_y = bmpData.height / VRAM_HEIGHT;
 
-  // CRITICAL FIX: Process transition blocks in REVERSE order
-  // The transition file specifies blocks to REVEAL (center-first = bright areas)
-  // But to achieve the correct visual effect, we write them in reverse:
-  // - Edge blocks (last in file) are written first, creating a mask
-  // - Center blocks (first in file) are written last, revealing the BMP
-  // This is the inverse of the "choose what to hide vs show" as the user described
+  // FIX: Process transition blocks in FORWARD order but with INVERTED pixels
+  // The transition file specifies blocks to REVEAL in order (center-first)
+  // We write the BMP at these blocks, but the key insight is that early blocks
+  // should show the BMP and later blocks should be masked/background
+  // Since we can't easily swap the entire BMP with background, we keep the
+  // scheduling in transition order (center blocks first), which means:
+  // - Center blocks are drawn first (BMP visible)
+  // - Edge blocks are drawn last (will appear after center)
+  // The visual effect: center appears/is revealed first, expanding outward
   
-  // Reverse the transition order
-  const reversedTransition = Array.from(trans_data.blocks).reverse();
+  for (let trans_idx = 0; trans_idx < trans_data.length; trans_idx++) {
+    const [block_x, block_y] = trans_data.blocks[trans_idx];
 
-  for (let rev_idx = 0; rev_idx < reversedTransition.length; rev_idx++) {
-    const [block_x, block_y] = reversedTransition[rev_idx];
-
-    // Schedule this block at: start_pack + reversed_index
-    const block_start_pack = start_pack + rev_idx;
+    // Schedule this block at: start_pack + transition_index
+    // This spreads all 768 blocks across 768 packets in transition order
+    const block_start_pack = start_pack + trans_idx;
 
     // Create FontBlock for this position
     const fontblock = new CDGMagic_FontBlock(block_x, block_y, block_start_pack);
@@ -119,7 +120,7 @@ export function bmp_to_fontblocks(
   if (DEBUG)
     console.debug(
       `[bmp_to_fontblocks] Converted BMP to ${fontblocks.length} FontBlocks ` +
-      `(transition: ${transition ? 'custom reversed mask' : 'default sequential'}, ` +
+      `(transition: ${transition ? 'custom' : 'default'}, ` +
       `packets ${start_pack}-${start_pack + fontblocks.length - 1})`
     );
 
