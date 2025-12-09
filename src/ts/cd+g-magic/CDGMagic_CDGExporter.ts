@@ -526,12 +526,37 @@ class CDGMagic_CDGExporter {
       );
     }
 
-    // FILL ONLY the text rectangle with backgroundColor
-    // This creates the background color area for the text
-    for (let y = textYOffset; y < Math.min(rectBottom, screenHeight); y++) {
-      for (let x = 0; x < rectWidth; x++) {
-        const pixelIndex = y * screenWidth + x;
-        screenBmpPixels[pixelIndex] = backgroundColor;
+    // Handle rectangle fill based on compositing mode
+    // If shouldComposite > 0: compositing enabled, area outside text is TRANSPARENT
+    // If shouldComposite == 0: entire clip is OPAQUE, fill with backgroundColor
+    const shouldComposite = (clip as any)._should_composite || 0;
+    const compositeIndex = (clip as any)._composite_color || 0;
+    
+    if (shouldComposite === 0) {
+      // Opaque mode: fill entire rectangle with backgroundColor
+      for (let y = textYOffset; y < Math.min(rectBottom, screenHeight); y++) {
+        for (let x = 0; x < rectWidth; x++) {
+          const pixelIndex = y * screenWidth + x;
+          screenBmpPixels[pixelIndex] = backgroundColor;
+        }
+      }
+      if (CDGMagic_CDGExporter.DEBUG) {
+        console.debug(`[schedule_text_clip] Opaque mode: filled rectangle with backgroundColor=${backgroundColor}`);
+      }
+    } else {
+      // Compositing enabled: text is transparent outside rendering area
+      // Fill with compositeIndex to mark as transparent
+      const transparentFillColor = compositeIndex < 16 ? compositeIndex : 16;
+      for (let y = textYOffset; y < Math.min(rectBottom, screenHeight); y++) {
+        for (let x = 0; x < rectWidth; x++) {
+          const pixelIndex = y * screenWidth + x;
+          screenBmpPixels[pixelIndex] = transparentFillColor;
+        }
+      }
+      if (CDGMagic_CDGExporter.DEBUG) {
+        console.debug(
+          `[schedule_text_clip] Compositing mode: filled rectangle with transparent color ${transparentFillColor}`
+        );
       }
     }
 
@@ -662,10 +687,8 @@ class CDGMagic_CDGExporter {
       );
 
     // Apply composite color and mode to all FontBlocks
-    const compositeIndex = (clip as any)._composite_color || 0;
-    const shouldComposite = (clip as any)._should_composite || 0;
-
     if (shouldComposite > 0 && compositeIndex < 16) {
+      // Set the composite index as transparent in all FontBlocks
       for (const fontblock of fontblocks) {
         if (shouldComposite === 1) {
           // Replacement mode: compositeIndex becomes transparent
@@ -679,6 +702,22 @@ class CDGMagic_CDGExporter {
       if (CDGMagic_CDGExporter.DEBUG) {
         console.debug(
           `[schedule_text_clip] Applied composite color ${compositeIndex} ` +
+          `with mode ${shouldComposite} to ${fontblocks.length} FontBlocks`
+        );
+      }
+    } else if (shouldComposite > 0 && compositeIndex >= 16) {
+      // Composite enabled but index >= 16: use index 16 as transparent
+      for (const fontblock of fontblocks) {
+        if (shouldComposite === 1) {
+          fontblock.replacement_transparent_color(16);
+        } else if (shouldComposite === 2) {
+          fontblock.overlay_transparent_color(16);
+        }
+      }
+
+      if (CDGMagic_CDGExporter.DEBUG) {
+        console.debug(
+          `[schedule_text_clip] Applied composite color 16 (default transparent) ` +
           `with mode ${shouldComposite} to ${fontblocks.length} FontBlocks`
         );
       }
