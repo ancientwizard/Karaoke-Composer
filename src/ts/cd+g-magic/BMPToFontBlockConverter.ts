@@ -57,6 +57,8 @@ export function bmp_to_fontblocks(
   const TILE_HEIGHT = 12;
   const VRAM_WIDTH = 300;
   const VRAM_HEIGHT = 216;
+  const SCREEN_TILES_WIDE = 50;
+  const SCREEN_TILES_HIGH = 18;
 
   // Use provided transition, or default to sequential order
   const trans_data = transition || getDefaultTransition();
@@ -67,61 +69,75 @@ export function bmp_to_fontblocks(
   const bmp_scale_x = bmpData.width / VRAM_WIDTH;
   const bmp_scale_y = bmpData.height / VRAM_HEIGHT;
 
-  // FIX: Process transition blocks in FORWARD order but with INVERTED pixels
-  // The transition file specifies blocks to REVEAL in order (center-first)
-  // We write the BMP at these blocks, but the key insight is that early blocks
-  // should show the BMP and later blocks should be masked/background
-  // Since we can't easily swap the entire BMP with background, we keep the
-  // scheduling in transition order (center blocks first), which means:
-  // - Center blocks are drawn first (BMP visible)
-  // - Edge blocks are drawn last (will appear after center)
-  // The visual effect: center appears/is revealed first, expanding outward
+  // CORRECT FIX: Write MASK blocks for unrevealed areas
+  // The transition file specifies which blocks to REVEAL in order
+  // For each packet, we write a mask over the unrevealed blocks
+  // - Blocks that have been revealed (indices 0..trans_idx) = BMP shows through
+  // - Blocks not yet revealed (indices trans_idx+1..767) = write black mask
+  // As time progresses, fewer mask blocks are written, revealing more BMP
   
+  // Create a set of all block coordinates
+  const allBlockKeys = new Set<string>();
+  for (let y = 0; y < SCREEN_TILES_HIGH; y++) {
+    for (let x = 0; x < SCREEN_TILES_WIDE; x++) {
+      allBlockKeys.add(`${x},${y}`);
+    }
+  }
+
+  // Create a map of block coordinates from transition
+  const transBlockMap = new Map<string, number>();
+  for (let i = 0; i < trans_data.blocks.length; i++) {
+    const [x, y] = trans_data.blocks[i];
+    transBlockMap.set(`${x},${y}`, i);
+  }
+
+  // For each step in the transition
   for (let trans_idx = 0; trans_idx < trans_data.length; trans_idx++) {
-    const [block_x, block_y] = trans_data.blocks[trans_idx];
-
-    // Schedule this block at: start_pack + transition_index
-    // This spreads all 768 blocks across 768 packets in transition order
-    const block_start_pack = start_pack + trans_idx;
-
-    // Create FontBlock for this position
-    const fontblock = new CDGMagic_FontBlock(block_x, block_y, block_start_pack);
-
-    // Assign z-layer and channel from track options (for compositor)
-    if (track_options) {
-      fontblock.z_location(track_options.track());
-      fontblock.channel(track_options.channel());
+    // Find all blocks that are NOT yet revealed (indices > trans_idx)
+    const revealedSet = new Set<string>();
+    for (let i = 0; i <= trans_idx; i++) {
+      const [x, y] = trans_data.blocks[i];
+      revealedSet.add(`${x},${y}`);
     }
 
-    // Sample BMP pixels for each pixel in the 6×12 block
-    for (let pixel_y = 0; pixel_y < TILE_HEIGHT; pixel_y++) {
-      for (let pixel_x = 0; pixel_x < TILE_WIDTH; pixel_x++) {
-        // Calculate source BMP pixel coordinates
-        const src_x = Math.floor((block_x * TILE_WIDTH + pixel_x) * bmp_scale_x);
-        const src_y = Math.floor((block_y * TILE_HEIGHT + pixel_y) * bmp_scale_y);
+    // Write mask blocks for all unrevealed blocks
+    for (const blockKey of allBlockKeys) {
+      if (revealedSet.has(blockKey)) continue;  // Skip revealed blocks
 
-        // Bounds check
-        if (src_x >= 0 && src_x < bmpData.width && src_y >= 0 && src_y < bmpData.height) {
-          // Sample pixel from BMP
-          const pixel_idx = src_y * bmpData.width + src_x;
-          if (pixel_idx < bmpData.pixels.length) {
-            const color_idx = bmpData.pixels[pixel_idx]!;
-            // Clamp to 4-bit color index
-            fontblock.pixel_value(pixel_x, pixel_y, color_idx & 0x0f);
-          }
+      const [xStr, yStr] = blockKey.split(',');
+      const block_x = parseInt(xStr, 10);
+      const block_y = parseInt(yStr, 10);
+
+      // Schedule mask block at: start_pack + transition_index
+      const block_start_pack = start_pack + trans_idx;
+
+      // Create FontBlock for this mask position
+      const fontblock = new CDGMagic_FontBlock(block_x, block_y, block_start_pack);
+
+      // Assign z-layer and channel from track options
+      if (track_options) {
+        fontblock.z_location(track_options.track());
+        fontblock.channel(track_options.channel());
+      }
+
+      // Fill mask block with background color (black = 0)
+      // This covers/hides the unrevealed portion of the BMP
+      for (let pixel_y = 0; pixel_y < TILE_HEIGHT; pixel_y++) {
+        for (let pixel_x = 0; pixel_x < TILE_WIDTH; pixel_x++) {
+          fontblock.pixel_value(pixel_x, pixel_y, 0);  // Black mask
         }
       }
-    }
 
-    // Add to output
-    fontblocks.push(fontblock);
+      // Add to output
+      fontblocks.push(fontblock);
+    }
   }
 
   if (DEBUG)
     console.debug(
       `[bmp_to_fontblocks] Converted BMP to ${fontblocks.length} FontBlocks ` +
-      `(transition: ${transition ? 'custom' : 'default'}, ` +
-      `packets ${start_pack}-${start_pack + fontblocks.length - 1})`
+      `(transition mask: ${transition ? 'custom' : 'default'}, ` +
+      `packets ${start_pack}-${start_pack + trans_data.length})`
     );
 
   return fontblocks;
