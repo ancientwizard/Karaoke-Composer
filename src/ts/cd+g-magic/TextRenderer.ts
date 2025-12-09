@@ -31,6 +31,19 @@ function mapFontSize(fontSize: number): number {
 }
 
 /**
+ * Calculate scaling factor from requested size to mapped size
+ * Allows fonts to appear at closer to their requested size
+ * @param requestedSize Font size from CMP (in points)
+ * @returns Scaling factor (1.0 = no scaling, >1.0 = enlarge, <1.0 = shrink)
+ */
+export function getFontScalingFactor(requestedSize: number): number {
+  const mappedSize = mapFontSize(requestedSize);
+  // Return ratio of requested to mapped
+  // e.g., 14pt requested → 12pt mapped → scale by 14/12 = 1.167
+  return requestedSize / mappedSize;
+}
+
+/**
  * Get font module and metadata for a size
  * All fonts are imported at module load time
  */
@@ -167,6 +180,7 @@ export function getCharacterWidth(char: string, fontSize: number): number {
 
 /**
  * Get font height in pixels
+ * Returns the scaled height to match the requested font size
  */
 export function getFontHeight(fontSize: number): number {
   // Map requested size to available font size
@@ -180,7 +194,9 @@ export function getFontHeight(fontSize: number): number {
 
   const meta = loadFontMetadata(mappedSize);
   if (meta) {
-    return meta.height;
+    // Scale the height by the ratio of requested to mapped size
+    const scale = fontSize / mappedSize;
+    return Math.round(meta.height * scale);
   }
 
   // Fallback to hardcoded values (shouldn't reach here with valid mapped size)

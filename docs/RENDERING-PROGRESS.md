@@ -1,53 +1,135 @@
 # Rendering Analysis & Progress - Opening Sequence (Clips 0-2)
 
-## Target: Opening Sequence Rendering
+## Status Summary
 
-The opening should consist of:
-1. **Clip 0 (600-2079):** BMP background with transition reveal
-2. **Clip 1 (680-740):** "Welcome to..." text overlaid on background
-3. **Clip 2 (840-1008):** "CD+Graphics Magic" text overlaid
+**Text Positioning:** ✅ FIXED
+- Now correctly reads xOffset/yOffset from CMP events
+- Karaoke mode-aware layout: TITLES mode uses computed layout, others use explicit offsets
 
-All layers should compose with:
-- Background (BMP) at bottom
-- Transition effect revealing it
-- Text (white with black outline) on top layer
-- Transparent areas allow background to show
+**Text Rendering Colors:** 🚧 IN PROGRESS
+- Need to verify white text (color 15) with black outline renders correctly
+- Font size differences from C++ app expected
+
+**Transition Rendering:** 🚧 IN PROGRESS
+- Tile blocks are being rendered (cmd=06)
+- Need to verify smooth reveal without corruption
+
+**Screen Clears:** ✅ IMPLEMENTED
+- Conditional MEMORY_PRESET based on memory_preset_index < 16
+- BORDER_PRESET conditional on border_index < 16
 
 ---
 
-## Issues to Address
+## Fixes Applied
 
-### 1. Text Positioning (X/Y Alignment)
+### Fix 1: Text Positioning with Karaoke Mode Awareness
+
+**Status:** ✅ COMPLETE
+
+**What was fixed:**
+- Text clips now read xOffset/yOffset from CMP events (first event in array)
+- Karaoke mode determines layout strategy:
+  - **MODE_0 (TITLES):** Computed layout
+    - y_offset = (line_idx % lines_per_page) * line_height + 12
+    - x_offset = 6 (left margin)
+    - Automatic flow down page
+  - **Other modes:** Explicit positioning
+    - x/y from CMP events
+    - Falls back to x=6, y=12 if not specified
+
+**Files Changed:**
+- `src/ts/cd+g-magic/CDGMagic_CDGExporter.ts` (schedule_text_clip method)
+
+**Commits:**
+- `7cca128` - use explicit xOffset/yOffset from CMP
+- `d918ab3` - use karaoke mode to determine text layout strategy
+
+---
+
+## Remaining Work
+
+### 1. Text Rendering (Color & Outline)
 
 **Current State:**
-- Text is horizontally centered on screen
-- Text Y position: calculated relative to lines per page
-
-**Expected State (from C++ reference):**
-- Default x_offset: 6 pixels (left justified)
-- Default y_offset: 36 pixels (3 blocks = 36px from top)
-- y_offset formula: `(line_num % lines_per_page) * line_height + 12`
-- x_offset formula: `6` (hardcoded left margin, per C++ line 740)
-
-**Files to Check:**
-- C++ reference: CDGMagic_TextClip.cpp lines 740-741
-- TS implementation: CDGMagic_CDGExporter.ts schedule_text_clip()
-
-**Action Required:**
-- [ ] Verify if centered text is intentional or bug
-- [ ] Check if first 3 clips in sample_project_04.cmp specify explicit positioning
-- [ ] If not, use C++ defaults (x=6, y=36 for first line)
-
-### 2. Text Rendering (Color & Transparency)
-
-**Current State:**
-- Pixels are rendered as foregroundColor or backgroundColor based on gray threshold
+- Text is rendered as foregroundColor or backgroundColor (binary)
 - No outline/stroke effect
-- No transparency handling
+- Full-screen BMP fill with backgroundColor
 
 **Expected State:**
-- Text: White (color 15) with black (color 0) outline
-- Outline width: typically 1-2 pixels around character
+- White text (color 15) with black (color 0) outline
+- Transparent background (only render text pixels, not background)
+- Proper font rendering
+
+**Files:**
+- `src/ts/cd+g-magic/CDGMagic_CDGExporter.ts` (schedule_text_clip, lines ~560-620)
+- `src/ts/cd+g-magic/TextRenderer.ts` (character rendering)
+
+**Approach:**
+1. Keep background fill (needed for BMP-to-FontBlocks encoding)
+2. Only render foreground color for text pixels (gray > 127)
+3. Add outline pixels (1-2px around characters in black)
+4. Leave non-text pixels as backgroundColor
+
+### 2. Transition Rendering Verification
+
+**Current State:**
+- Transition tile blocks are being scheduled
+- Packets show cmd=06 (tile blocks) with varying x/y offsets
+
+**To Verify:**
+- [ ] Transition smooth reveal works without corruption
+- [ ] Tile updates are in correct order
+- [ ] No overlapping tile updates
+- [ ] Palette loads don't interfere with reveal
+
+**Tools:**
+- `node bin/inspect-cdg.cjs --run --range 604-680 output.cdg`
+- Compare tile block counts and positions with reference
+
+### 3. Visual Verification
+
+**Not yet done:**
+- [ ] Visual inspection of rendered clips (need CDG player)
+- [ ] Text readability and positioning on actual CDG player
+- [ ] Transition smoothness
+
+---
+
+## Technical Notes
+
+**Font Size Impact:**
+- Larger fonts in TypeScript implementation (from Vite/web fonts)
+- Will cause different pixel layout than C++ reference
+- Expected and acceptable - not a bug
+
+**CMP File Structure:**
+- xOffset/yOffset fields apply to ALL clip types, not just BMP
+- For text clips, only used when karaoke_mode != TITLES
+- TITLES mode ignores these and computes layout from lines/font/page
+
+**Karaoke Mode Constants:**
+- MODE_0 = TITLES (default)
+- MODE_1 = LYRICS
+- MODE_2-11 = Various scroll/block modes
+- Reference: `src/ts/cd+g-magic/KaraokeModes.ts`
+
+---
+
+## Packet Analysis Reference
+
+**Opening sequence expected packets (clips 0-2):**
+- **600:** BMP palette load (low)
+- **601:** BMP palette load (high)
+- **602-610:** Transition blocks for BMP reveal
+- **611-679:** Text rendering + transition completion
+- **680-740:** Clip 1 text (40-60 packets + transitions)
+- **740-1008:** Clip 2 text + more transitions
+
+**Command distribution in transition range (604-680):**
+- ~16 MEMORY_PRESET (cmd=01) - screen clears
+- ~61 TILE_BLOCK (cmd=06) - transition tiles
+- ~1 PALETTE_LOW (cmd=30)
+- ~1 PALETTE_HIGH (cmd=31)
 - Transparent areas: Allow background/BMP to show through
 - Current implementation fills entire BMP with backgroundColor which is wrong
 

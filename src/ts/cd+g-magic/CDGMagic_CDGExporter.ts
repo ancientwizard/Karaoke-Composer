@@ -19,7 +19,8 @@ import {
   getRawCharacterFromFont,
   renderCharacterFromFontToRegion,
   getCharacterWidth,
-  getFontHeight
+  getFontHeight,
+  getFontScalingFactor
 } from "@/ts/cd+g-magic/TextRenderer";
 import { CompositorBuffer       } from "@/ts/cd+g-magic/CompositorBuffer";
 import { VRAMBuffer             } from "@/ts/cd+g-magic/VRAMBuffer";
@@ -603,6 +604,8 @@ class CDGMagic_CDGExporter {
 
       // Render each character of the line using pre-rendered fonts
       let charPixelX = leftStart;
+      const fontScale = getFontScalingFactor(fontSize);
+      
       for (let charIdx = 0; charIdx < lineText.length; charIdx++) {
         const char = lineText[charIdx]!;
         
@@ -610,20 +613,31 @@ class CDGMagic_CDGExporter {
         const charData = getRawCharacterFromFont(char, fontSize);
         
         if (charData) {
-          // Use pre-rendered font at native size
+          // Use pre-rendered font with scaling
           const charWidth = charData.width;
           const charHeight = charData.height;
           const srcData = charData.data;
 
-          // Calculate top position for this character (baseline alignment)
-          const charTopPixel = topStart - charHeight;  // Align to baseline
+          // Scale the character dimensions if needed
+          const scaledWidth = Math.round(charWidth * fontScale);
+          const scaledHeight = Math.round(charHeight * fontScale);
 
-          // Draw character bitmap into screen BMP
-          for (let srcY = 0; srcY < charHeight; srcY++) {
-            for (let srcX = 0; srcX < charWidth; srcX++) {
+          // Calculate top position for this character (baseline alignment)
+          // Use scaled height for alignment
+          const charTopPixel = topStart - scaledHeight;  // Align to baseline
+
+          // Draw character bitmap into screen BMP with scaling
+          for (let dstY = 0; dstY < scaledHeight; dstY++) {
+            for (let dstX = 0; dstX < scaledWidth; dstX++) {
+              // Map destination pixel back to source using nearest-neighbor
+              const srcX = Math.floor(dstX / fontScale);
+              const srcY = Math.floor(dstY / fontScale);
+
+              if (srcX >= charWidth || srcY >= charHeight) continue;
+
               const srcIdx = srcY * charWidth + srcX;
-              const pixelX = charPixelX + srcX;
-              const pixelY = charTopPixel + srcY;
+              const pixelX = charPixelX + dstX;
+              const pixelY = charTopPixel + dstY;
 
               if (pixelX >= screenWidth || pixelY < 0 || pixelY >= screenHeight) continue;
 
@@ -634,7 +648,7 @@ class CDGMagic_CDGExporter {
             }
           }
 
-          charPixelX += charWidth;
+          charPixelX += scaledWidth;
         } else {
           // Fallback to old tile-based rendering if font not found
           const tileData = renderTextToTile(char, foregroundColor, backgroundColor);
