@@ -486,53 +486,27 @@ class CDGMagic_CDGExporter {
     const linesPerPage = Math.floor(192 / lineHeight);
 
     // Extract positioning based on karaoke mode
-    // MODE_0 (TITLES): computed layout using lines_per_page formula
-    // Other modes: explicit xOffset/yOffset from CMP events
+    // All modes: xOffset/yOffset are explicit values from CMP events
+    // For TITLES mode: position is per-event (one event per clip)
+    // For karaoke modes: position is per-line (multiple events, one per line)
     const events = (clip as any)._events || [];
     const firstEvent = events.length > 0 ? events[0] : null;
-    let textXOffset: number;
-    let textYOffset: number;
-    let useComputedLayout = false;
+    let textXOffset: number = 6;   // Default x position
+    let textYOffset: number = 12;  // Default y position
 
-    // KaraokeModes.MODE_0 = TITLES (default, uses computed layout)
-    if (karaokeMode === 0) {
-      // Computed layout: x=6 (left margin), y uses formula per line
-      textXOffset = 6;  // Left margin per C++ line 341
-      useComputedLayout = true;
-      textYOffset = 12; // Base offset (will be computed per line in loop)
-
-      if (CDGMagic_CDGExporter.DEBUG)
-        console.debug(`[schedule_text_clip] Using TITLES mode (karaoke_mode=0) computed layout`);
-    } else {
-      // Other karaoke modes: use explicit xOffset/yOffset from CMP events
-      textXOffset = 6;  // Default if not specified
-      textYOffset = 12; // Default if not specified
-
-      if (firstEvent) {
-        if (firstEvent.xOffset !== undefined && firstEvent.xOffset !== null) {
-          textXOffset = Number(firstEvent.xOffset) || 6;
-        }
-        if (firstEvent.yOffset !== undefined && firstEvent.yOffset !== null) {
-          textYOffset = Number(firstEvent.yOffset) || 12;
-        }
+    if (firstEvent) {
+      if (firstEvent.xOffset !== undefined && firstEvent.xOffset !== null) {
+        textXOffset = Number(firstEvent.xOffset) || 6;
       }
-
-      if (CDGMagic_CDGExporter.DEBUG)
-        console.debug(
-          `[schedule_text_clip] Using karaoke_mode=${karaokeMode} with explicit offsets: x=${textXOffset}, y=${textYOffset}`
-        );
+      if (firstEvent.yOffset !== undefined && firstEvent.yOffset !== null) {
+        textYOffset = Number(firstEvent.yOffset) || 12;
+      }
     }
 
     if (CDGMagic_CDGExporter.DEBUG) {
-      if (useComputedLayout) {
-        console.debug(
-          `[schedule_text_clip] TITLES mode: fontPixelHeight=${fontPixelHeight}, lineHeight=${lineHeight}, linesPerPage=${linesPerPage}`
-        );
-      } else {
-        console.debug(
-          `[schedule_text_clip] Mode ${karaokeMode}: textXOffset=${textXOffset}, textYOffset=${textYOffset}`
-        );
-      }
+      console.debug(
+        `[schedule_text_clip] Mode ${karaokeMode}: using explicit offsets x=${textXOffset}, y=${textYOffset} from first event`
+      );
     }
 
     // C++ PATTERN: Create one full-screen BMP for all lines, positioned at correct Y offsets
@@ -566,20 +540,31 @@ class CDGMagic_CDGExporter {
       const lineText = lines[lineIdx] || '';
       if (lineText.length === 0) continue;
 
-      // Calculate Y position based on layout mode
+      // Determine Y position for this line:
+      // - If multiple events, use event-based positioning (one event per line)
+      // - If one event, all lines use the same y offset from that event
       let lineYPixels: number;
-      if (useComputedLayout) {
-        // TITLES mode: y_offset = (line_index % lines_per_page) * line_height + 12
-        lineYPixels = (lineIdx % linesPerPage) * lineHeight + 12;
+      let lineXPixels: number = textXOffset;
+
+      if (events.length > 1 && lineIdx < events.length) {
+        // Multi-event: each line has its own event with positioning
+        const lineEvent = events[lineIdx];
+        lineYPixels = Number(lineEvent.yOffset) || textYOffset;
+        lineXPixels = Number(lineEvent.xOffset) || textXOffset;
+      } else if (events.length === 1) {
+        // Single event: all lines share the same y offset
+        lineYPixels = textYOffset;
+        lineXPixels = textXOffset;
       } else {
-        // Other modes: y_offset = textYOffset + (line_index * line_height)
+        // Fallback: position lines sequentially below the first line
         lineYPixels = textYOffset + (lineIdx * lineHeight);
+        lineXPixels = textXOffset;
       }
 
       if (lineYPixels + lineHeight > screenHeight) continue;  // Skip if off-screen
 
       // X position is explicit from CMP xOffset
-      const leftStart = textXOffset;
+      const leftStart = lineXPixels;
       // Center vertically within line: top_start = (line_height - font_height) / 2 + font_height
       const topStart = Math.floor((lineHeight - fontPixelHeight) / 2) + fontPixelHeight + lineYPixels;
 
