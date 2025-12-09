@@ -67,14 +67,21 @@ export function bmp_to_fontblocks(
   const bmp_scale_x = bmpData.width / VRAM_WIDTH;
   const bmp_scale_y = bmpData.height / VRAM_HEIGHT;
 
-  // Process blocks in transition order
-  // Each block gets its own packet (start_pack + index)
-  for (let trans_idx = 0; trans_idx < trans_data.length; trans_idx++) {
-    const [block_x, block_y] = trans_data.blocks[trans_idx];
+  // CRITICAL FIX: Process transition blocks in REVERSE order
+  // The transition file specifies blocks to REVEAL (center-first = bright areas)
+  // But to achieve the correct visual effect, we write them in reverse:
+  // - Edge blocks (last in file) are written first, creating a mask
+  // - Center blocks (first in file) are written last, revealing the BMP
+  // This is the inverse of the "choose what to hide vs show" as the user described
+  
+  // Reverse the transition order
+  const reversedTransition = Array.from(trans_data.blocks).reverse();
 
-    // Schedule this block at: start_pack + transition_index
-    // This spreads all 768 blocks across 768 packets
-    const block_start_pack = start_pack + trans_idx;
+  for (let rev_idx = 0; rev_idx < reversedTransition.length; rev_idx++) {
+    const [block_x, block_y] = reversedTransition[rev_idx];
+
+    // Schedule this block at: start_pack + reversed_index
+    const block_start_pack = start_pack + rev_idx;
 
     // Create FontBlock for this position
     const fontblock = new CDGMagic_FontBlock(block_x, block_y, block_start_pack);
@@ -112,7 +119,7 @@ export function bmp_to_fontblocks(
   if (DEBUG)
     console.debug(
       `[bmp_to_fontblocks] Converted BMP to ${fontblocks.length} FontBlocks ` +
-      `(transition: ${transition ? 'custom' : 'default'}, ` +
+      `(transition: ${transition ? 'custom reversed mask' : 'default sequential'}, ` +
       `packets ${start_pack}-${start_pack + fontblocks.length - 1})`
     );
 
