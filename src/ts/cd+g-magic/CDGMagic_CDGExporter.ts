@@ -485,19 +485,19 @@ class CDGMagic_CDGExporter {
     const lineHeight = blkHeight * 12;
     const linesPerPage = Math.floor(192 / lineHeight);
 
-    // Extract positioning from CMP events (first event has x/y offset)
-    // Default to C++ reference values: x=6, y=36 (3 blocks from top)
+    // Extract positioning from CMP events (first event defines text position)
+    // These are explicit pixel coordinates from the user's editing (x=left, y=top)
     const events = (clip as any)._events || [];
     const firstEvent = events.length > 0 ? events[0] : null;
-    let textXOffset = 6;     // C++ default: left margin = 6 pixels
-    let textYOffset = 36;    // C++ default: 3 blocks = 36 pixels from top
+    let textXOffset = 6;     // Default: left margin = 6 pixels
+    let textYOffset = 12;    // Default: top margin = 12 pixels
 
     if (firstEvent) {
       if (firstEvent.xOffset !== undefined && firstEvent.xOffset !== null) {
         textXOffset = Number(firstEvent.xOffset) || 6;
       }
       if (firstEvent.yOffset !== undefined && firstEvent.yOffset !== null) {
-        textYOffset = Number(firstEvent.yOffset) || 36;
+        textYOffset = Number(firstEvent.yOffset) || 12;
       }
     }
 
@@ -512,20 +512,18 @@ class CDGMagic_CDGExporter {
     const screenWidth = 288;
     const screenHeight = 216;  // Full CD+G height
     const screenBmpPixels = new Uint8Array(screenWidth * screenHeight);
-    // NOTE: Do NOT fill with backgroundColor - we want transparent background (render only text pixels)
-    // screenBmpPixels.fill(backgroundColor);  // REMOVED: causes opaque background
+    screenBmpPixels.fill(backgroundColor);
 
     // Render each line at its vertical offset
     for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
       const lineText = lines[lineIdx] || '';
       if (lineText.length === 0) continue;
 
-      // Calculate Y position for this line using CMP offset
-      // y_position = textYOffset + (line_index * line_height)
+      // Calculate Y position for this line: textYOffset + (line_index * line_height)
       const lineYPixels = textYOffset + (lineIdx * lineHeight);
       if (lineYPixels + lineHeight > screenHeight) continue;  // Skip if off-screen
 
-      // X position is fixed at textXOffset (left-justified per C++ reference)
+      // X position is explicit from CMP xOffset
       const leftStart = textXOffset;
       // Center vertically within line: top_start = (line_height - font_height) / 2 + font_height
       const topStart = Math.floor((lineHeight - fontPixelHeight) / 2) + fontPixelHeight + lineYPixels;
@@ -562,12 +560,9 @@ class CDGMagic_CDGExporter {
               if (pixelX >= screenWidth || pixelY < 0 || pixelY >= screenHeight) continue;
 
               const gray = srcData[srcIdx];
-              // Only write foreground color for text pixels (gray > 127)
-              // Leave background pixels unchanged (0 = transparent, will not be written to BMP)
-              if (gray > 127) {
-                const pixelIndex = pixelY * screenWidth + pixelX;
-                screenBmpPixels[pixelIndex] = foregroundColor;
-              }
+              const pixelColor = gray > 127 ? foregroundColor : backgroundColor;
+              const pixelIndex = pixelY * screenWidth + pixelX;
+              screenBmpPixels[pixelIndex] = pixelColor;
             }
           }
 
@@ -592,12 +587,9 @@ class CDGMagic_CDGExporter {
               if (pixelX >= screenWidth) break;
 
               const bit = (byte >> (5 - col)) & 1;
-              // Only write foreground color for character pixels (bit=1)
-              // Leave background pixels unchanged (0 = transparent)
-              if (bit) {
-                const pixelIndex = pixelY * screenWidth + pixelX;
-                screenBmpPixels[pixelIndex] = color1;
-              }
+              const pixelColor = bit ? color1 : color2;
+              const pixelIndex = pixelY * screenWidth + pixelX;
+              screenBmpPixels[pixelIndex] = pixelColor;
             }
           }
 
