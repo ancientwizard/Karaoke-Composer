@@ -523,42 +523,10 @@ class CDGMagic_CDGExporter {
       );
     }
 
-    // Handle rectangle fill based on compositing mode
-    // If shouldComposite > 0: compositing enabled
-    //   - Fill with compositeIndex so those pixels become transparent
-    //   - Text renders on top, BMP shows through transparent areas
-    // If shouldComposite == 0: entire clip is OPAQUE
-    //   - Fill with backgroundColor (solid background)
+    // Get compositing mode for transparency handling
+    // Note: We don't fill background - only write foreground text pixels
     const shouldComposite = (clip as any)._should_composite || 0;
     const compositeIndex = (clip as any)._composite_color || 0;
-    
-    if (shouldComposite === 0) {
-      // Opaque mode: fill entire rectangle with backgroundColor
-      for (let y = textYOffset; y < Math.min(rectBottom, screenHeight); y++) {
-        for (let x = 0; x < rectWidth; x++) {
-          const pixelIndex = y * screenWidth + x;
-          screenBmpPixels[pixelIndex] = backgroundColor;
-        }
-      }
-      if (CDGMagic_CDGExporter.DEBUG) {
-        console.debug(`[schedule_text_clip] Opaque mode: filled rectangle with backgroundColor=${backgroundColor}`);
-      }
-    } else {
-      // Compositing enabled: fill with compositeIndex so it becomes transparent
-      // Text will render on top, composite pixels will be transparent (BMP shows through)
-      const fillColor = compositeIndex < 16 ? compositeIndex : 16;
-      for (let y = textYOffset; y < Math.min(rectBottom, screenHeight); y++) {
-        for (let x = 0; x < rectWidth; x++) {
-          const pixelIndex = y * screenWidth + x;
-          screenBmpPixels[pixelIndex] = fillColor;
-        }
-      }
-      if (CDGMagic_CDGExporter.DEBUG) {
-        console.debug(
-          `[schedule_text_clip] Compositing mode: filled rectangle with compositeIndex=${fillColor} for transparency`
-        );
-      }
-    }
 
     // Render each line at its vertical offset
     for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
@@ -625,9 +593,12 @@ class CDGMagic_CDGExporter {
               if (pixelX >= screenWidth || pixelY < 0 || pixelY >= screenHeight) continue;
 
               const gray = srcData[srcIdx];
-              const pixelColor = gray > 127 ? foregroundColor : backgroundColor;
-              const pixelIndex = pixelY * screenWidth + pixelX;
-              screenBmpPixels[pixelIndex] = pixelColor;
+              // Only write pixels that are "on" (white/foreground)
+              // Leave background pixels untouched so FontBlock analyzer can handle compositing
+              if (gray > 127) {
+                const pixelIndex = pixelY * screenWidth + pixelX;
+                screenBmpPixels[pixelIndex] = foregroundColor;
+              }
             }
           }
 

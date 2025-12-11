@@ -22,8 +22,9 @@ export type RenderedGlyph = OpenTypeGlyph | BitmapGlyph;
  * Font loading configuration
  */
 export interface FontLoadConfig {
-  fontPath?: string;     // Path to TTF/OTF file
-  fallbackOnly?: boolean; // Skip opentype.js, use bitmap only
+  fontPath?: string;      // Path to TTF/OTF file
+  fontData?: ArrayBuffer;  // Raw font data (ArrayBuffer)
+  fallbackOnly?: boolean;  // Skip opentype.js, use bitmap only
 }
 
 /**
@@ -47,32 +48,36 @@ export class UnifiedFontSystem {
    */
   async loadFont(config: FontLoadConfig): Promise<boolean> {
     if (config.fallbackOnly) {
-      console.log('Using fallback bitmap font');
-      return true;
+      return true;  // Just return true, don't log - we'll log at higher level
     }
 
     try {
       this.opentype = new FontGlyphRenderer();
       
-      if (!config.fontPath) {
-        console.warn('No font path provided, using fallback');
-        return false;
-      }
-
-      const loaded = await this.opentype.loadFont(config.fontPath);
-      
-      if (loaded) {
-        this.opentype.setFontSize(this.currentSize);
-        this.useOpentype = true;
-        console.log(`Loaded font: ${config.fontPath}`);
-        return true;
+      // Try to load from either path or raw data
+      if (config.fontData) {
+        const loaded = await this.opentype.loadFont(config.fontData);
+        if (loaded) {
+          this.opentype.setFontSize(this.currentSize);
+          this.useOpentype = true;
+          console.log('[UnifiedFontSystem] Loaded font from raw data');
+          return true;
+        }
+      } else if (config.fontPath) {
+        const loaded = await this.opentype.loadFont(config.fontPath);
+        if (loaded) {
+          this.opentype.setFontSize(this.currentSize);
+          this.useOpentype = true;
+          console.log(`[UnifiedFontSystem] Loaded font: ${config.fontPath}`);
+          return true;
+        }
       } else {
-        console.warn('Failed to load font, falling back to bitmap');
-        this.useOpentype = false;
-        return false;
+        return false;  // No font source provided
       }
+      
+      this.useOpentype = false;
+      return false;
     } catch (error) {
-      console.warn('opentype.js unavailable, using fallback:', error instanceof Error ? error.message : String(error));
       this.useOpentype = false;
       return false;
     }

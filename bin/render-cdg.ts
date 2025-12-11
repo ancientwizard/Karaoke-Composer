@@ -203,6 +203,10 @@ function compareWithReference(generated: Uint8Array, referencePath: string): boo
  */
 async function main() {
   try {
+    // Initialize font system first (before generating CDG)
+    const { initializeTextRenderer } = await import('../src/ts/cd+g-magic/TextRenderer');
+    await initializeTextRenderer();
+
     const opts = parseArgs();
 
     console.log('[render-cdg] Starting CDG generation');

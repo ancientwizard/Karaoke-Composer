@@ -2,33 +2,60 @@
  * Text Renderer for CD+G
  *
  * Converts text strings to CD+G pixel data.
- * Uses UnifiedFontSystem with opentype.js (TTF/OTF) and fallback bitmap font.
+ * Uses UnifiedFontSystem with bitmap font (Canvas not available in Node.js/Flatpak).
  */
 
 import { UnifiedFontSystem } from './UnifiedFontSystem';
 
 // Global font system instance
 let fontSystem: UnifiedFontSystem | null = null;
+let fontInitialized = false;
+
+/**
+ * Note: TTF font loading would require Node.js 'canvas' package which fails in Flatpak.
+ * Using bitmap-only mode instead - faster and more compatible.
+ */
 
 /**
  * Initialize font system (called once at startup)
  */
-function initFontSystem(): UnifiedFontSystem {
+async function initFontSystem(): Promise<UnifiedFontSystem> {
   if (!fontSystem) {
     fontSystem = new UnifiedFontSystem();
-    // Use fallback bitmap font by default
-    fontSystem.loadFont({ fallbackOnly: true }).catch(err => {
-      console.warn('Failed to load font system:', err);
-    });
+    
+    if (!fontInitialized) {
+      fontInitialized = true;
+      
+      // Use bitmap font (Canvas unavailable in Node.js/Flatpak)
+      console.log('[TextRenderer] Initializing with bitmap font');
+      await fontSystem.loadFont({ fallbackOnly: true }).catch(err => {
+        console.warn('Failed to load bitmap font:', err);
+      });
+    }
   }
   return fontSystem;
 }
 
 /**
- * Get or initialize the font system
+ * Public export for external initialization
+ * Call this before rendering to ensure fonts are loaded
+ */
+export async function initializeTextRenderer(): Promise<void> {
+  await initFontSystem();
+}
+
+/**
+ * Get or initialize the font system (synchronous wrapper)
  */
 function getFontSystem(): UnifiedFontSystem {
-  return initFontSystem();
+  if (!fontSystem) {
+    fontSystem = new UnifiedFontSystem();
+    // Initialize asynchronously in background
+    initFontSystem().catch(err => {
+      console.warn('[TextRenderer] Font initialization error:', err);
+    });
+  }
+  return fontSystem;
 }
 
 /**
