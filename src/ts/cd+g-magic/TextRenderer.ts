@@ -119,10 +119,8 @@ export function getRawCharacterFromFont(
   fontIndex: number = 0
 ): { width: number; height: number; data: Uint8Array } | null {
   const fonts = getFontSystem();
-  // Currently, font index selection is informational only (future enhancement)
-  // All text uses unified bitmap renderer which is font-agnostic
-  // TODO: Implement per-font bitmap renderer or TTF loader once Canvas is available
-  const glyph = fonts.renderChar(char, fontSize);
+  // Pass fontIndex to renderer - index 0 uses improved Arial font
+  const glyph = fonts.renderChar(char, fontSize, fontIndex);
   
   if (glyph) {
     return {
