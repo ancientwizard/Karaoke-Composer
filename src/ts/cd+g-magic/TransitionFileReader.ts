@@ -75,44 +75,11 @@ export function loadTransitionFile(filePath: string): TransitionData | null {
       blocks.push([x_clamped, y_clamped]);
     }
 
-    console.debug(`[loadTransitionFile] Loaded ${blocks.length} blocks from file bytes (raw file has ${max_blocks} block entries)`);
-    console.debug(`[loadTransitionFile] Raw byte ranges: X=1-${maxXRaw}, Y=1-${maxYRaw}`);
+    console.debug(`[loadTransitionFile] Loaded ${blocks.length} blocks from file`);
 
-    // CRITICAL FIX: Check if we have complete grid coverage (all 50×18 blocks with no duplicates)
-    // The transition file may specify 768 blocks total, but with duplicates!
-    // Ensure we have each unique block position represented
-    const uniqueBlocks = new Map<string, [number, number]>();
-    for (const [x, y] of blocks) {
-      uniqueBlocks.set(`${x},${y}`, [x, y]);
-    }
-
-    console.debug(`[loadTransitionFile] Unique blocks: ${uniqueBlocks.size} (file had ${blocks.length} entries)`);
-
-    // Check if grid is incomplete (missing border rows/columns)
-    // We need a FULL 50×18 grid (900 blocks), but transition files may only have 768
-    // Check if any row > 15 or column > 47 is missing
-    const needsCompletion = !uniqueBlocks.has('16,0') || !uniqueBlocks.has('0,16') || !uniqueBlocks.has('0,17') || !uniqueBlocks.has('49,0');
-    
-    if (needsCompletion) {
-      console.warn(`[loadTransitionFile] Transition file has incomplete grid: missing border rows/columns`);
-      
-      // Collect missing blocks
-      const missingBlocks: Array<[number, number]> = [];
-      for (let y = 0; y < 18; y++) {
-        for (let x = 0; x < 50; x++) {
-          const key = `${x},${y}`;
-          if (!uniqueBlocks.has(key)) {
-            missingBlocks.push([x, y]);
-          }
-        }
-      }
-      
-      // Append missing blocks to the END of the sequence
-      // They will render AFTER the transition completes
-      blocks.push(...missingBlocks);
-      console.warn(`[loadTransitionFile] Added ${missingBlocks.length} missing blocks to reach ${blocks.length} total`);
-    }
-
+    // Just use what's in the file - C++ doesn't auto-complete
+    // If the file is 48×16 (768 blocks), that's intentional
+    // The missing border rows/columns simply don't render
     if (blocks.length > 0) {
       const xs = blocks.map(([x]) => x);
       const ys = blocks.map(([, y]) => y);
@@ -120,7 +87,7 @@ export function loadTransitionFile(filePath: string): TransitionData | null {
       const maxX = Math.max(...xs);
       const minY = Math.min(...ys);
       const maxY = Math.max(...ys);
-      console.debug(`[loadTransitionFile] Final block ranges: X=${minX}-${maxX}, Y=${minY}-${maxY}`);
+      console.debug(`[loadTransitionFile] Block ranges: X=${minX}-${maxX}, Y=${minY}-${maxY}`);
     }
 
     return {
@@ -136,15 +103,18 @@ export function loadTransitionFile(filePath: string): TransitionData | null {
 /**
  * Get default transition (top→bottom→left→right sequential order)
  * 
- * CD+G display: 50 blocks wide × 18 blocks high = 768 blocks total
+ * CD+G display: 48 blocks wide × 16 blocks high = 768 blocks total
+ * This matches the C++ default behavior which intentionally excludes
+ * the rightmost 2 columns (X=48-49) and bottom 2 rows (Y=16-17).
+ * 
  * Default order: iterate by column (left→right), then row (top→bottom)
- * Column 0 (x=0): blocks 0-17 (y=0-17)
- * Column 1 (x=1): blocks 18-35 (y=0-17)
+ * Column 0 (x=0): blocks 0-15 (y=0-15)
+ * Column 1 (x=1): blocks 16-31 (y=0-15)
  * etc.
  * 
  * Mathematical formula:
- * - x = block_index / 18 (column: 0-49)
- * - y = block_index % 18 (row: 0-17)
+ * - x = block_index / 16 (column: 0-47)
+ * - y = block_index % 16 (row: 0-15)
  * 
  * This matches C++ default when no transition file is specified.
  * 
@@ -154,10 +124,11 @@ export function getDefaultTransition(): TransitionData {
   const blocks: Array<[number, number]> = [];
 
   // Iterate through 768 blocks in column-major order
-  // Screen is 50 tiles wide × 18 tiles high
+  // Screen is 48 tiles wide × 16 tiles high = 768 total
+  // (C++ intentionally excludes columns 48-49 and rows 16-17)
   for (let cur_blk = 0; cur_blk < 768; cur_blk++) {
-    const x = Math.floor(cur_blk / 18);  // Column: 0-49
-    const y = cur_blk % 18;              // Row: 0-17
+    const x = Math.floor(cur_blk / 16);  // Column: 0-47
+    const y = cur_blk % 16;              // Row: 0-15
 
     blocks.push([x, y]);
   }
