@@ -3,90 +3,97 @@
  *
  * Provides a single interface for font rendering that:
  * - Selects renderer based on font index (0-7 maps to different fonts)
- * - Index 0 (Arial) uses improved Arial bitmap font
- * - Other indices use fallback bitmap font
- * - Tries opentype.js first if available (TTF/OTF support)
- * - Falls back to bitmap font if needed
+ * - Loads real TTF fonts when available (Arial, Courier, Times New Roman, etc.)
+ * - Falls back to bitmap fonts if real fonts unavailable
  * - Caches glyphs for performance
  * - Works in both Node.js and browser
  *
+ * Font Priority:
+ * 1. Real TTF/OTF fonts (via FontManager)
+ * 2. Fallback bitmap fonts (high quality)
+ *
  * Usage:
  *   const fonts = new UnifiedFontSystem();
- *   await fonts.loadFont('arial.ttf');  // Optional
+ *   await fonts.initializeFonts();  // Load real fonts from cache or download
  *   const glyph = fonts.renderChar('A', 24, 0);  // fontIndex 0 = Arial
  */
 
 import { FontGlyphRenderer, type RenderedGlyph as OpenTypeGlyph } from './FontGlyphRenderer';
 import { FallbackBitmapFontRenderer, type RenderedGlyph as BitmapGlyph } from './FallbackBitmapFontRenderer';
-import { ArialBitmapFontRenderer, type RenderedGlyph as ArialGlyph } from './ArialBitmapFontRenderer';
+import { FontManager } from './FontManager';
 
-export type RenderedGlyph = OpenTypeGlyph | BitmapGlyph | ArialGlyph;
-
-/**
- * Font loading configuration
- */
-export interface FontLoadConfig {
-  fontPath?: string;      // Path to TTF/OTF file
-  fontData?: ArrayBuffer;  // Raw font data (ArrayBuffer)
-  fallbackOnly?: boolean;  // Skip opentype.js, use bitmap only
-}
+export type RenderedGlyph = OpenTypeGlyph | BitmapGlyph;
 
 /**
  * Unified font system
  */
 export class UnifiedFontSystem {
-  private opentype: FontGlyphRenderer | null = null;
+  private fontManager: FontManager;
+  private renderers: Map<number, FontGlyphRenderer | null> = new Map();
   private fallback: FallbackBitmapFontRenderer;
-  private arial: ArialBitmapFontRenderer;
-  private useOpentype = false;
   private currentSize = 12;
   private currentFontIndex = 0;
 
   constructor() {
+    this.fontManager = new FontManager();
     this.fallback = new FallbackBitmapFontRenderer();
     this.fallback.setFontSize(this.currentSize);
-    this.arial = new ArialBitmapFontRenderer();
-    this.arial.setFontSize(this.currentSize);
   }
 
   /**
-   * Load a font, automatically detecting format
+   * Initialize fonts - load real fonts from cache or download them
+   * This should be called once at startup
+   */
+  async initializeFonts(): Promise<void> {
+    console.log('[UnifiedFontSystem] Initializing fonts...');
+    
+    // Try to load fonts 0-2 (Arial, Courier, Times)
+    for (let idx = 0; idx < 3; idx++) {
+      const fontData = await this.fontManager.getFontData(idx);
+      if (fontData) {
+        const renderer = new FontGlyphRenderer();
+        if (await renderer.loadFont(fontData)) {
+          renderer.setFontSize(this.currentSize);
+          this.renderers.set(idx, renderer);
+          console.log(`[UnifiedFontSystem] Loaded real font: ${this.fontManager.getFontName(idx)}`);
+        } else {
+          this.renderers.set(idx, null);
+        }
+      } else {
+        this.renderers.set(idx, null);
+      }
+    }
+  }
+
+  /**
+   * Load a specific font from buffer or URL
+   * @param fontIndex Font index (0-7)
    * @param config Font loading configuration
    * @returns true if font loaded successfully
    */
-  async loadFont(config: FontLoadConfig): Promise<boolean> {
-    if (config.fallbackOnly) {
-      return true;  // Just return true, don't log - we'll log at higher level
-    }
-
+  async loadCustomFont(fontIndex: number, config: { fontPath?: string; fontData?: ArrayBuffer }): Promise<boolean> {
     try {
-      this.opentype = new FontGlyphRenderer();
+      const renderer = new FontGlyphRenderer();
       
-      // Try to load from either path or raw data
+      let fontData: ArrayBuffer | string | null = null;
       if (config.fontData) {
-        const loaded = await this.opentype.loadFont(config.fontData);
-        if (loaded) {
-          this.opentype.setFontSize(this.currentSize);
-          this.useOpentype = true;
-          console.log('[UnifiedFontSystem] Loaded font from raw data');
-          return true;
-        }
+        fontData = config.fontData;
       } else if (config.fontPath) {
-        const loaded = await this.opentype.loadFont(config.fontPath);
-        if (loaded) {
-          this.opentype.setFontSize(this.currentSize);
-          this.useOpentype = true;
-          console.log(`[UnifiedFontSystem] Loaded font: ${config.fontPath}`);
-          return true;
-        }
+        fontData = config.fontPath;
       } else {
-        return false;  // No font source provided
+        return false;
       }
-      
-      this.useOpentype = false;
+
+      if (fontData && await renderer.loadFont(fontData)) {
+        renderer.setFontSize(this.currentSize);
+        this.renderers.set(fontIndex, renderer);
+        console.log(`[UnifiedFontSystem] Loaded custom font for index ${fontIndex}`);
+        return true;
+      }
+
       return false;
     } catch (error) {
-      this.useOpentype = false;
+      console.warn(`Failed to load custom font for index ${fontIndex}:`, error);
       return false;
     }
   }
@@ -97,12 +104,14 @@ export class UnifiedFontSystem {
   setFontSize(size: number): void {
     this.currentSize = size;
     
-    if (this.useOpentype && this.opentype) {
-      this.opentype.setFontSize(size);
+    // Update all loaded renderers
+    for (const renderer of this.renderers.values()) {
+      if (renderer) {
+        renderer.setFontSize(size);
+      }
     }
     
     this.fallback.setFontSize(size);
-    this.arial.setFontSize(size);
   }
 
   /**
@@ -126,22 +135,14 @@ export class UnifiedFontSystem {
     
     const fontIdx = fontIndex !== undefined ? fontIndex : this.currentFontIndex;
 
-    // Try opentype first
-    if (this.useOpentype && this.opentype) {
-      const glyph = this.opentype.renderGlyph(char);
+    // Try real font renderer first (for indices 0-7)
+    const renderer = this.renderers.get(fontIdx);
+    if (renderer) {
+      const glyph = renderer.renderGlyph(char);
       if (glyph) {
         return glyph;
       }
-      console.warn(`opentype.js failed to render '${char}', falling back`);
-    }
-
-    // Select font renderer based on index
-    // Index 0 = Arial (improved bitmap), others = standard fallback
-    if (fontIdx === 0) {
-      const glyph = this.arial.renderGlyph(char);
-      if (glyph) {
-        return glyph;
-      }
+      console.warn(`Real font failed for index ${fontIdx}, falling back to bitmap`);
     }
 
     // Fall back to standard bitmap font
@@ -149,21 +150,22 @@ export class UnifiedFontSystem {
   }
 
   /**
-   * Check if currently using opentype renderer
+   * Check if a real font is loaded for the given index
    */
-  isUsingOpenType(): boolean {
-    return this.useOpentype;
+  hasRealFont(fontIndex: number): boolean {
+    return this.renderers.has(fontIndex) && this.renderers.get(fontIndex) !== null;
   }
 
   /**
    * Clear all caches
    */
   clearCache(): void {
-    if (this.opentype) {
-      this.opentype.clearCache();
+    for (const renderer of this.renderers.values()) {
+      if (renderer) {
+        renderer.clearCache();
+      }
     }
     this.fallback.clearCache();
-    this.arial.clearCache();
   }
 
   /**

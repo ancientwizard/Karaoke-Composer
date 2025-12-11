@@ -80,7 +80,7 @@ describe('UnifiedFontSystem', () => {
   });
 
   test('should initialize with fallback', () => {
-    expect(fonts.isUsingOpenType()).toBe(false);
+    expect(fonts.hasRealFont(0)).toBe(false);  // No real fonts loaded initially
   });
 
   test('should render character with default fallback', () => {
@@ -114,10 +114,13 @@ describe('UnifiedFontSystem', () => {
     expect(width24).toBeGreaterThan(width12);
   });
 
-  test('should load font with fallback config', async () => {
-    const result = await fonts.loadFont({ fallbackOnly: true });
-    expect(result).toBe(true);
-    expect(fonts.isUsingOpenType()).toBe(false);
+  test('should support font index parameter', () => {
+    fonts.setFontSize(12);
+    const glyph0 = fonts.renderChar('A', undefined, 0);
+    const glyph1 = fonts.renderChar('A', undefined, 1);
+    
+    expect(glyph0).not.toBeNull();
+    expect(glyph1).not.toBeNull();
   });
 
   test('should clear cache', () => {

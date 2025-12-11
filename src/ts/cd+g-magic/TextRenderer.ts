@@ -60,12 +60,8 @@ let fontSystem: UnifiedFontSystem | null = null;
 let fontInitialized = false;
 
 /**
- * Note: TTF font loading would require Node.js 'canvas' package which fails in Flatpak.
- * Using bitmap-only mode instead - faster and more compatible.
- */
-
-/**
- * Initialize font system (called once at startup)
+ * Initialize font system - loads real fonts from cache or downloads them
+ * Called once at startup
  */
 async function initFontSystem(): Promise<UnifiedFontSystem> {
   if (!fontSystem) {
@@ -74,11 +70,14 @@ async function initFontSystem(): Promise<UnifiedFontSystem> {
     if (!fontInitialized) {
       fontInitialized = true;
       
-      // Use bitmap font (Canvas unavailable in Node.js/Flatpak)
-      console.log('[TextRenderer] Initializing with bitmap font');
-      await fontSystem.loadFont({ fallbackOnly: true }).catch(err => {
-        console.warn('Failed to load bitmap font:', err);
-      });
+      console.log('[TextRenderer] Initializing fonts (Arial, Courier, Times)...');
+      try {
+        await fontSystem.initializeFonts();
+        console.log('[TextRenderer] Font system initialized');
+      } catch (err) {
+        console.warn('[TextRenderer] Font initialization error:', err);
+        console.log('[TextRenderer] Will use bitmap fonts as fallback');
+      }
     }
   }
   return fontSystem;
@@ -93,7 +92,7 @@ export async function initializeTextRenderer(): Promise<void> {
 }
 
 /**
- * Get or initialize the font system (synchronous wrapper)
+ * Get or initialize the font system (synchronous wrapper with async init)
  */
 function getFontSystem(): UnifiedFontSystem {
   if (!fontSystem) {
