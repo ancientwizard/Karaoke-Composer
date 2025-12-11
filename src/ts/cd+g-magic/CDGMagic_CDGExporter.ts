@@ -444,6 +444,9 @@ class CDGMagic_CDGExporter {
     // Clamp colors to palette range
     foregroundColor = Math.min(15, Math.max(0, foregroundColor));
     backgroundColor = Math.min(15, Math.max(0, backgroundColor));
+    
+    // Use actual foreground/background colors from TextClip
+    // Transparency will be handled by marking background pixels as index 256
 
     if (CDGMagic_CDGExporter.DEBUG)
       console.debug(
@@ -507,11 +510,12 @@ class CDGMagic_CDGExporter {
     }
 
     // C++ PATTERN: Create one full-screen BMP for all lines, positioned at correct Y offsets
-    const screenWidth = 288;
+    const screenWidth = 300;  // CD+G standard width
     const screenHeight = 216;  // Full CD+G height
     const screenBmpPixels = new Uint8Array(screenWidth * screenHeight);
-    // IMPORTANT: Only fill the text rectangle area, NOT the entire screen
-    // The text rectangle is bounded by (textXOffset, textYOffset, textWidth, textHeight)
+    // Initialize with palette index 0 (will be marked transparent for compositing)
+    // All pixels start at 0; drawn text pixels will be set to foregroundColor
+    
     // Get rectangle dimensions from first event
     const rectWidth = firstEvent?.width || screenWidth;
     const rectHeight = firstEvent?.height || (lineHeight * lines.length);
@@ -524,7 +528,6 @@ class CDGMagic_CDGExporter {
     }
 
     // Get compositing mode for transparency handling
-    // Note: We don't fill background - only write foreground text pixels
     const shouldComposite = (clip as any)._should_composite || 0;
     const compositeIndex = (clip as any)._composite_color || 0;
 
@@ -556,8 +559,10 @@ class CDGMagic_CDGExporter {
 
       if (lineYPixels + lineHeight > screenHeight) continue;  // Skip if off-screen
 
-      // X position is explicit from CMP xOffset
-      const leftStart = lineXPixels;
+      // Determine text block bounds for this line
+      const blockLeftStart = lineXPixels;
+      const blockWidth = rectWidth;  // Width available for this line
+      
       // Center vertically within line: top_start = (line_height - font_height) / 2 + font_height
       const topStart = Math.floor((lineHeight - fontPixelHeight) / 2) + fontPixelHeight + lineYPixels;
 
@@ -566,8 +571,25 @@ class CDGMagic_CDGExporter {
           `[schedule_text_clip] Line ${lineIdx}: y=${lineYPixels}, topStart=${topStart}, text="${lineText.substring(0, 30)}"`
         );
 
+      // Calculate total text width and center within the line block
+      let totalTextWidth = 0;
+      for (let charIdx = 0; charIdx < lineText.length; charIdx++) {
+        const char = lineText[charIdx]!;
+        const charData = getRawCharacterFromFont(char, fontSize);
+        if (charData) {
+          totalTextWidth += charData.width + 1;  // +1 for character spacing
+        }
+      }
+      if (totalTextWidth > 0) {
+        totalTextWidth -= 1;  // Remove last spacing increment
+      }
+
+      // Center text horizontally within the available block width
+      const blockCenterX = blockLeftStart + blockWidth / 2;
+      const textStartX = Math.max(blockLeftStart, Math.floor(blockCenterX - totalTextWidth / 2));
+
       // Render each character of the line using pre-rendered fonts
-      let charPixelX = leftStart;
+      let charPixelX = textStartX;
       
       for (let charIdx = 0; charIdx < lineText.length; charIdx++) {
         const char = lineText[charIdx]!;
@@ -632,25 +654,16 @@ class CDGMagic_CDGExporter {
         `[schedule_text_clip] Converted ${lines.length} lines to ${fontblocks.length} FontBlocks`
       );
 
-    // Apply composite color and mode to all FontBlocks
-    // Mark the fill color (compositeIndex) as transparent so BMP shows through
-    if (shouldComposite > 0) {
-      const fillColor = compositeIndex < 16 ? compositeIndex : 16;
-      for (const fontblock of fontblocks) {
-        if (shouldComposite === 1) {
-          // Replacement mode: fillColor becomes transparent
-          fontblock.replacement_transparent_color(fillColor);
-        } else if (shouldComposite === 2) {
-          // Overlay mode: fillColor is overlaid
-          fontblock.overlay_transparent_color(fillColor);
-        }
-      }
+    // Mark index 0 (background, undrawn pixels) as transparent
+    // This allows the BMP background to show through non-text areas
+    for (const fontblock of fontblocks) {
+      fontblock.replacement_transparent_color(0);
+    }
 
-      if (CDGMagic_CDGExporter.DEBUG) {
-        console.debug(
-          `[schedule_text_clip] Applied transparency: color ${fillColor} is transparent in ${fontblocks.length} FontBlocks`
-        );
-      }
+    if (CDGMagic_CDGExporter.DEBUG) {
+      console.debug(
+        `[schedule_text_clip] Applied transparency: index 0 (background) is transparent in ${fontblocks.length} FontBlocks`
+      );
     }
 
     // Queue FontBlocks

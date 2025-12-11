@@ -69,75 +69,64 @@ export function bmp_to_fontblocks(
   const bmp_scale_x = bmpData.width / VRAM_WIDTH;
   const bmp_scale_y = bmpData.height / VRAM_HEIGHT;
 
-  // CORRECT FIX: Write MASK blocks for unrevealed areas
-  // The transition file specifies which blocks to REVEAL in order
-  // For each packet, we write a mask over the unrevealed blocks
-  // - Blocks that have been revealed (indices 0..trans_idx) = BMP shows through
-  // - Blocks not yet revealed (indices trans_idx+1..767) = write black mask
-  // As time progresses, fewer mask blocks are written, revealing more BMP
+  // CORRECT ALGORITHM:
+  // For each block in transition order:
+  // 1. Extract 6×12 pixels from BMP at that block position
+  // 2. Create FontBlock with those pixel values
+  // 3. Schedule at (start_pack + transition_index)
   
-  // Create a set of all block coordinates
-  const allBlockKeys = new Set<string>();
-  for (let y = 0; y < SCREEN_TILES_HIGH; y++) {
-    for (let x = 0; x < SCREEN_TILES_WIDE; x++) {
-      allBlockKeys.add(`${x},${y}`);
-    }
-  }
+  // Process blocks in transition order
+  for (let trans_idx = 0; trans_idx < trans_data.blocks.length; trans_idx++) {
+    const [block_x, block_y] = trans_data.blocks[trans_idx];
 
-  // Create a map of block coordinates from transition
-  const transBlockMap = new Map<string, number>();
-  for (let i = 0; i < trans_data.blocks.length; i++) {
-    const [x, y] = trans_data.blocks[i];
-    transBlockMap.set(`${x},${y}`, i);
-  }
+    // Schedule block at: start_pack + transition_index
+    const block_start_pack = start_pack + trans_idx;
 
-  // For each step in the transition
-  for (let trans_idx = 0; trans_idx < trans_data.length; trans_idx++) {
-    // Find all blocks that are NOT yet revealed (indices > trans_idx)
-    const revealedSet = new Set<string>();
-    for (let i = 0; i <= trans_idx; i++) {
-      const [x, y] = trans_data.blocks[i];
-      revealedSet.add(`${x},${y}`);
+    // Create FontBlock for this position
+    const fontblock = new CDGMagic_FontBlock(block_x, block_y, block_start_pack);
+
+    // Assign z-layer and channel from track options
+    if (track_options) {
+      fontblock.z_location(track_options.track());
+      fontblock.channel(track_options.channel());
     }
 
-    // Write mask blocks for all unrevealed blocks
-    for (const blockKey of allBlockKeys) {
-      if (revealedSet.has(blockKey)) continue;  // Skip revealed blocks
+    // Extract 6×12 pixels from BMP at this block position
+    // Block coordinates are in tile space (0-49 wide, 0-17 high)
+    // Convert to pixel space: each block is 6×12 pixels
+    const block_pixel_x = block_x * TILE_WIDTH;
+    const block_pixel_y = block_y * TILE_HEIGHT;
 
-      const [xStr, yStr] = blockKey.split(',');
-      const block_x = parseInt(xStr, 10);
-      const block_y = parseInt(yStr, 10);
+    for (let pixel_y = 0; pixel_y < TILE_HEIGHT; pixel_y++) {
+      for (let pixel_x = 0; pixel_x < TILE_WIDTH; pixel_x++) {
+        // Calculate source pixel in BMP (with scaling)
+        const bmp_x = Math.floor((block_pixel_x + pixel_x) * bmp_scale_x);
+        const bmp_y = Math.floor((block_pixel_y + pixel_y) * bmp_scale_y);
 
-      // Schedule mask block at: start_pack + transition_index
-      const block_start_pack = start_pack + trans_idx;
-
-      // Create FontBlock for this mask position
-      const fontblock = new CDGMagic_FontBlock(block_x, block_y, block_start_pack);
-
-      // Assign z-layer and channel from track options
-      if (track_options) {
-        fontblock.z_location(track_options.track());
-        fontblock.channel(track_options.channel());
-      }
-
-      // Fill mask block with background color (black = 0)
-      // This covers/hides the unrevealed portion of the BMP
-      for (let pixel_y = 0; pixel_y < TILE_HEIGHT; pixel_y++) {
-        for (let pixel_x = 0; pixel_x < TILE_WIDTH; pixel_x++) {
-          fontblock.pixel_value(pixel_x, pixel_y, 0);  // Black mask
+        // Bounds check
+        if (bmp_x >= bmpData.width || bmp_y >= bmpData.height) {
+          fontblock.pixel_value(pixel_x, pixel_y, 0);  // Out of bounds = black
+          continue;
         }
-      }
 
-      // Add to output
-      fontblocks.push(fontblock);
+        // Sample pixel from BMP
+        const bmp_pixel_index = bmp_y * bmpData.width + bmp_x;
+        const pixel_color = bmpData.pixels[bmp_pixel_index] || 0;
+
+        // Store in FontBlock (0-255 palette indices)
+        fontblock.pixel_value(pixel_x, pixel_y, pixel_color);
+      }
     }
+
+    // Add to output
+    fontblocks.push(fontblock);
   }
 
   if (DEBUG)
     console.debug(
       `[bmp_to_fontblocks] Converted BMP to ${fontblocks.length} FontBlocks ` +
       `(transition mask: ${transition ? 'custom' : 'default'}, ` +
-      `packets ${start_pack}-${start_pack + trans_data.length})`
+      `packets ${start_pack}-${start_pack + trans_data.blocks.length})`
     );
 
   return fontblocks;
