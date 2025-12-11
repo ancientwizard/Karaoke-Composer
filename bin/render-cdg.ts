@@ -7,10 +7,14 @@
  * using the CDGMagic_CDGExporter. Validates output matches reference file.
  *
  * Usage:
- *   npx ts-node bin/render-cdg.ts <input.cmp> <output.cdg> [reference.cdg]
+ *   npx ts-node bin/render-cdg.ts <input.cmp> <output.cdg> [reference.cdg] [--no-text-clips]
+ *
+ * Options:
+ *   --no-text-clips    Exclude text clips from rendering (for transition testing)
  *
  * Example:
  *   npx ts-node bin/render-cdg.ts cdg-projects/sample_project_04.cmp /tmp/output.cdg cdg-projects/sample_project_04.cdg
+ *   npx ts-node bin/render-cdg.ts cdg-projects/sample_project_04.cmp /tmp/output.cdg --no-text-clips
  */
 
 import fs   from 'fs';
@@ -29,6 +33,7 @@ interface RenderOptions {
   outputCDG: string;
   referenceCDG?: string;
   verbose: boolean;
+  noTextClips: boolean;
 }
 
 /**
@@ -39,16 +44,29 @@ function parseArgs(): RenderOptions {
 
   if (args.length < 2) {
     console.error(
-      'Usage: npx ts-node bin/render-cdg.ts <input.cmp> <output.cdg> [reference.cdg]'
+      'Usage: npx ts-node bin/render-cdg.ts <input.cmp> <output.cdg> [reference.cdg] [--no-text-clips]'
     );
     process.exit(1);
   }
 
+  // Separate positional and flag arguments
+  const positional: string[] = [];
+  let noTextClips = false;
+
+  for (const arg of args) {
+    if (arg === '--no-text-clips') {
+      noTextClips = true;
+    } else {
+      positional.push(arg);
+    }
+  }
+
   return {
-    inputCMP: args[0]!,
-    outputCDG: args[1]!,
-    referenceCDG: args[2],
+    inputCMP: positional[0]!,
+    outputCDG: positional[1]!,
+    referenceCDG: positional[2],
     verbose: process.env.VERBOSE === '1' || process.env.VERBOSE === 'true',
+    noTextClips,
   };
 }
 
@@ -77,7 +95,7 @@ function loadCMPProject(filePath: string) {
 /**
  * Generate CDG binary from CMP project
  */
-function generateCDG(cmpProject: any): Uint8Array {
+function generateCDG(cmpProject: any, options: RenderOptions): Uint8Array {
   // Create exporter with 60-second (18000 packets) default duration
   // Standard CD+G files are 1 minute long at 300 packets/second
   const DEFAULT_DURATION_PACKETS = 18000;
@@ -112,6 +130,15 @@ function generateCDG(cmpProject: any): Uint8Array {
   let clipsSkipped = 0;
 
   for (const cmpClip of cmpProject.clips) {
+    // Skip text clips if --no-text-clips flag set
+    if (options.noTextClips && cmpClip.type === 'TextClip') {
+      if (options.verbose) {
+        console.log(`  Skipped TextClip at packet ${cmpClip.start} (--no-text-clips)`);
+      }
+      clipsSkipped++;
+      continue;
+    }
+
     const mediaClip = convertToMediaClip(cmpClip);
 
     if (!mediaClip) {
@@ -215,6 +242,9 @@ async function main() {
     if (opts.referenceCDG) {
       console.log(`[render-cdg] Reference: ${opts.referenceCDG}`);
     }
+    if (opts.noTextClips) {
+      console.log('[render-cdg] Mode: Text clips DISABLED (--no-text-clips)');
+    }
 
     // Load project
     console.log('[render-cdg] Loading CMP project...');
@@ -225,7 +255,7 @@ async function main() {
 
     // Generate CDG
     console.log('[render-cdg] Generating CDG...');
-    const cdgBinary = generateCDG(cmpProject);
+    const cdgBinary = generateCDG(cmpProject, opts);
 
     // Write output
     console.log(`[render-cdg] Writing output to ${opts.outputCDG}...`);
