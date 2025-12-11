@@ -15,12 +15,8 @@ import { readBMP                } from "@/ts/cd+g-magic/BMPReader";
 import { bmp_to_fontblocks      } from "@/ts/cd+g-magic/BMPToFontBlockConverter";
 import { loadTransitionFile, getDefaultTransition } from "@/ts/cd+g-magic/TransitionFileReader";
 import {
-  renderTextToTile,
   getRawCharacterFromFont,
-  renderCharacterFromFontToRegion,
-  getCharacterWidth,
-  getFontHeight,
-  getFontScalingFactor
+  getFontHeight
 } from "@/ts/cd+g-magic/TextRenderer";
 import { CompositorBuffer       } from "@/ts/cd+g-magic/CompositorBuffer";
 import { VRAMBuffer             } from "@/ts/cd+g-magic/VRAMBuffer";
@@ -604,38 +600,25 @@ class CDGMagic_CDGExporter {
 
       // Render each character of the line using pre-rendered fonts
       let charPixelX = leftStart;
-      const fontScale = getFontScalingFactor(fontSize);
       
       for (let charIdx = 0; charIdx < lineText.length; charIdx++) {
         const char = lineText[charIdx]!;
         
-        // Get native pre-rendered character data
+        // Get rendered character data from unified font system
         const charData = getRawCharacterFromFont(char, fontSize);
         
         if (charData) {
-          // Use pre-rendered font with scaling
           const charWidth = charData.width;
           const charHeight = charData.height;
           const srcData = charData.data;
 
-          // Scale the character dimensions if needed
-          const scaledWidth = Math.round(charWidth * fontScale);
-          const scaledHeight = Math.round(charHeight * fontScale);
-
           // Calculate top position for this character (baseline alignment)
-          // Use scaled height for alignment
-          const charTopPixel = topStart - scaledHeight;  // Align to baseline
+          const charTopPixel = topStart - charHeight;  // Align to baseline
 
-          // Draw character bitmap into screen BMP with scaling
-          for (let dstY = 0; dstY < scaledHeight; dstY++) {
-            for (let dstX = 0; dstX < scaledWidth; dstX++) {
-              // Map destination pixel back to source using nearest-neighbor
-              const srcX = Math.floor(dstX / fontScale);
-              const srcY = Math.floor(dstY / fontScale);
-
-              if (srcX >= charWidth || srcY >= charHeight) continue;
-
-              const srcIdx = srcY * charWidth + srcX;
+          // Draw character bitmap into screen BMP
+          for (let dstY = 0; dstY < charHeight; dstY++) {
+            for (let dstX = 0; dstX < charWidth; dstX++) {
+              const srcIdx = dstY * charWidth + dstX;
               const pixelX = charPixelX + dstX;
               const pixelY = charTopPixel + dstY;
 
@@ -648,34 +631,7 @@ class CDGMagic_CDGExporter {
             }
           }
 
-          charPixelX += scaledWidth;
-        } else {
-          // Fallback to old tile-based rendering if font not found
-          const tileData = renderTextToTile(char, foregroundColor, backgroundColor);
-          const color1 = tileData[0] as number;
-          const color2 = tileData[1] as number;
-          const bitmap = tileData[2] as Uint8Array;
-
-          // Draw character bitmap into screen BMP (6×12 pixels)
-          const charTopPixel = topStart - 12;
-          for (let row = 0; row < 12; row++) {
-            const byte = bitmap[row] || 0;
-            const pixelY = charTopPixel + row;
-
-            if (pixelY < 0 || pixelY >= screenHeight) continue;
-
-            for (let col = 0; col < 6; col++) {
-              const pixelX = charPixelX + col;
-              if (pixelX >= screenWidth) break;
-
-              const bit = (byte >> (5 - col)) & 1;
-              const pixelColor = bit ? color1 : color2;
-              const pixelIndex = pixelY * screenWidth + pixelX;
-              screenBmpPixels[pixelIndex] = pixelColor;
-            }
-          }
-
-          charPixelX += 6;  // Fallback uses 6-pixel width
+          charPixelX += charWidth + 1;  // Move to next character position
         }
       }
     }
