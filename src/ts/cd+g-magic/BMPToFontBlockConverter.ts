@@ -69,6 +69,19 @@ export function bmp_to_fontblocks(
   const bmp_scale_x = bmpData.width / VRAM_WIDTH;
   const bmp_scale_y = bmpData.height / VRAM_HEIGHT;
 
+  if (DEBUG) {
+    console.debug(`[bmp_to_fontblocks] Screen dimensions: ${VRAM_WIDTH}×${VRAM_HEIGHT} (${SCREEN_TILES_WIDE}×${SCREEN_TILES_HIGH} blocks)`);
+    console.debug(`[bmp_to_fontblocks] BMP dimensions: ${bmpData.width}×${bmpData.height}`);
+    console.debug(`[bmp_to_fontblocks] Scaling factors: ${bmp_scale_x}×${bmp_scale_y}`);
+    console.debug(`[bmp_to_fontblocks] Processing ${trans_data.blocks.length} blocks in transition order`);
+    
+    // Show min/max Y coordinates
+    const yCoords = trans_data.blocks.map(([_, y]) => y);
+    const minY = Math.min(...yCoords);
+    const maxY = Math.max(...yCoords);
+    console.debug(`[bmp_to_fontblocks] Y coordinates range: ${minY}-${maxY}`);
+  }
+
   // CORRECT ALGORITHM:
   // For each block in transition order:
   // 1. Extract 6×12 pixels from BMP at that block position
