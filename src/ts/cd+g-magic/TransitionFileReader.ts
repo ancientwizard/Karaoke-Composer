@@ -114,5 +114,35 @@ export function getDefaultTransition(): TransitionData {
   };
 }
 
+/**
+ * Get no-transition ordering (all blocks written at once)
+ * 
+ * For text clips that should appear solid without any reveal pattern,
+ * this returns all 768 blocks in arbitrary order with the same start_pack.
+ * All blocks write immediately with no progressive reveal.
+ * 
+ * This is used for text layers that should appear on top of BMP layers
+ * which use their own transition patterns.
+ * 
+ * @returns TransitionData with all blocks having same packet time
+ */
+export function getNoTransition(): TransitionData {
+  const blocks: Array<[number, number]> = [];
+
+  // Iterate through 768 blocks in row-major order (arbitrary choice)
+  // Screen is 50 tiles wide × 18 tiles high
+  for (let cur_blk = 0; cur_blk < 768; cur_blk++) {
+    const y = Math.floor(cur_blk / 50);  // Row: 0-17
+    const x = cur_blk % 50;              // Column: 0-49
+
+    blocks.push([x, y]);
+  }
+
+  return {
+    blocks,
+    length: 768,
+  };
+}
+
 // VIM: set ft=typescript :
 // END

@@ -13,7 +13,7 @@ import { CDGMagic_PALGlobalClip } from "@/ts/cd+g-magic/CDGMagic_PALGlobalClip";
 import { CDGMagic_BMPClip       } from "@/ts/cd+g-magic/CDGMagic_BMPClip";
 import { readBMP                } from "@/ts/cd+g-magic/BMPReader";
 import { bmp_to_fontblocks      } from "@/ts/cd+g-magic/BMPToFontBlockConverter";
-import { loadTransitionFile, getDefaultTransition } from "@/ts/cd+g-magic/TransitionFileReader";
+import { loadTransitionFile, getDefaultTransition, getNoTransition } from "@/ts/cd+g-magic/TransitionFileReader";
 import {
   getRawCharacterFromFont,
   getFontHeight,
@@ -645,12 +645,13 @@ class CDGMagic_CDGExporter {
     };
 
     // Convert full-screen BMP to FontBlocks
-    // TEXT SHOULD NOT USE TRANSITION - write all blocks immediately
-    // so text appears solid while background reveals via BMP transition
+    // TEXT CLIPS: Use no-transition ordering (all blocks write immediately)
+    // This ensures text appears solid without any reveal pattern,
+    // while BMP background uses its own transition pattern on lower layers
     const fontblocks = bmp_to_fontblocks(
       screenBmpData,
       clip.start_pack() + 3,
-      getDefaultTransition(),  // Use sequential transition (all blocks written in order, no reveal pattern)
+      getNoTransition(),  // Write all text blocks at once (no progressive reveal)
       (clip as any).track_options?.(),
       CDGMagic_CDGExporter.DEBUG
     );
