@@ -16,7 +16,8 @@ import { bmp_to_fontblocks      } from "@/ts/cd+g-magic/BMPToFontBlockConverter"
 import { loadTransitionFile, getDefaultTransition } from "@/ts/cd+g-magic/TransitionFileReader";
 import {
   getRawCharacterFromFont,
-  getFontHeight
+  getFontHeight,
+  getFontNameFromIndex
 } from "@/ts/cd+g-magic/TextRenderer";
 import { CompositorBuffer       } from "@/ts/cd+g-magic/CompositorBuffer";
 import { VRAMBuffer             } from "@/ts/cd+g-magic/VRAMBuffer";
@@ -448,9 +449,10 @@ class CDGMagic_CDGExporter {
     // Use actual foreground/background colors from TextClip
     // Transparency will be handled by marking background pixels as index 256
 
+    const fontName = getFontNameFromIndex(fontIndex);
     if (CDGMagic_CDGExporter.DEBUG)
       console.debug(
-        `[schedule_text_clip] Font: index=${fontIndex}, size=${fontSize}, ` +
+        `[schedule_text_clip] Font: index=${fontIndex} (${fontName}), size=${fontSize}, ` +
         `FG=${foregroundColor}, BG=${backgroundColor}, ` +
         `outline=${outlineColor}, aa=${antialiasMode}, karaoke=${karaokeMode}`
       );
@@ -513,8 +515,12 @@ class CDGMagic_CDGExporter {
     const screenWidth = 300;  // CD+G standard width
     const screenHeight = 216;  // Full CD+G height
     const screenBmpPixels = new Uint8Array(screenWidth * screenHeight);
-    // Initialize with palette index 0 (will be marked transparent for compositing)
-    // All pixels start at 0; drawn text pixels will be set to foregroundColor
+    // Initialize with backgroundColor index - all pixels start with background color
+    // Text pixels will be set to foregroundColor
+    // Non-text background pixels will be marked transparent so BMP shows through
+    for (let i = 0; i < screenBmpPixels.length; i++) {
+      screenBmpPixels[i] = backgroundColor;
+    }
     
     // Get rectangle dimensions from first event
     const rectWidth = firstEvent?.width || screenWidth;
@@ -575,7 +581,7 @@ class CDGMagic_CDGExporter {
       let totalTextWidth = 0;
       for (let charIdx = 0; charIdx < lineText.length; charIdx++) {
         const char = lineText[charIdx]!;
-        const charData = getRawCharacterFromFont(char, fontSize);
+        const charData = getRawCharacterFromFont(char, fontSize, fontIndex);
         if (charData) {
           totalTextWidth += charData.width + 1;  // +1 for character spacing
         }
@@ -595,7 +601,7 @@ class CDGMagic_CDGExporter {
         const char = lineText[charIdx]!;
         
         // Get rendered character data from unified font system
-        const charData = getRawCharacterFromFont(char, fontSize);
+        const charData = getRawCharacterFromFont(char, fontSize, fontIndex);
         
         if (charData) {
           const charWidth = charData.width;
@@ -654,15 +660,15 @@ class CDGMagic_CDGExporter {
         `[schedule_text_clip] Converted ${lines.length} lines to ${fontblocks.length} FontBlocks`
       );
 
-    // Mark index 0 (background, undrawn pixels) as transparent
+    // Mark backgroundColor (background, undrawn pixels) as transparent
     // This allows the BMP background to show through non-text areas
     for (const fontblock of fontblocks) {
-      fontblock.replacement_transparent_color(0);
+      fontblock.replacement_transparent_color(backgroundColor);
     }
 
     if (CDGMagic_CDGExporter.DEBUG) {
       console.debug(
-        `[schedule_text_clip] Applied transparency: index 0 (background) is transparent in ${fontblocks.length} FontBlocks`
+        `[schedule_text_clip] Applied transparency: backgroundColor ${backgroundColor} is transparent in ${fontblocks.length} FontBlocks`
       );
     }
 
