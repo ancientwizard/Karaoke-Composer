@@ -43,6 +43,8 @@ export interface BMPData {
  * @param start_pack Starting packet number for first block
  * @param transition Optional transition ordering (default: sequential)
  * @param track_options Optional track options for z-layer and channel assignment
+ * @param x_offset Pixel offset from BMP (subtracted from block position)
+ * @param y_offset Pixel offset from BMP (subtracted from block position)
  * @param DEBUG Optional debug logging
  * @returns Array of FontBlock instances (max 900 for full screen)
  */
@@ -51,6 +53,8 @@ export function bmp_to_fontblocks(
   start_pack: number,
   transition?: TransitionData,
   track_options?: CDGMagic_TrackOptions,
+  x_offset: number = 0,
+  y_offset: number = 0,
   DEBUG: boolean = false
 ): CDGMagic_FontBlock[] {
   const TILE_WIDTH = 6;
@@ -92,8 +96,9 @@ export function bmp_to_fontblocks(
   for (let trans_idx = 0; trans_idx < trans_data.blocks.length; trans_idx++) {
     const [block_x, block_y] = trans_data.blocks[trans_idx];
 
-    // Schedule block at: start_pack + transition_index
-    const block_start_pack = start_pack + trans_idx;
+    // CRITICAL: For "no-transition" patterns (text clips), all blocks write at the same packet time
+    // For regular transitions (BMP clips), blocks are spread across packets for progressive reveal
+    const block_start_pack = trans_data.no_transition ? start_pack : start_pack + trans_idx;
 
     // Create FontBlock for this position
     const fontblock = new CDGMagic_FontBlock(block_x, block_y, block_start_pack);
@@ -107,23 +112,26 @@ export function bmp_to_fontblocks(
     // Extract 6×12 pixels from BMP at this block position
     // Block coordinates are in tile space (0-49 wide, 0-17 high)
     // Convert to pixel space: each block is 6×12 pixels
-    const block_pixel_x = block_x * TILE_WIDTH;
-    const block_pixel_y = block_y * TILE_HEIGHT;
+    // CRITICAL: Apply BMP object offsets (see CDGMagic_GraphicsEncoder.cpp lines 582-583)
+    // Offsets shift the BMP sampling position to align with the display grid
+    const block_pixel_x = block_x * TILE_WIDTH - x_offset;
+    const block_pixel_y = block_y * TILE_HEIGHT - y_offset;
 
     for (let pixel_y = 0; pixel_y < TILE_HEIGHT; pixel_y++) {
       for (let pixel_x = 0; pixel_x < TILE_WIDTH; pixel_x++) {
-        // Calculate source pixel in BMP (with scaling)
-        const bmp_x = Math.floor((block_pixel_x + pixel_x) * bmp_scale_x);
-        const bmp_y = Math.floor((block_pixel_y + pixel_y) * bmp_scale_y);
+        // Calculate source pixel in BMP (with scaling and offset)
+        // Apply offsets first, then scale
+        const sample_x = block_pixel_x + pixel_x;
+        const sample_y = block_pixel_y + pixel_y;
 
-        // Bounds check
-        if (bmp_x >= bmpData.width || bmp_y >= bmpData.height) {
+        // Bounds check (before scaling)
+        if (sample_x < 0 || sample_y < 0 || sample_x >= bmpData.width || sample_y >= bmpData.height) {
           fontblock.pixel_value(pixel_x, pixel_y, 0);  // Out of bounds = black
           continue;
         }
 
-        // Sample pixel from BMP
-        const bmp_pixel_index = bmp_y * bmpData.width + bmp_x;
+        // Sample pixel from BMP (now with offset applied)
+        const bmp_pixel_index = sample_y * bmpData.width + sample_x;
         const pixel_color = bmpData.pixels[bmp_pixel_index] || 0;
 
         // Store in FontBlock (0-255 palette indices)

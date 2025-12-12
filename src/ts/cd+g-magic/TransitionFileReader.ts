@@ -17,6 +17,7 @@ import fs from 'fs';
 export interface TransitionData {
   blocks: Array<[number, number]>;  // [x, y] pairs, 0-indexed
   length: number;                    // Number of blocks (should be 768)
+  no_transition?: boolean;            // If true, all blocks use same start_pack (no progressive reveal)
 }
 
 /**
@@ -123,12 +124,14 @@ export function loadTransitionFile(filePath: string): TransitionData | null {
 export function getDefaultTransition(): TransitionData {
   const blocks: Array<[number, number]> = [];
 
-  // Iterate through 768 blocks in column-major order
-  // Screen is 48 tiles wide × 16 tiles high = 768 total
-  // (C++ intentionally excludes columns 48-49 and rows 16-17)
+  // Match C++ default transition (CDGMagic_BMPObject.cpp lines 46-48)
+  // C++ formula: x = (cur_blk / 16) + 1, y = (cur_blk % 16) + 1
+  // This generates 1-indexed coordinates in C++: X ∈ [1, 48], Y ∈ [1, 16]
+  // But we return 0-indexed to match our coordinate system: X ∈ [0, 47], Y ∈ [0, 15]
+  // So subtract 1 to convert to 0-indexed (same as loadTransitionFile does)
   for (let cur_blk = 0; cur_blk < 768; cur_blk++) {
-    const x = Math.floor(cur_blk / 16);  // Column: 0-47
-    const y = cur_blk % 16;              // Row: 0-15
+    const x = Math.floor(cur_blk / 16);  // 0-indexed X: 0 to 47
+    const y = cur_blk % 16;              // 0-indexed Y: 0 to 15
 
     blocks.push([x, y]);
   }
@@ -146,6 +149,10 @@ export function getDefaultTransition(): TransitionData {
  * this returns all 768 blocks in arbitrary order with the same start_pack.
  * All blocks write immediately with no progressive reveal.
  * 
+ * IMPORTANT: This is a sentinel value that signals to bmp_to_fontblocks to NOT
+ * use transition index for packet timing. Instead, all blocks should get the same
+ * start_pack so they write together in the same packet batch.
+ * 
  * This is used for text layers that should appear on top of BMP layers
  * which use their own transition patterns.
  * 
@@ -154,11 +161,12 @@ export function getDefaultTransition(): TransitionData {
 export function getNoTransition(): TransitionData {
   const blocks: Array<[number, number]> = [];
 
-  // Iterate through 768 blocks in row-major order (arbitrary choice)
-  // Screen is 50 tiles wide × 18 tiles high
+  // Iterate through 768 blocks in row-major order
+  // 768 blocks = 48 tiles wide × 16 tiles high (C++ default grid)
+  // NOT 50 tiles wide × 18 tiles high (full screen)
   for (let cur_blk = 0; cur_blk < 768; cur_blk++) {
-    const y = Math.floor(cur_blk / 50);  // Row: 0-17
-    const x = cur_blk % 50;              // Column: 0-49
+    const x = cur_blk % 48;               // Column: 0-47
+    const y = Math.floor(cur_blk / 48);   // Row: 0-15
 
     blocks.push([x, y]);
   }
@@ -166,6 +174,9 @@ export function getNoTransition(): TransitionData {
   return {
     blocks,
     length: 768,
+    // Mark this as a "no transition" pattern by setting a special flag
+    // bmp_to_fontblocks should check for this and NOT spread blocks across packets
+    no_transition: true,
   };
 }
 
