@@ -11,6 +11,7 @@ import { CDGMagic_TextClip      } from '@/ts/cd+g-magic/CDGMagic_TextClip';
 import { CDGMagic_BMPClip       } from '@/ts/cd+g-magic/CDGMagic_BMPClip';
 import { CDGMagic_ScrollClip    } from '@/ts/cd+g-magic/CDGMagic_ScrollClip';
 import { CDGMagic_PALGlobalClip } from '@/ts/cd+g-magic/CDGMagic_PALGlobalClip';
+import { CDGMagic_TrackOptions  } from '@/ts/cd+g-magic/CDGMagic_TrackOptions_Core';
 
 /**
  * Union type of all possible clip classes
@@ -79,19 +80,25 @@ function convertTextClip(cmpClip: CMPClip): CDGMagic_TextClip | null {
   }
 
   // Set screen clear settings (from boxColor field)
-  // boxColor < 16 means screen clear is enabled with that color
-  // boxColor == 16 means screen clear is disabled
+  // In TILES mode (karaokeMode = 0), boxColor is just a rendering color
+  // It does NOT enable a MEMORY_PRESET packet automatically
+  // Default: memory_preset_index stays at 16 (disabled)
+  // The boxColor is used for rendering the text background/box
   if (data.boxColor !== undefined) {
     textClip.box_index(data.boxColor);
-    textClip.memory_preset_index(data.boxColor); // Same value: if < 16, enabled; if == 16, disabled
+    // DO NOT set memory_preset_index here - it defaults to 16 (disabled)
+    // Memory presets are only for BMP clips, not text clips
   }
 
   // Set border settings (from frameColor field)
-  // frameColor < 16 means border is enabled with that color
-  // frameColor == 16 means border is disabled
+  // In TILES mode (karaokeMode = 0), frameColor is just a rendering color
+  // It does NOT enable a BORDER_PRESET packet automatically
+  // Default: border_index stays at 16 (disabled)
+  // The frameColor is used for rendering the text frame/outline
   if (data.frameColor !== undefined) {
     textClip.frame_index(data.frameColor);
-    textClip.border_index(data.frameColor); // Same value: if < 16, enabled; if == 16, disabled
+    // DO NOT set border_index here - it defaults to 16 (disabled)
+    // Border presets are only for BMP clips, not text clips
   }
 
   // Set composite color and mode for transparency
@@ -113,6 +120,13 @@ function convertTextClip(cmpClip: CMPClip): CDGMagic_TextClip | null {
   if (Array.isArray(data.events)) {
     (textClip as any)._events = data.events;
   }
+
+  // Set z-layer from CMP track data
+  // Each text clip has its own z-layer defined in the CMP file
+  // Lower z values render first (background), higher z values render last (foreground)
+  const zLayer = cmpClip.track ?? 0;
+  const textTrackOptions = new CDGMagic_TrackOptions(zLayer);
+  textClip.set_track_options(textTrackOptions);
 
   return textClip;
 }
@@ -146,7 +160,18 @@ function convertBMPClip(cmpClip: CMPClip): CDGMagic_BMPClip | null {
       transition_file: event.transitionFile || '',
       transition_length: event.transitionLength || 0,
     }));
+
+    // Set clip-level offsets from first BMP event
+    // These are accessed by the exporter via clip.x_offset() and clip.y_offset()
+    if (data.events.length > 0 && data.events[0]) {
+      bmpClip.x_offset(data.events[0].xOffset || 0);
+      bmpClip.y_offset(data.events[0].yOffset || 0);
+    }
   }
+
+  // NOTE: BMPClip does not extend MediaClip, so it cannot set track_options directly
+  // Z-layer for BMP clips is controlled via the cmpClip.track value if BMPClip is upgraded
+  // For now, BMP clips use default rendering order while text clips use CMP track values
 
   return bmpClip;
 }
