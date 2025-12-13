@@ -107,6 +107,10 @@ class CDGMagic_CDGExporter {
     written: boolean;
   }> = [];
 
+  // Track which blocks have been explicitly rendered via FontBlocks
+  // Used to detect and output pre-filled edge blocks that weren't rendered
+  private internal_rendered_blocks: Set<string> = new Set();
+
   /**
    * Constructor: Create exporter
    *
@@ -272,6 +276,11 @@ class CDGMagic_CDGExporter {
     // This implements progressive transition reveals matching C++ reference behavior
     this.process_fontblocks_incrementally();
 
+    // CRITICAL: Output pre-filled edge blocks that weren't covered by transitions
+    // Edge blocks (X=48-49, Y=16-17) are pre-filled with memory preset color but not rendered
+    // We need to explicitly output them as COPY_FONT packets
+    this.output_unfilled_edge_blocks();
+
     // Pad to target duration
     this.pad_to_duration();
 
@@ -323,6 +332,81 @@ class CDGMagic_CDGExporter {
   }
 
   /**
+   * Output edge blocks that were pre-filled but not explicitly rendered
+   *
+   * Edge blocks (X=48-49, Y=16-17) are pre-filled with memory preset color by VRAM.fill_with_color()
+   * but are not covered by transitions. This method outputs those blocks as COPY_FONT packets.
+   *
+   * After all FontBlocks have been processed, we read the compositor buffer and output any blocks that:
+   * 1. Are in the edge region (X >= 48 or Y >= 16)
+   * 2. Were NOT explicitly rendered (not in internal_rendered_blocks)
+   * 3. Are all transparent (will be rendered as the preset color)
+   */
+  private output_unfilled_edge_blocks(): void {
+    if (!this.internal_compositor) return;
+
+    const SCREEN_TILES_WIDE = 50;
+    const SCREEN_TILES_HIGH = 18;
+    let edge_packets = 0;
+    let last_pack = Math.max(...Array.from(this.internal_packet_schedule.keys()), this.internal_total_packets);
+
+    // Iterate through all 50×18 blocks
+    for (let block_y = 0; block_y < SCREEN_TILES_HIGH; block_y++) {
+      for (let block_x = 0; block_x < SCREEN_TILES_WIDE; block_x++) {
+        // Check if this block is in the edge region (not covered by transitions which are 48×16)
+        const is_right_edge = block_x >= 48;
+        const is_bottom_edge = block_y >= 16;
+        
+        if (!is_right_edge && !is_bottom_edge) {
+          // This block is in the main 48×16 area, not an edge
+          continue;
+        }
+
+        // Check if this block was explicitly rendered
+        if (this.internal_rendered_blocks.has(`${block_x},${block_y}`)) {
+          continue;  // Already rendered, skip
+        }
+
+        // Read the block from the compositor
+        const composited_block = this.internal_compositor.read_composited_block(block_x, block_y);
+
+        // Check if ALL pixels are transparent (256 = transparent sentinel value)
+        // If so, this block will be rendered as the preset color
+        let all_transparent = true;
+        for (let i = 0; i < composited_block.length; i++) {
+          if (composited_block[i] < 256) {
+            // Found a non-transparent pixel
+            all_transparent = false;
+            break;
+          }
+        }
+
+        if (!all_transparent) {
+          // This block has content, skip (it should have been rendered already)
+          continue;
+        }
+
+        // Get the preset color from the compositor
+        const preset_color = this.internal_compositor.get_preset_index();
+
+        // Create COPY_FONT packet for this edge block with the preset color
+        const packet = this.create_copy_font_packet(preset_color, preset_color, block_x, block_y, true);
+        
+        // Schedule the packet after all other content
+        last_pack++;
+        this.add_scheduled_packet(last_pack, packet);
+        edge_packets++;
+
+        if (CDGMagic_CDGExporter.DEBUG)
+          console.debug(`[output_unfilled_edge_blocks] Output edge block(${block_x},${block_y}) color=${preset_color}`);
+      }
+    }
+
+    if (CDGMagic_CDGExporter.DEBUG && edge_packets > 0)
+      console.debug(`[output_unfilled_edge_blocks] Output ${edge_packets} edge block packets`);
+  }
+
+  /**
    * Encode blocks that changed at current_pack to CD+G packets
    *
    * Uses change detection via VRAM to only write blocks that were modified.
@@ -333,6 +417,10 @@ class CDGMagic_CDGExporter {
   private encode_changed_blocks_to_packets(current_pack: number): void {
     if (!this.internal_compositor || !this.internal_vram) return;
 
+    // Now that VRAM is pre-filled with memory preset color for edge blocks,
+    // we can iterate all 50×18 blocks and encode those that differ from VRAM.
+    // Previously we only iterated 48×16, but with VRAM pre-fill, edge blocks
+    // are correctly initialized and will be encoded if changed.
     const SCREEN_TILES_WIDE = 50;
     const SCREEN_TILES_HIGH = 18;
     let packets_added = 0;
@@ -437,10 +525,23 @@ class CDGMagic_CDGExporter {
     let foregroundColor = clip.foreground_color();
     let backgroundColor = clip.background_color();
     const fontIndex = clip.font_index();
-    const fontSize = clip.font_size();
+    let fontSize = clip.font_size();
     const outlineColor = (clip as any).outline_color?.() || 0;
     const antialiasMode = clip.antialias_mode();
     const karaokeMode = (clip as any).karaoke_mode?.() || 0;  // 0 = TITLES
+
+    // CRITICAL: Constrain font size for CD+G display (300×216 pixels)
+    // Maximum reasonable size is 32pt to fit on screen without massive overflow
+    // Larger sizes (like 70pt) would consume the entire display
+    // Clamp font size to reasonable range for CD+G karaoke display
+    if (fontSize > 32) {
+      if (CDGMagic_CDGExporter.DEBUG)
+        console.debug(`[schedule_text_clip] Font size ${fontSize} exceeds CD+G display limit, clamping to 32`);
+      fontSize = 32;
+    }
+    if (fontSize < 8) {
+      fontSize = 8;  // Minimum readable size
+    }
 
     // Clamp colors to palette range
     foregroundColor = Math.min(15, Math.max(0, foregroundColor));
@@ -473,6 +574,18 @@ class CDGMagic_CDGExporter {
     if (textMemoryIndex < 16) {
       const textClearColor = clip.box_index();
       this.add_scheduled_packet(clip.start_pack() + 3, this.create_memory_preset_packet(textClearColor));
+
+      // CRITICAL: Fill entire VRAM with preset color to match C++ behavior
+      // This pre-fills edge blocks (X=48-49, Y=16-17) with the color
+      if (this.internal_vram) {
+        this.internal_vram.fill_with_color(textClearColor);
+      }
+
+      // CRITICAL: Update compositor's preset index to match this text clip's memory preset
+      // This ensures edge blocks (which are all transparent) render with the correct color
+      if (this.internal_compositor) {
+        this.internal_compositor.set_preset_index(textClearColor);
+      }
     }
 
     // Split text into lines
@@ -511,31 +624,33 @@ class CDGMagic_CDGExporter {
       );
     }
 
-    // C++ PATTERN: Create one full-screen BMP for all lines, positioned at correct Y offsets
+    // Screen dimensions are standard CD+G
     const screenWidth = 300;  // CD+G standard width
     const screenHeight = 216;  // Full CD+G height
-    const screenBmpPixels = new Uint8Array(screenWidth * screenHeight);
-    // Initialize with backgroundColor index - all pixels start with background color
-    // Text pixels will be set to foregroundColor
-    // Non-text background pixels will be marked transparent so BMP shows through
-    for (let i = 0; i < screenBmpPixels.length; i++) {
-      screenBmpPixels[i] = backgroundColor;
-    }
-    
+
     // Get rectangle dimensions from first event
     const rectWidth = firstEvent?.width || screenWidth;
     const rectHeight = firstEvent?.height || (lineHeight * lines.length);
-    const rectBottom = textYOffset + rectHeight;
+    const rectBottomY = textYOffset + rectHeight;
 
+    // C++ PATTERN: Create one full-screen BMP for all lines, positioned at correct Y offsets
+    const screenBmpPixels = new Uint8Array(screenWidth * screenHeight);
+    
+    // Initialize to 256 (transparency sentinel) for all pixels
+    // This ensures blocks with no text content will be completely transparent
+    for (let i = 0; i < screenBmpPixels.length; i++) {
+      screenBmpPixels[i] = 256;  // Mark as transparent (outside valid palette range)
+    }
+    
+    // CRITICAL: Only write text pixels with foregroundColor
+    // Leave background pixels as 256 (transparent) so underlying content shows through
+    // This creates truly transparent text windows without solid backgrounds
+    
     if (CDGMagic_CDGExporter.DEBUG) {
       console.debug(
         `[schedule_text_clip] Text rectangle: x=${textXOffset}, y=${textYOffset}, w=${rectWidth}, h=${rectHeight}`
       );
     }
-
-    // Get compositing mode for transparency handling
-    const shouldComposite = (clip as any)._should_composite || 0;
-    const compositeIndex = (clip as any)._composite_color || 0;
 
     // Render each line at its vertical offset
     for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
@@ -622,11 +737,12 @@ class CDGMagic_CDGExporter {
 
               const gray = srcData[srcIdx];
               // Only write pixels that are "on" (white/foreground)
-              // Leave background pixels untouched so FontBlock analyzer can handle compositing
+              // Text pixels get foregroundColor, background stays transparent (256)
               if (gray > 127) {
                 const pixelIndex = pixelY * screenWidth + pixelX;
                 screenBmpPixels[pixelIndex] = foregroundColor;
               }
+              // Else: leave as 256 (transparent), so background shows through
             }
           }
 
@@ -653,6 +769,8 @@ class CDGMagic_CDGExporter {
       clip.start_pack() + 3,
       getNoTransition(),  // Write all text blocks at once (no progressive reveal)
       (clip as any).track_options?.(),
+      0,  // Text clips have no x offset
+      0,  // Text clips have no y offset
       CDGMagic_CDGExporter.DEBUG
     );
 
@@ -661,17 +779,11 @@ class CDGMagic_CDGExporter {
         `[schedule_text_clip] Converted ${lines.length} lines to ${fontblocks.length} FontBlocks`
       );
 
-    // Mark backgroundColor (background, undrawn pixels) as transparent
-    // This allows the BMP background to show through non-text areas
-    for (const fontblock of fontblocks) {
-      fontblock.replacement_transparent_color(backgroundColor);
-    }
-
-    if (CDGMagic_CDGExporter.DEBUG) {
-      console.debug(
-        `[schedule_text_clip] Applied transparency: backgroundColor ${backgroundColor} is transparent in ${fontblocks.length} FontBlocks`
-      );
-    }
+    // NOTE: Transparency is achieved by NOT writing background pixels (leaving them as 0).
+    // CD+G doesn't have a built-in transparency mechanism at the packet level.
+    // We work around this by only rendering text pixels, leaving the rectangle background unwritten.
+    // FontBlocks with all-zero pixels are skipped by the encoder, so no packets are generated for empty areas.
+    // This allows the underlying background (transitions) to show through.
 
     // Queue FontBlocks
     this.queue_fontblocks_for_progressive_writing(fontblocks);
@@ -755,14 +867,35 @@ class CDGMagic_CDGExporter {
 
           // Then: schedule MEMORY_PRESET packets to clear screen (only if enabled)
           const bmpMemoryIndex = bmpEvent.memory_preset_index ?? 16;
+          let fillColor = 0;  // Default to black/background color
           if (bmpMemoryIndex < 16) {
             const bmpClearColor = bmpMemoryIndex;
+            fillColor = bmpClearColor;
             // Schedule 16 MEMORY_PRESET packets as per C++ standard practice
             for (let i = 0; i < 16; i++) {
               const pkt = this.create_memory_preset_packet(bmpClearColor, i);
               this.add_scheduled_packet(clip.start_pack() + nextOffset + i, pkt);
             }
             nextOffset += 16;
+          }
+
+          // CRITICAL: Fill entire VRAM with preset color (or default 0) to match C++ behavior
+          // See CDGMagic_GraphicsEncoder.cpp line 469:
+          //   for (unsigned int px = 0; px < VRAM_WIDTH * VRAM_HEIGHT; px++)
+          //     { vram[px] = the_event->memory_preset_index; };
+          // This ensures edge blocks (X=48-49, Y=16-17) are pre-filled with the color
+          // They will then be overwritten by transition blocks if needed,
+          // or remain as this color if not covered by the transition.
+          // NOTE: We fill ALWAYS, not just when memory_preset is enabled,
+          // because the transition only covers 48×16 leaving 100 edge blocks empty.
+          if (this.internal_vram) {
+            this.internal_vram.fill_with_color(fillColor);
+          }
+
+          // CRITICAL: Update compositor's preset index to match this BMP clip's memory preset
+          // This ensures edge blocks (which are all transparent) render with the correct color
+          if (this.internal_compositor) {
+            this.internal_compositor.set_preset_index(fillColor);
           }
 
           // Load transition file if available, otherwise use default (sequential) ordering
@@ -784,11 +917,17 @@ class CDGMagic_CDGExporter {
           }
 
           // Convert BMP to FontBlocks with transition ordering (if available)
+          // CRITICAL: Pass BMP offsets to apply pixel sampling adjustment
+          // See CDGMagic_GraphicsEncoder.cpp lines 582-583:
+          //   x_offset = x_offset * 6 - bmp_object->x_offset();
+          //   y_offset = y_offset * 12 - bmp_object->y_offset();
           const fontblocks = bmp_to_fontblocks(
             bmpData,
             clip.start_pack() + 19,
             transitionData,
             (clip as any).track_options?.(),  // Pass track options for z_location and channel assignment
+            clip.x_offset(),  // BMP x offset in pixels
+            clip.y_offset(),  // BMP y offset in pixels
             CDGMagic_CDGExporter.DEBUG
           );
           if (CDGMagic_CDGExporter.DEBUG)
@@ -1525,6 +1664,13 @@ class CDGMagic_CDGExporter {
       const block_y = fontblock.y_location();
       const z_layer = fontblock.z_location();
 
+      // CRITICAL: Match C++ bounds checking in write_fontblock()
+      // Don't write blocks past the confines of the screen (0-49 for X, 0-17 for Y)
+      if (block_x < 0 || block_x >= 50 || block_y < 0 || block_y >= 18) {
+        entry.written = true;
+        continue;
+      }
+
       // Extract 72 pixels from FontBlock (6×12 tile)
       const pixel_data = new Uint16Array(72);
       let idx = 0;
@@ -1538,6 +1684,10 @@ class CDGMagic_CDGExporter {
 
       // Write block to compositor at its z-layer
       this.internal_compositor.write_block(block_x, block_y, z_layer, pixel_data);
+      
+      // Track that this block was explicitly rendered
+      this.internal_rendered_blocks.add(`${block_x},${block_y}`);
+      
       entry.written = true;
 
       if (CDGMagic_CDGExporter.DEBUG)
