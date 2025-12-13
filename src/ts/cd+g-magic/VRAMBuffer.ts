@@ -97,6 +97,20 @@ class VRAMBuffer {
   }
 
   /**
+   * Fill entire VRAM with a single color
+   * 
+   * This matches C++ behavior in CDGMagic_GraphicsEncoder::set_memory()
+   * where the entire VRAM is filled with the memory preset color.
+   * This pre-fills edge blocks (X=48-49, Y=16-17) that are not covered
+   * by the transition blocks.
+   * 
+   * @param color_index Palette index to fill with (0-255)
+   */
+  public fill_with_color(color_index: number): void {
+    this.internal_vram.fill(color_index & 0xff);
+  }
+
+  /**
    * Read 6×12 tile block from VRAM
    *
    * Used to extract current on-screen state for comparison.

@@ -51,29 +51,28 @@ export class FontManager {
    * Register fonts and their sources
    */
   private initializeFontRegistry(): void {
-    // Font index 0 = Arial
-    // Using Liberation Sans which is metrically compatible with Arial
+    // Font index 0 = Arial (fallback to local DejaVuSans)
     this.fontsInfo.set(0, {
       name: 'Arial',
       index: 0,
       path: path.join(this.fontCacheDir, 'arial.ttf'),
-      url: 'https://github.com/liberationfonts/liberation-fonts/raw/main/fonts/LiberationSans-Regular.ttf'
+      url: undefined  // Will use local fonts only
     });
 
-    // Font index 1 = Courier (Liberation Mono)
+    // Font index 1 = Courier (fallback to local DejaVuSansMono)
     this.fontsInfo.set(1, {
       name: 'Courier',
       index: 1,
       path: path.join(this.fontCacheDir, 'courier.ttf'),
-      url: 'https://github.com/liberationfonts/liberation-fonts/raw/main/fonts/LiberationMono-Regular.ttf'
+      url: undefined  // Will use local fonts only
     });
 
-    // Font index 2 = Times New Roman (Liberation Serif)
+    // Font index 2 = Times New Roman (fallback to local DejaVuSerif)
     this.fontsInfo.set(2, {
       name: 'Times New Roman',
       index: 2,
       path: path.join(this.fontCacheDir, 'times.ttf'),
-      url: 'https://github.com/liberationfonts/liberation-fonts/raw/main/fonts/LiberationSerif-Regular.ttf'
+      url: undefined  // Will use local fonts only
     });
   }
 
@@ -88,13 +87,26 @@ export class FontManager {
       return null;
     }
 
-    // Check if font exists locally
+    // Check if font exists in cache directory first
     if (fs.existsSync(fontInfo.path)) {
       try {
         const buffer = fs.readFileSync(fontInfo.path);
+        console.log(`[FontManager] Loaded ${fontInfo.name} from cache`);
         return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
       } catch (e) {
         console.warn(`Failed to read font from ${fontInfo.path}:`, e);
+      }
+    }
+
+    // Try local fonts directory as fallback
+    const localFontPath = path.join('./fonts', this.getLocalFontFilename(fontIndex));
+    if (fs.existsSync(localFontPath)) {
+      try {
+        const buffer = fs.readFileSync(localFontPath);
+        console.log(`[FontManager] Using local font ${fontInfo.name} from ./fonts`);
+        return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+      } catch (e) {
+        console.warn(`Failed to read local font from ${localFontPath}:`, e);
       }
     }
 
@@ -104,6 +116,18 @@ export class FontManager {
     }
 
     return null;
+  }
+
+  /**
+   * Get the local font filename for a given font index
+   */
+  private getLocalFontFilename(fontIndex: number): string {
+    switch (fontIndex) {
+      case 0: return 'DejaVuSans.ttf';       // Arial → DejaVuSans
+      case 1: return 'DejaVuSansMono.ttf';   // Courier → DejaVuSansMono
+      case 2: return 'DejaVuSerif.ttf';      // Times → DejaVuSerif
+      default: return 'DejaVuSans.ttf';
+    }
   }
 
   /**

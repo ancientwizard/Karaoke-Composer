@@ -38,6 +38,32 @@ export const FONT_NAME_TO_INDEX: Record<string, number> = {
 };
 
 /**
+ * Convert CMP font face name to font index
+ * CMP stores font names like "Arial", "BArial" (bold), "IArial" (italic), etc.
+ * This function extracts the base font name and maps to index
+ * @param cmpFontFace Font face name from CMP (e.g., "BArial", "Arial", "Courier")
+ * @returns Font index (0-7+) or 0 (Arial) if not found
+ */
+export function getFontIndexFromCMPFace(cmpFontFace: string): number {
+  if (!cmpFontFace) {
+    return 0;  // Default to Arial
+  }
+
+  // CMP font names may have style prefixes: "B" (bold), "I" (italic), "BI" (bold-italic)
+  // Extract the base font name by removing style prefix
+  let baseName = cmpFontFace;
+  
+  // Remove leading style markers (B, I, BI)
+  if (baseName.match(/^[BI]+/)) {
+    baseName = baseName.replace(/^[BI]+/, '');
+  }
+
+  // Map base name to index
+  const index = FONT_NAME_TO_INDEX[baseName];
+  return index !== undefined ? index : 0;  // Default to Arial if not found
+}
+
+/**
  * Get font name from font index
  * @param fontIndex Font index (0-7+)
  * @returns Font name string
@@ -139,6 +165,134 @@ export function getFontHeight(fontSize: number): number {
   // Fallback to simple calculation based on requested size
   // Font size in points typically means height in pixels at 72 DPI
   return Math.round(fontSize * 1.3); // Typical descender adjustment
+}
+
+/**
+ * Measure the width of a text string in pixels
+ * @param text Text to measure
+ * @param fontSize Font size in points
+ * @param fontIndex Font index (0-7+)
+ * @returns Width in pixels
+ */
+export function measureTextWidth(
+  text: string,
+  fontSize: number,
+  fontIndex: number = 0
+): number {
+  if (!text) {
+    return 0;
+  }
+
+  let totalWidth = 0;
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i]!;
+    const glyph = getRawCharacterFromFont(char, fontSize, fontIndex);
+    if (glyph) {
+      totalWidth += glyph.width + 1;  // +1 for character spacing
+    }
+  }
+  
+  // Subtract last spacing
+  if (totalWidth > 0) {
+    totalWidth -= 1;
+  }
+  
+  return totalWidth;
+}
+
+/**
+ * Break text into lines that fit within a specified width
+ * Uses word-boundaries to avoid breaking mid-word
+ * @param text Text to wrap
+ * @param maxWidth Maximum width in pixels
+ * @param fontSize Font size in points
+ * @param fontIndex Font index (0-7+)
+ * @returns Array of lines that fit within maxWidth
+ */
+export function wrapTextToWidth(
+  text: string,
+  maxWidth: number,
+  fontSize: number,
+  fontIndex: number = 0
+): string[] {
+  if (!text || maxWidth <= 0) {
+    return text ? [text] : [];
+  }
+
+  const lines: string[] = [];
+  const words = text.split(/\s+/);
+  let currentLine = '';
+
+  for (const word of words) {
+    // Try adding word to current line
+    const testLine = currentLine ? `${currentLine} ${word}` : word;
+    const testWidth = measureTextWidth(testLine, fontSize, fontIndex);
+
+    if (testWidth <= maxWidth) {
+      // Word fits, add it to current line
+      currentLine = testLine;
+    } else {
+      // Word doesn't fit
+      if (currentLine) {
+        // Push current line and start new one
+        lines.push(currentLine);
+        currentLine = word;
+      } else {
+        // Word itself is longer than maxWidth, add it anyway to avoid infinite loop
+        lines.push(word);
+        currentLine = '';
+      }
+    }
+  }
+
+  // Push final line
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+
+  return lines;
+}
+
+/**
+ * Calculate optimal font size to fit text within specified width and height
+ * @param text Text to fit
+ * @param maxWidth Maximum width in pixels
+ * @param maxHeight Maximum height in pixels
+ * @param fontIndex Font index (0-7+)
+ * @param minSize Minimum font size (default: 8)
+ * @param maxSize Maximum font size (default: 32)
+ * @returns Optimal font size in points
+ */
+export function calculateFitFontSize(
+  text: string,
+  maxWidth: number,
+  maxHeight: number,
+  fontIndex: number = 0,
+  minSize: number = 8,
+  maxSize: number = 32
+): number {
+  // Binary search for optimal font size
+  let low = minSize;
+  let high = maxSize;
+  let bestSize = minSize;
+
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const lines = wrapTextToWidth(text, maxWidth, mid, fontIndex);
+    const height = getFontHeight(mid);
+    const totalHeight = lines.length * height;
+
+    if (totalHeight <= maxHeight && measureTextWidth(lines[0]!, mid, fontIndex) <= maxWidth) {
+      // Size fits, try larger
+      bestSize = mid;
+      low = mid + 1;
+    } else {
+      // Size doesn't fit, try smaller
+      high = mid - 1;
+    }
+  }
+
+  return bestSize;
 }
 
 // VIM: set et sw=2 ts=2 :

@@ -69,6 +69,7 @@ export class CDGMagic_TextClip extends CDGMagic_MediaClip {
   private internal_memory_preset_index: number = 16;    // 16 = disabled (C++ behavior)
   private internal_box_index: number = 0;               // Screen clear color (for preset)
   private internal_frame_index: number = 4;             // Border color
+  private internal_font_face: string = "Arial";         // Font face from CMP (e.g., "BArial", "Courier")
 
   /**
    * Create text clip
@@ -139,6 +140,27 @@ export class CDGMagic_TextClip extends CDGMagic_MediaClip {
       return this.internal_font_index;
     } else {
       this.internal_font_index = Math.max(0, index);
+      this.invalidate_graphics_cache();
+    }
+  }
+
+  /**
+   * Get font face name
+   *
+   * @returns Font face name from CMP (e.g., "Arial", "BArial", "Courier")
+   */
+  font_face(): string;
+  /**
+   * Set font face name
+   *
+   * @param face Font face name (e.g., "Arial", "BArial", "Courier")
+   */
+  font_face(face: string): void;
+  font_face(face?: string): string | void {
+    if (face === undefined) {
+      return this.internal_font_face;
+    } else {
+      this.internal_font_face = face || "Arial";
       this.invalidate_graphics_cache();
     }
   }

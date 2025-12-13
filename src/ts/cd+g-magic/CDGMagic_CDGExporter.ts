@@ -17,7 +17,9 @@ import { loadTransitionFile, getDefaultTransition, getNoTransition } from "@/ts/
 import {
   getRawCharacterFromFont,
   getFontHeight,
-  getFontNameFromIndex
+  getFontNameFromIndex,
+  getFontIndexFromCMPFace,
+  wrapTextToWidth
 } from "@/ts/cd+g-magic/TextRenderer";
 import { CompositorBuffer       } from "@/ts/cd+g-magic/CompositorBuffer";
 import { VRAMBuffer             } from "@/ts/cd+g-magic/VRAMBuffer";
@@ -505,11 +507,138 @@ class CDGMagic_CDGExporter {
   }
 
   /**
+   * Draw a single character into bitmap pixels with optional outline effect
+   * 
+   * Renders character with center pixel using foregroundColor, and outline pixels
+   * using a darker shade for readability. The outline is created by rendering the
+   * character multiple times with slight offsets.
+   *
+   * @param charData Character bitmap data
+   * @param charPixelX X position of character
+   * @param topStart Y position (baseline) of character  
+   * @param screenWidth Screen width in pixels
+   * @param screenHeight Screen height in pixels
+   * @param bmpPixels Destination bitmap pixels array
+   * @param foregroundColor Color index for text
+   * @param outlineColor Color index for outline (use 0 for black outline)
+   * @param fontSize Font size (larger fonts get thicker outlines)
+   */
+  private drawCharacterWithOutline(
+    charData: { width: number; height: number; data: Uint8Array },
+    charPixelX: number,
+    topStart: number,
+    screenWidth: number,
+    screenHeight: number,
+    bmpPixels: Uint8Array,
+    foregroundColor: number,
+    outlineColor: number,
+    fontSize: number
+  ): void {
+    const charWidth = charData.width;
+    const charHeight = charData.height;
+    const srcData = charData.data;
+    const charTopPixel = topStart - charHeight;  // Align to baseline
+
+    // C++ STYLE: Soft, merged outline (like 70's art style)
+    // The outline should be subtle and blend smoothly, not hard-edged
+    // We use a distance-based approach: pixels near the character edge get outline color
+    // Pixels far from edge get nothing, creating a soft halo effect
+    
+    if (outlineColor < 16) {
+      // Draw soft outline using distance blending
+      // For each outline pixel, check distance to character content
+      const outlineRadius = fontSize < 16 ? 2 : 3;  // How far the outline extends
+      
+      for (let y = -outlineRadius; y <= outlineRadius; y++) {
+        for (let x = -outlineRadius; x <= outlineRadius; x++) {
+          if (x === 0 && y === 0) continue;  // Skip center (that's the text)
+          
+          // Calculate distance from center
+          const dist = Math.sqrt(x * x + y * y);
+          if (dist > outlineRadius) continue;  // Too far away
+          
+          // Check if this position is near character content
+          let nearContent = false;
+          
+          // Sample the character data at the offset position
+          for (let dstY = 0; dstY < charHeight && !nearContent; dstY++) {
+            for (let dstX = 0; dstX < charWidth && !nearContent; dstX++) {
+              const srcIdx = dstY * charWidth + dstX;
+              const gray = srcData[srcIdx];
+              
+              // If this source pixel is part of the character
+              if (gray > 0) {
+                const pixelX = charPixelX + dstX + x;
+                const pixelY = charTopPixel + dstY + y;
+                
+                if (pixelX >= 0 && pixelX < screenWidth && pixelY >= 0 && pixelY < screenHeight) {
+                  const pixelIndex = pixelY * screenWidth + pixelX;
+                  // Only write outline to empty pixels (don't overwrite text)
+                  if (bmpPixels[pixelIndex] === 256) {
+                    // Soft outline: use distance to create fade effect
+                    // Close to character = darker outline, far = lighter/transparent
+                    const strength = 1 - (dist / outlineRadius);
+                    
+                    // For CD+G palette colors, we can only write palette indices
+                    // Write the outline color where there's space
+                    bmpPixels[pixelIndex] = outlineColor;
+                    nearContent = true;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // CRITICAL: Render both solid AND anti-aliased text pixels
+    // The font renderer produces:
+    // - 255: solid text pixels
+    // - 1-254: anti-aliased edge pixels (smooth edges from super-sampling)
+    // - 0: transparent background
+    // 
+    // We must render ALL text pixels (gray > 0) to preserve anti-aliasing
+    // and prevent character overlap. The text layer sits on top of the outline.
+    
+    // Second pass: Draw main character on top (this overwrites outline if they overlap)
+    for (let dstY = 0; dstY < charHeight; dstY++) {
+      for (let dstX = 0; dstX < charWidth; dstX++) {
+        const srcIdx = dstY * charWidth + dstX;
+        const pixelX = charPixelX + dstX;
+        const pixelY = charTopPixel + dstY;
+
+        if (pixelX >= screenWidth || pixelY < 0 || pixelY >= screenHeight) continue;
+
+        const gray = srcData[srcIdx];
+        
+        // Render any text pixel (gray > 0), including anti-aliased edges
+        // This ensures smooth character edges without overlap
+        if (gray > 0) {
+          const pixelIndex = pixelY * screenWidth + pixelX;
+          
+          // Only write if this is a solid text pixel (gray > 128)
+          // or if the destination is empty (transparent)
+          if (gray > 128) {
+            // Solid text - always write
+            bmpPixels[pixelIndex] = foregroundColor;
+          } else if (bmpPixels[pixelIndex] === 256) {
+            // Anti-aliased edge - only write to empty pixels
+            // This prevents text edges from overlapping with outline or previous characters
+            bmpPixels[pixelIndex] = foregroundColor;
+          }
+        }
+      }
+    }
+  }
+
+  /**
    * Schedule packets for TextClip
    *
    * Follows C++ reference implementation (CDGMagic_TextClip.cpp):
    * - Renders text using configured font properties
-   * - For TITLES mode: each line rendered separately at vertical offset
+   * - For TITLES mode: renders all text at start_pack + 3
+   * - For KARAOKE modes: schedules each event at its individual clipTimeOffset
    * - Calculates line_height based on font_size + border_size
    * - Creates one BMPObject per line (stored as separate event)
    * - Properly centers text (both horizontal and vertical)
@@ -524,23 +653,32 @@ class CDGMagic_CDGExporter {
     const textContent = clip.text_content();
     let foregroundColor = clip.foreground_color();
     let backgroundColor = clip.background_color();
-    const fontIndex = clip.font_index();
     let fontSize = clip.font_size();
     const outlineColor = (clip as any).outline_color?.() || 0;
     const antialiasMode = clip.antialias_mode();
     const karaokeMode = (clip as any).karaoke_mode?.() || 0;  // 0 = TITLES
 
-    // CRITICAL: Constrain font size for CD+G display (300×216 pixels)
-    // Maximum reasonable size is 32pt to fit on screen without massive overflow
-    // Larger sizes (like 70pt) would consume the entire display
-    // Clamp font size to reasonable range for CD+G karaoke display
-    if (fontSize > 32) {
-      if (CDGMagic_CDGExporter.DEBUG)
-        console.debug(`[schedule_text_clip] Font size ${fontSize} exceeds CD+G display limit, clamping to 32`);
-      fontSize = 32;
+    // CRITICAL: Use font face from CMP data instead of hardcoded fontIndex
+    // The CMP file contains the actual font name (e.g., "BArial", "Courier", "Times")
+    // getFontIndexFromCMPFace() converts these names to standard font indices
+    const cmpFontFace = clip.font_face();
+    let fontIndex = getFontIndexFromCMPFace(cmpFontFace);
+    if (CDGMagic_CDGExporter.DEBUG)
+      console.debug(`[schedule_text_clip] Font face from CMP: "${cmpFontFace}" → index ${fontIndex}`);
+
+    // CRITICAL: Respect font size from CMP data
+    // Each TextClip specifies its intended font size (e.g., 14pt, 16pt, 24pt, 36pt, 70pt, etc.)
+    // The event data (yOffset, height) is specifically sized to accommodate this font
+    // Do NOT clamp font sizes - let the CMP data drive the rendering
+    // The TextClip's xOffset, yOffset, width, and height are designed for this specific font size
+    
+    // Ensure minimum readable size but don't enforce arbitrary maximum
+    if (fontSize < 6) {
+      fontSize = 6;  // Absolute minimum for readability
     }
-    if (fontSize < 8) {
-      fontSize = 8;  // Minimum readable size
+    
+    if (CDGMagic_CDGExporter.DEBUG) {
+      console.debug(`[schedule_text_clip] Using font size ${fontSize}pt from CMP data (no clamping)`);
     }
 
     // Clamp colors to palette range
@@ -605,148 +743,185 @@ class CDGMagic_CDGExporter {
     // For TITLES mode: position is per-event (one event per clip)
     // For karaoke modes: position is per-line (multiple events, one per line)
     const events = (clip as any)._events || [];
-    const firstEvent = events.length > 0 ? events[0] : null;
-    let textXOffset: number = 6;   // Default x position
-    let textYOffset: number = 12;  // Default y position
-
-    if (firstEvent) {
-      if (firstEvent.xOffset !== undefined && firstEvent.xOffset !== null) {
-        textXOffset = Number(firstEvent.xOffset) || 6;
-      }
-      if (firstEvent.yOffset !== undefined && firstEvent.yOffset !== null) {
-        textYOffset = Number(firstEvent.yOffset) || 12;
-      }
-    }
-
-    if (CDGMagic_CDGExporter.DEBUG) {
-      console.debug(
-        `[schedule_text_clip] Mode ${karaokeMode}: using explicit offsets x=${textXOffset}, y=${textYOffset} from first event`
+    
+    // KARAOKE TIMING: For karaoke mode, schedule each event separately
+    // For TITLES mode, render all text at once at clip start
+    if (karaokeMode === 0 || events.length === 0) {
+      // TITLES mode: render all text at once
+      this.schedule_text_clip_event(
+        clip,
+        lines,
+        fontIndex,
+        fontSize,
+        fontPixelHeight,
+        lineHeight,
+        foregroundColor,
+        outlineColor,
+        clip.start_pack() + 3,  // All text at clip start + 3
+        events[0] || null
       );
-    }
+    } else {
+      // KARAOKE mode: schedule each event at its individual timing
+      if (CDGMagic_CDGExporter.DEBUG) {
+        console.debug(`[schedule_text_clip] Karaoke mode ${karaokeMode} with ${events.length} events`);
+      }
 
+      for (let eventIdx = 0; eventIdx < events.length; eventIdx++) {
+        const event = events[eventIdx];
+        const clipTimeOffset = Number(event.clipTimeOffset) || 0;
+        const clipTimeDuration = Number(event.clipTimeDuration) || clip.duration();
+        const clipLineNum = Number(event.clipLineNum) || eventIdx;
+        const clipWordNum = Number(event.clipWordNum) || 0;
+
+        // Calculate packet time for this event
+        const eventPacket = clip.start_pack() + clipTimeOffset;
+
+        if (CDGMagic_CDGExporter.DEBUG) {
+          console.debug(
+            `[schedule_text_clip] Event ${eventIdx}: offset=${clipTimeOffset}, duration=${clipTimeDuration}, ` +
+            `line=${clipLineNum}, word=${clipWordNum}, packet=${eventPacket}`
+          );
+        }
+
+        // Schedule this event's text at its specific timing
+        this.schedule_text_clip_event(
+          clip,
+          lines,
+          fontIndex,
+          fontSize,
+          fontPixelHeight,
+          lineHeight,
+          foregroundColor,
+          outlineColor,
+          eventPacket,
+          event
+        );
+      }
+    }
+  }
+
+  /**
+   * Helper: Schedule a single text event with its specific timing and positioning
+   * 
+   * CRITICAL: Each event is independent - it specifies exactly which line(s) should render
+   * and at what Y position. Do NOT position lines sequentially!
+   * 
+   * @param clip TextClip being rendered
+   * @param lines Text lines to render (all lines from text content, split by \n)
+   * @param fontIndex Font to use
+   * @param fontSize Font size in points
+   * @param fontPixelHeight Calculated pixel height of font
+   * @param lineHeight Line height in pixels
+   * @param foregroundColor Text color
+   * @param outlineColor Outline color
+   * @param schedulePacket Packet time to schedule this event
+   * @param event Event data (contains positioning and timing info)
+   */
+  private schedule_text_clip_event(
+    clip: CDGMagic_TextClip,
+    lines: string[],
+    fontIndex: number,
+    fontSize: number,
+    fontPixelHeight: number,
+    lineHeight: number,
+    foregroundColor: number,
+    outlineColor: number,
+    schedulePacket: number,
+    event: any
+  ): void {
     // Screen dimensions are standard CD+G
     const screenWidth = 300;  // CD+G standard width
     const screenHeight = 216;  // Full CD+G height
 
-    // Get rectangle dimensions from first event
-    const rectWidth = firstEvent?.width || screenWidth;
-    const rectHeight = firstEvent?.height || (lineHeight * lines.length);
-    const rectBottomY = textYOffset + rectHeight;
+    // CRITICAL: Each event specifies WHICH LINE and at WHAT POSITION it should be rendered
+    // The event's yOffset is the absolute Y position, NOT relative to previous lines
+    // The event's clipLineNum tells us which line(s) from the text content to render
+    
+    const clipLineNum = event?.clipLineNum || 0;
+    const textXOffset = Number(event?.xOffset) || 6;
+    const textYOffset = Number(event?.yOffset) || 12;
+    const eventWidth = Number(event?.width) || screenWidth;
+    const eventHeight = Number(event?.height) || lineHeight;
 
-    // C++ PATTERN: Create one full-screen BMP for all lines, positioned at correct Y offsets
-    const screenBmpPixels = new Uint8Array(screenWidth * screenHeight);
-    
-    // Initialize to 256 (transparency sentinel) for all pixels
-    // This ensures blocks with no text content will be completely transparent
-    for (let i = 0; i < screenBmpPixels.length; i++) {
-      screenBmpPixels[i] = 256;  // Mark as transparent (outside valid palette range)
-    }
-    
-    // CRITICAL: Only write text pixels with foregroundColor
-    // Leave background pixels as 256 (transparent) so underlying content shows through
-    // This creates truly transparent text windows without solid backgrounds
-    
     if (CDGMagic_CDGExporter.DEBUG) {
       console.debug(
-        `[schedule_text_clip] Text rectangle: x=${textXOffset}, y=${textYOffset}, w=${rectWidth}, h=${rectHeight}`
+        `[schedule_text_clip_event] Scheduling at packet ${schedulePacket}: ` +
+        `line=${clipLineNum}, pos=(${textXOffset},${textYOffset}), size=(${eventWidth}x${eventHeight})`
       );
     }
 
-    // Render each line at its vertical offset
-    for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
-      const lineText = lines[lineIdx] || '';
-      if (lineText.length === 0) continue;
-
-      // Determine Y position for this line:
-      // - If multiple events, use event-based positioning (one event per line)
-      // - If one event, all lines use the same y offset from that event
-      let lineYPixels: number;
-      let lineXPixels: number = textXOffset;
-
-      if (events.length > 1 && lineIdx < events.length) {
-        // Multi-event: each line has its own event with positioning
-        const lineEvent = events[lineIdx];
-        lineYPixels = Number(lineEvent.yOffset) || textYOffset;
-        lineXPixels = Number(lineEvent.xOffset) || textXOffset;
-      } else if (events.length === 1) {
-        // Single event: all lines share the same y offset
-        lineYPixels = textYOffset;
-        lineXPixels = textXOffset;
-      } else {
-        // Fallback: position lines sequentially below the first line
-        lineYPixels = textYOffset + (lineIdx * lineHeight);
-        lineXPixels = textXOffset;
-      }
-
-      if (lineYPixels + lineHeight > screenHeight) continue;  // Skip if off-screen
-
-      // Determine text block bounds for this line
-      const blockLeftStart = lineXPixels;
-      const blockWidth = rectWidth;  // Width available for this line
+    // C++ PATTERN: Create one full-screen BMP for this event's line
+    const screenBmpPixels = new Uint8Array(screenWidth * screenHeight);
+    
+    // Initialize to 256 (transparency sentinel) for all pixels
+    for (let i = 0; i < screenBmpPixels.length; i++) {
+      screenBmpPixels[i] = 256;  // Mark as transparent
+    }
+    
+    // CRITICAL: Only render the specific line for this event
+    // clipLineNum tells us which line from the split text to render
+    if (clipLineNum >= 0 && clipLineNum < lines.length) {
+      const lineText = lines[clipLineNum] || '';
       
-      // Center vertically within line: top_start = (line_height - font_height) / 2 + font_height
-      const topStart = Math.floor((lineHeight - fontPixelHeight) / 2) + fontPixelHeight + lineYPixels;
+      if (lineText.length > 0) {
+        // Render this specific line at the event's Y position
+        const blockLeftStart = textXOffset;
+        const blockWidth = eventWidth;
+        
+        // Center vertically within the event's line area
+        const topStart = Math.floor((lineHeight - fontPixelHeight) / 2) + fontPixelHeight + textYOffset;
 
-      if (CDGMagic_CDGExporter.DEBUG)
-        console.debug(
-          `[schedule_text_clip] Line ${lineIdx}: y=${lineYPixels}, topStart=${topStart}, text="${lineText.substring(0, 30)}"`
-        );
-
-      // Calculate total text width and center within the line block
-      let totalTextWidth = 0;
-      for (let charIdx = 0; charIdx < lineText.length; charIdx++) {
-        const char = lineText[charIdx]!;
-        const charData = getRawCharacterFromFont(char, fontSize, fontIndex);
-        if (charData) {
-          totalTextWidth += charData.width + 1;  // +1 for character spacing
+        if (CDGMagic_CDGExporter.DEBUG) {
+          console.debug(
+            `[schedule_text_clip_event] Rendering line ${clipLineNum}: "${lineText.substring(0, 40)}", ` +
+            `Y=${textYOffset}, topStart=${topStart}`
+          );
         }
-      }
-      if (totalTextWidth > 0) {
-        totalTextWidth -= 1;  // Remove last spacing increment
-      }
 
-      // Center text horizontally within the available block width
-      const blockCenterX = blockLeftStart + blockWidth / 2;
-      const textStartX = Math.max(blockLeftStart, Math.floor(blockCenterX - totalTextWidth / 2));
+        // Calculate total text width
+        let totalTextWidth = 0;
+        for (let charIdx = 0; charIdx < lineText.length; charIdx++) {
+          const char = lineText[charIdx]!;
+          const charData = getRawCharacterFromFont(char, fontSize, fontIndex);
+          if (charData) {
+            totalTextWidth += charData.width + 1;
+          }
+        }
+        if (totalTextWidth > 0) {
+          totalTextWidth -= 1;
+        }
 
-      // Render each character of the line using pre-rendered fonts
-      let charPixelX = textStartX;
-      
-      for (let charIdx = 0; charIdx < lineText.length; charIdx++) {
-        const char = lineText[charIdx]!;
+        // Center text horizontally
+        const blockCenterX = blockLeftStart + blockWidth / 2;
+        const textStartX = Math.max(blockLeftStart, Math.floor(blockCenterX - totalTextWidth / 2));
+        const maxPixelX = blockLeftStart + blockWidth;
+        let charPixelX = Math.min(textStartX, maxPixelX - totalTextWidth);
         
-        // Get rendered character data from unified font system
-        const charData = getRawCharacterFromFont(char, fontSize, fontIndex);
-        
-        if (charData) {
-          const charWidth = charData.width;
-          const charHeight = charData.height;
-          const srcData = charData.data;
-
-          // Calculate top position for this character (baseline alignment)
-          const charTopPixel = topStart - charHeight;  // Align to baseline
-
-          // Draw character bitmap into screen BMP
-          for (let dstY = 0; dstY < charHeight; dstY++) {
-            for (let dstX = 0; dstX < charWidth; dstX++) {
-              const srcIdx = dstY * charWidth + dstX;
-              const pixelX = charPixelX + dstX;
-              const pixelY = charTopPixel + dstY;
-
-              if (pixelX >= screenWidth || pixelY < 0 || pixelY >= screenHeight) continue;
-
-              const gray = srcData[srcIdx];
-              // Only write pixels that are "on" (white/foreground)
-              // Text pixels get foregroundColor, background stays transparent (256)
-              if (gray > 127) {
-                const pixelIndex = pixelY * screenWidth + pixelX;
-                screenBmpPixels[pixelIndex] = foregroundColor;
-              }
-              // Else: leave as 256 (transparent), so background shows through
+        // Render each character
+        for (let charIdx = 0; charIdx < lineText.length; charIdx++) {
+          const char = lineText[charIdx]!;
+          const charData = getRawCharacterFromFont(char, fontSize, fontIndex);
+          
+          if (charData && charPixelX + charData.width <= maxPixelX) {
+            let useOutlineColor = Math.min(15, Math.max(0, outlineColor));
+            if (outlineColor === 0) {
+              useOutlineColor = 0;
             }
+
+            this.drawCharacterWithOutline(
+              charData,
+              charPixelX,
+              topStart,
+              screenWidth,
+              screenHeight,
+              screenBmpPixels,
+              foregroundColor,
+              useOutlineColor,
+              fontSize
+            );
           }
 
-          charPixelX += charWidth + 1;  // Move to next character position
+          charPixelX += (charData?.width ?? 0) + 1;
         }
       }
     }
@@ -760,30 +935,22 @@ class CDGMagic_CDGExporter {
       pixels: screenBmpPixels
     };
 
-    // Convert full-screen BMP to FontBlocks
-    // TEXT CLIPS: Use no-transition ordering (all blocks write immediately)
-    // This ensures text appears solid without any reveal pattern,
-    // while BMP background uses its own transition pattern on lower layers
+    // Convert to FontBlocks
     const fontblocks = bmp_to_fontblocks(
       screenBmpData,
-      clip.start_pack() + 3,
-      getNoTransition(),  // Write all text blocks at once (no progressive reveal)
+      schedulePacket,
+      getNoTransition(),
       (clip as any).track_options?.(),
-      0,  // Text clips have no x offset
-      0,  // Text clips have no y offset
+      0,
+      0,
       CDGMagic_CDGExporter.DEBUG
     );
 
-    if (CDGMagic_CDGExporter.DEBUG)
+    if (CDGMagic_CDGExporter.DEBUG) {
       console.debug(
-        `[schedule_text_clip] Converted ${lines.length} lines to ${fontblocks.length} FontBlocks`
+        `[schedule_text_clip_event] Converted line ${clipLineNum} to ${fontblocks.length} FontBlocks at packet ${schedulePacket}`
       );
-
-    // NOTE: Transparency is achieved by NOT writing background pixels (leaving them as 0).
-    // CD+G doesn't have a built-in transparency mechanism at the packet level.
-    // We work around this by only rendering text pixels, leaving the rectangle background unwritten.
-    // FontBlocks with all-zero pixels are skipped by the encoder, so no packets are generated for empty areas.
-    // This allows the underlying background (transitions) to show through.
+    }
 
     // Queue FontBlocks
     this.queue_fontblocks_for_progressive_writing(fontblocks);

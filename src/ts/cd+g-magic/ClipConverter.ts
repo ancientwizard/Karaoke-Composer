@@ -66,6 +66,9 @@ function convertTextClip(cmpClip: CMPClip): CDGMagic_TextClip | null {
   if (data.fontSize) {
     textClip.font_size(data.fontSize);
   }
+  if (data.fontFace) {
+    textClip.font_face(data.fontFace);
+  }
   if (data.karaokeMode !== undefined) {
     textClip.karaoke_mode(data.karaokeMode);
   }

@@ -20,6 +20,7 @@
 
 import { FontGlyphRenderer, type RenderedGlyph as OpenTypeGlyph } from './FontGlyphRenderer';
 import { FallbackBitmapFontRenderer, type RenderedGlyph as BitmapGlyph } from './FallbackBitmapFontRenderer';
+import { ImprovedBitmapFontRenderer } from './ImprovedBitmapFontRenderer';
 import { FontManager } from './FontManager';
 
 export type RenderedGlyph = OpenTypeGlyph | BitmapGlyph;
@@ -30,13 +31,13 @@ export type RenderedGlyph = OpenTypeGlyph | BitmapGlyph;
 export class UnifiedFontSystem {
   private fontManager: FontManager;
   private renderers: Map<number, FontGlyphRenderer | null> = new Map();
-  private fallback: FallbackBitmapFontRenderer;
+  private fallback: ImprovedBitmapFontRenderer;
   private currentSize = 12;
   private currentFontIndex = 0;
 
   constructor() {
     this.fontManager = new FontManager();
-    this.fallback = new FallbackBitmapFontRenderer();
+    this.fallback = new ImprovedBitmapFontRenderer();
     this.fallback.setFontSize(this.currentSize);
   }
 
@@ -46,6 +47,17 @@ export class UnifiedFontSystem {
    */
   async initializeFonts(): Promise<void> {
     console.log('[UnifiedFontSystem] Initializing fonts...');
+    
+    // Check if canvas is available (required for real font rendering)
+    const canvasAvailable = await this.checkCanvasAvailability();
+    if (!canvasAvailable) {
+      console.log('[UnifiedFontSystem] Canvas not available, using bitmap fonts only');
+      // Set all renderers to null to use fallback bitmap fonts
+      for (let idx = 0; idx < 8; idx++) {
+        this.renderers.set(idx, null);
+      }
+      return;
+    }
     
     // Try to load fonts 0-2 (Arial, Courier, Times)
     for (let idx = 0; idx < 3; idx++) {
@@ -62,6 +74,26 @@ export class UnifiedFontSystem {
       } else {
         this.renderers.set(idx, null);
       }
+    }
+  }
+
+  /**
+   * Check if canvas is available in this environment
+   */
+  private async checkCanvasAvailability(): Promise<boolean> {
+    try {
+      // Try to dynamically detect if we can use canvas
+      // In Node.js, this will fail unless canvas package is installed
+      if (typeof window !== 'undefined') {
+        // Browser environment - canvas should be available
+        return true;
+      }
+      
+      // Node.js environment - canvas would need native bindings
+      // Return false to use bitmap fonts
+      return false;
+    } catch {
+      return false;
     }
   }
 

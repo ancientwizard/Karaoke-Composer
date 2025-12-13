@@ -74,7 +74,9 @@ export class CDGMagic_FontBlock {
   /**
    * Get number of unique colors in this block
    * Caches the result and recalculates only when dirty
-   * @returns Number of unique color indices used (1-256)
+   * IMPORTANT: Excludes the transparent index from the count!
+   * This ensures num_colors() matches prominent_color() behavior
+   * @returns Number of unique color indices used (excluding transparent)
    */
   num_colors(): number {
     if (this.numcolors_is_dirty) {
@@ -89,9 +91,9 @@ export class CDGMagic_FontBlock {
         clrs[this.internal_bmp_data[px]]++;
       }
 
-      // Count how many colors are actually used
+      // Count how many colors are actually used (excluding transparent)
       for (let px = 0; px < 256; px++) {
-        if (clrs[px] > 0) {
+        if (clrs[px] > 0 && px !== this.internal_transparent_index) {
           this.number_of_colors++;
         }
       }

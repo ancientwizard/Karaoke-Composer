@@ -74,6 +74,15 @@ class CompositorBuffer {
   }
 
   /**
+   * Get background color (preset index)
+   *
+   * @returns Palette index (0-15 for TV Graphics)
+   */
+  public get_preset_index(): number {
+    return this.last_preset_index;
+  }
+
+  /**
    * Write pixel to specific layer
    *
    * @param x X coordinate (0 to width-1)
