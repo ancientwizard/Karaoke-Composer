@@ -935,25 +935,97 @@ class CDGMagic_CDGExporter {
       pixels: screenBmpPixels
     };
 
-    // Convert to FontBlocks
-    const fontblocks = bmp_to_fontblocks(
-      screenBmpData,
-      schedulePacket,
-      getNoTransition(),
-      (clip as any).track_options?.(),
-      0,
-      0,
-      CDGMagic_CDGExporter.DEBUG
-    );
-
-    if (CDGMagic_CDGExporter.DEBUG) {
-      console.debug(
-        `[schedule_text_clip_event] Converted line ${clipLineNum} to ${fontblocks.length} FontBlocks at packet ${schedulePacket}`
-      );
+    // CRITICAL FIX: Filter out transparent pixels before converting to FontBlocks
+    // 
+    // The problem: bmp_to_fontblocks() writes ALL pixels in the BMP, including
+    // pixel value 256 (transparency sentinel), which is invalid for FontBlocks.
+    // This causes FontBlocks to write garbage/black over the entire screen.
+    //
+    // The solution: Replace all 256 (transparent) pixels with 0 (black) ONLY
+    // if they would otherwise be written. But actually, we want transparency
+    // to mean "don't write this pixel at all".
+    //
+    // Better solution: Only write FontBlocks for the bounding box of the text,
+    // not the entire screen. This prevents the entire screen from being redrawn.
+    
+    // Calculate the bounding box of non-transparent pixels
+    let minX = screenWidth, maxX = -1;
+    let minY = screenHeight, maxY = -1;
+    
+    for (let y = 0; y < screenHeight; y++) {
+      for (let x = 0; x < screenWidth; x++) {
+        const pixelIdx = y * screenWidth + x;
+        if (screenBmpPixels[pixelIdx] !== 256) {  // Not transparent
+          minX = Math.min(minX, x);
+          maxX = Math.max(maxX, x);
+          minY = Math.min(minY, y);
+          maxY = Math.max(maxY, y);
+        }
+      }
     }
+    
+    // If there are text pixels, create a minimal BMP with just the text area
+    if (minX <= maxX && minY <= maxY) {
+      // Add padding (1-2 pixels) for outline/anti-aliasing
+      const padding = 2;
+      minX = Math.max(0, minX - padding);
+      minY = Math.max(0, minY - padding);
+      maxX = Math.min(screenWidth - 1, maxX + padding);
+      maxY = Math.min(screenHeight - 1, maxY + padding);
+      
+      const boxWidth = maxX - minX + 1;
+      const boxHeight = maxY - minY + 1;
+      
+      // Create a cropped BMP with just the text area
+      const textBmpPixels = new Uint8Array(boxWidth * boxHeight);
+      for (let y = 0; y < boxHeight; y++) {
+        for (let x = 0; x < boxWidth; x++) {
+          const srcIdx = (minY + y) * screenWidth + (minX + x);
+          const pixel = screenBmpPixels[srcIdx];
+          // Convert 256 (transparent) to 0 (black) - these areas won't show
+          textBmpPixels[y * boxWidth + x] = pixel === 256 ? 0 : pixel;
+        }
+      }
+      
+      const textBmpData = {
+        width: boxWidth,
+        height: boxHeight,
+        bitsPerPixel: 8,
+        palette: this.internal_palette.slice(0, 16),
+        pixels: textBmpPixels
+      };
+      
+      // Convert to FontBlocks with NO TRANSITION (write all at once)
+      // The x_offset and y_offset position the text BMP at its screen location
+      const fontblocks = bmp_to_fontblocks(
+        textBmpData,
+        schedulePacket,
+        getNoTransition(),
+        (clip as any).track_options?.(),
+        minX,  // x_offset: position text BMP at its location
+        minY,  // y_offset: position text BMP at its location
+        CDGMagic_CDGExporter.DEBUG
+      );
 
-    // Queue FontBlocks
-    this.queue_fontblocks_for_progressive_writing(fontblocks);
+      if (CDGMagic_CDGExporter.DEBUG) {
+        console.debug(
+          `[schedule_text_clip_event] Text bounding box: (${minX},${minY}) to (${maxX},${maxY}) = ${boxWidth}×${boxHeight}px`
+        );
+        console.debug(
+          `[schedule_text_clip_event] Converted line ${clipLineNum} to ${fontblocks.length} FontBlocks at packet ${schedulePacket}`
+        );
+      }
+
+      // Queue FontBlocks
+      this.queue_fontblocks_for_progressive_writing(fontblocks);
+    } else {
+      // No text pixels - nothing to render
+      if (CDGMagic_CDGExporter.DEBUG) {
+        console.debug(
+          `[schedule_text_clip_event] Line ${clipLineNum} has no visible pixels, skipping FontBlock generation`
+        );
+      }
+    }
   }
 
   /**
