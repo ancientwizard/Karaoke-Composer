@@ -938,11 +938,14 @@ class CDGMagic_CDGExporter {
     };
 
     // Convert to FontBlocks
+    // CRITICAL: Pass track_options to ensure z_location (layer) is set correctly
+    // track_options contains the track number (0-7) which determines which layer this clip renders to
+    const trackOptions = clip.track_options();
     const fontblocks = bmp_to_fontblocks(
       screenBmpData,
       schedulePacket,
       getNoTransition(),
-      (clip as any).track_options?.(),
+      trackOptions,  // Contains track (z_location) and channel for proper layering
       0,
       0,
       CDGMagic_CDGExporter.DEBUG
@@ -1097,11 +1100,14 @@ class CDGMagic_CDGExporter {
           // See CDGMagic_GraphicsEncoder.cpp lines 582-583:
           //   x_offset = x_offset * 6 - bmp_object->x_offset();
           //   y_offset = y_offset * 12 - bmp_object->y_offset();
+          // CRITICAL: Pass track_options to ensure z_location (layer) is set correctly
+          // BMPClip doesn't have track_options like TextClip/ScrollClip, so check first
+          const trackOptions = (clip as any).track_options ? (clip as any).track_options() : null;
           const fontblocks = bmp_to_fontblocks(
             bmpData,
             clip.start_pack() + 19,
             transitionData,
-            (clip as any).track_options?.(),  // Pass track options for z_location and channel assignment
+            trackOptions,  // Contains track (z_location) and channel for proper layering
             clip.x_offset(),  // BMP x offset in pixels
             clip.y_offset(),  // BMP y offset in pixels
             CDGMagic_CDGExporter.DEBUG
