@@ -574,7 +574,8 @@ class CDGMagic_CDGExporter {
                 if (pixelX >= 0 && pixelX < screenWidth && pixelY >= 0 && pixelY < screenHeight) {
                   const pixelIndex = pixelY * screenWidth + pixelX;
                   // Only write outline to empty pixels (don't overwrite text)
-                  if (bmpPixels[pixelIndex] === 256) {
+                  // BMP is initialized to 0 (black background), not 256
+                  if (bmpPixels[pixelIndex] === 0) {
                     // Soft outline: use distance to create fade effect
                     // Close to character = darker outline, far = lighter/transparent
                     const strength = 1 - (dist / outlineRadius);
@@ -909,7 +910,8 @@ class CDGMagic_CDGExporter {
           const char = lineText[charIdx]!;
           const charData = getRawCharacterFromFont(char, fontSize, fontIndex);
           
-          if (charData && charPixelX + charData.width <= maxPixelX) {
+          // Always attempt to render - bounds checking in drawCharacterWithOutline will clip naturally
+          if (charData) {
             let useOutlineColor = Math.min(15, Math.max(0, outlineColor));
             if (outlineColor === 0) {
               useOutlineColor = 0;
