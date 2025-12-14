@@ -126,7 +126,7 @@ export function bmp_to_fontblocks(
 
         // Bounds check (before scaling)
         if (sample_x < 0 || sample_y < 0 || sample_x >= bmpData.width || sample_y >= bmpData.height) {
-          fontblock.pixel_value(pixel_x, pixel_y, 0);  // Out of bounds = black
+          // Out of bounds = no text pixel, skip writing
           continue;
         }
 
@@ -134,7 +134,16 @@ export function bmp_to_fontblocks(
         const bmp_pixel_index = sample_y * bmpData.width + sample_x;
         const pixel_color = bmpData.pixels[bmp_pixel_index] || 0;
 
-        // Store in FontBlock (0-255 palette indices)
+        // CRITICAL FIX: Skip black (0) pixels - they are background, not text
+        // Only write actual text pixels (colors 1-15)
+        // Black (0) causes unwanted background field to appear
+        if (pixel_color === 0) {
+          // Don't write anything for black - leave as FontBlock default
+          // This allows the background BMP to show through
+          continue;
+        }
+
+        // Store in FontBlock (1-15 palette indices for actual text)
         fontblock.pixel_value(pixel_x, pixel_y, pixel_color);
       }
     }
