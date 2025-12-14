@@ -116,7 +116,20 @@ export class FontGlyphRenderer {
 
       // Convert canvas to grayscale bitmap
       const imageData = ctx.getImageData(0, 0, width + 2, height + 2);
-      const bitmap = this.canvasToGrayscale(imageData);
+      const fullBitmap = this.canvasToGrayscale(imageData);
+      
+      // CRITICAL FIX: Extract only the actual character content, trim the padding
+      // Canvas was (width+2) x (height+2) for padding, but bitmap should be width x height
+      // Copy only the relevant region to match the reported dimensions
+      const bitmap = new Uint8Array(width * height);
+      const paddedWidth = width + 2;
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const srcIdx = (y + 1) * paddedWidth + (x + 1);  // Skip padding row/col
+          const dstIdx = y * width + x;
+          bitmap[dstIdx] = fullBitmap[srcIdx];
+        }
+      }
 
       const result: RenderedGlyph = {
         width,
