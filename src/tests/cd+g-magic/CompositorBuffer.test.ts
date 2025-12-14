@@ -213,10 +213,23 @@ describe('CompositorBuffer', () => {
     });
 
     it('should validate block data length', () => {
-      const badBlock = new Uint16Array(64);  // Wrong length
+      const badBlock = new Uint16Array(64);  // Wrong length (should be 72)
+      
+      // Spy on console.warn to capture the expected warning
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      
+      // Should not throw, just warn and return early
       expect(() => {
         compositor.write_block(0, 0, 0, badBlock);
-      }).not.toThrow();  // Should warn but not throw
+      }).not.toThrow();
+      
+      // Verify that a warning was issued for the invalid length
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Invalid pixel_data length: 64, expected 72')
+      );
+      
+      // Restore console.warn
+      warnSpy.mockRestore();
     });
   });
 
