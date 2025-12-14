@@ -608,7 +608,8 @@ class CDGMagic_CDGExporter {
         const pixelX = charPixelX + dstX;
         const pixelY = charTopPixel + dstY;
 
-        if (pixelX >= screenWidth || pixelY < 0 || pixelY >= screenHeight) continue;
+        // CRITICAL: Check ALL bounds - left, right, top, bottom
+        if (pixelX < 0 || pixelX >= screenWidth || pixelY < 0 || pixelY >= screenHeight) continue;
 
         const gray = srcData[srcIdx];
         
@@ -617,15 +618,19 @@ class CDGMagic_CDGExporter {
         if (gray > 0) {
           const pixelIndex = pixelY * screenWidth + pixelX;
           
-          // Only write if this is a solid text pixel (gray > 128)
-          // or if the destination is empty (transparent)
+          // Write text pixel if it's opaque (gray > 128)
+          // For anti-aliased pixels (gray < 128), blend or blend-adjacent logic would go here
+          // For now, write all non-background pixels
           if (gray > 128) {
             // Solid text - always write
             bmpPixels[pixelIndex] = foregroundColor;
-          } else if (bmpPixels[pixelIndex] === 256) {
-            // Anti-aliased edge - only write to empty pixels
-            // This prevents text edges from overlapping with outline or previous characters
-            bmpPixels[pixelIndex] = foregroundColor;
+          } else {
+            // Anti-aliased edge or lighter pixel - write to empty areas
+            // Don't overwrite already-drawn content
+            if (bmpPixels[pixelIndex] === 0) {
+              // Background is empty, can write
+              bmpPixels[pixelIndex] = foregroundColor;
+            }
           }
         }
       }
@@ -957,14 +962,10 @@ class CDGMagic_CDGExporter {
       );
     }
 
-    // CRITICAL: Set transparent index on ALL FontBlocks
-    // Since we render text on black background, black (0) should be transparent
-    // This allows the background BMP to show through where there's no text
-    for (const fb of fontblocks) {
-      fb.replacement_transparent_color(0);  // Black pixels are transparent - don't overwrite VRAM
-    }
-
     // Queue FontBlocks
+    // NOTE: Do NOT set replacement_transparent_color on text clip FontBlocks.
+    // Transparency should be handled at BMP level (non-text pixels as black background).
+    // FontBlocks should render all pixels as-is without transparency logic.
     this.queue_fontblocks_for_progressive_writing(fontblocks);
   }
 
