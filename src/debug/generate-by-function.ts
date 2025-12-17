@@ -608,24 +608,30 @@ if (process.argv.includes('--run')) {
         }
       );
 
-      g.prependEmptyPacks(600);
+      // Note: Comment out example code with undefined variables
+      // g.prependEmptyPacks(600);
       // g.advanceSeconds(1);
 
       // Prove RED encoding is correct by cycling color 11 through
       // several RGB values including pure red.
       // [8,4,2,1].map((i) => i*17).forEach((red) => {
       //   g.setColor(11, red, 0, 0); console.log(`Set color 11 to RGB(${red},0,0)`);
-      //   g.prependEmptyPacks(598);
       //   // g.advanceSeconds(1)
       // })
 
-      my_colors.forEach((rgb, idx) => {
-        const [r_col, g_col, b_col, name] = rgb
-        g.setColor(11, r_col, g_col, b_col);
-        console.log(`Set color 11 to RGB(${r_col},${g_col},${b_col}) ${name}`);
-        g.prependEmptyPacks(598);
-        // g.advanceSeconds(1)
-      })
+      // TODO: Define color list for testing
+      // const my_colors = [
+      //   [255, 0, 0, 'red'],
+      //   [0, 255, 0, 'green'],
+      //   [0, 0, 255, 'blue']
+      // ]
+      //
+      // my_colors.forEach((rgb: [number, number, number, string]) => {
+      //   const [r_col, g_col, b_col, name] = rgb
+      //   g.setColor(11, r_col, g_col, b_col);
+      //   console.log(`Set color 11 to RGB(${r_col},${g_col},${b_col}) ${name}`);
+      //   // g.advanceSeconds(1)
+      // })
 
       // g.advanceSeconds(4);
       // g.advancePacks(1000);

@@ -230,6 +230,9 @@
     </div>
   </div>
 
+  <!-- Font Debug Dialog -->
+  <FontDebugDialog ref="fontDebugDialog" />
+
   <!-- Developer Toolbar -->
   <div class="developer-toolbar">
     <div class="container">
@@ -259,6 +262,10 @@
             <i class="bi bi-wrench me-1"></i>
             Fix Badges
           </button>
+          <button class="btn btn-outline-info btn-sm me-2" @click="openFontDebug">
+            <i class="bi bi-type me-1"></i>
+            Font Debug
+          </button>
         </div>
       </div>
     </div>
@@ -275,6 +282,7 @@ import type { KaraokeProject } from '@/types/karaoke'
 import { audioStorageService } from '@/services/audioStorageService'
 import { parseLyricsWithMetadata } from '@/utils/lyricsParser'
 import ExportDialog from '@/components/ExportDialog.vue'
+import FontDebugDialog from '@/components/FontDebugDialog.vue'
 
 // Reactive state
 const router = useRouter()
@@ -287,6 +295,9 @@ const isMounted = ref(true)
 
 // Developer toolbar
 const showDevToolbar = ref(true)
+
+// Font Debug Dialog
+const fontDebugDialog = ref<InstanceType<typeof FontDebugDialog>>()
 
 // Storage and IndexedDB testing
 // const indexedDBTestResult = ref<string>('')
@@ -340,6 +351,10 @@ const closeStorageInfo = () => {
 const openStorageInfo = () => {
   storageInfo.value = audioStorageService.getStorageInfo()
   showStorageInfo.value = true
+}
+
+const openFontDebug = () => {
+  fontDebugDialog.value?.open()
 }
 
 const clearAudioCache = async () => {

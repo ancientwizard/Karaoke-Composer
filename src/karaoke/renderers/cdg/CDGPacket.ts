@@ -41,50 +41,57 @@ export const CDG_SCREEN = {
 
 /**
  * Single CDG packet (24 bytes)
+ * 
+ * Correct packet structure (per CD+G Magic reference):
+ * [0] = 0x09 (CDG command code - always 0x09 for TV Graphics)
+ * [1] = instruction (sub-command: COPY_FONT, XOR_FONT, LOAD_LOW, etc.)
+ * [2-3] = Parity Q (typically 0 in file-based CDG)
+ * [4-19] = 16-byte payload (instruction-specific data)
+ * [20-23] = Parity P (typically 0 in file-based CDG)
  */
 export class CDGPacket {
   private buffer: Uint8Array
 
   constructor() {
     this.buffer = new Uint8Array(24)
-    // Packet structure (24 bytes total):
-    // [0] = 0x09 (CDG subcode)
-    // [1] = command
-    // [2] = instruction (param)
-    // [3-18] = data (16 bytes) - matches CD+G Magic framing
-    // [19-23] = parity/padding
-    this.buffer[0] = 0x09
+    // Initialize packet structure
+    this.buffer[0] = 0x09  // CDG command code (always 0x09 for TV Graphics mode)
+    // Rest is zero-initialized by default
   }
 
   /**
-   * Set command and instruction
-   * Command goes in buffer[1], instruction in buffer[2]
+   * Set instruction (command) byte at [1]
+   * The instruction parameter is the CDG sub-command (COPY_FONT, XOR_FONT, LOAD_LOW, LOAD_HIGH, etc.)
+   * Note: In CDG packets, byte [1] contains the instruction, and byte [2-3] are parity Q
    */
   setCommand(command: CDGCommand, instruction: number = 0): void {
-    this.buffer[1] = command & 0x3F  // Command at [1] (mask to 6 bits)
-    this.buffer[2] = instruction & 0x3F  // Instruction at [2] (mask to 6 bits) - part of parity Q
+    this.buffer[1] = command & 0x3F  // Instruction at [1] (mask to 6 bits)
+    // buffer[2-3] are parity Q, left as zero
   }
 
   /**
-   * Set data bytes (16 bytes max)
-   * Data starts at buffer[3] per CD+G Magic encoding (our reference)
+   * Set data bytes (16 bytes)
+   * Data is placed at buffer[4..19] per CD+G packet structure
+   * Note: Palette data bytes are 6-bit, but pixel tile data is 8-bit (2 pixels per byte).
+   * We do NOT mask here; instructions should provide properly formatted data.
    */
   setData(data: number[]): void {
-    for (let i = 0; i < Math.min(data.length, 16); i++) {
-      this.buffer[3 + i] = data[i] & 0x3F  // Data bytes start at [3] (mask to 6 bits each)
+    for (let i = 0; i < 16; i++) {
+      this.buffer[4 + i] = (i < data.length ? data[i] : 0)  // Data at [4..19]
     }
   }
 
   /**
    * Set parity bytes
-   * Following CD+G Magic and VLC implementations, parity is typically left as zeros in .cdg files.
-   * Parity Q (buffer[2-3]) and Parity P (buffer[20-23]) are mostly ignored by file-based players.
+   * Parity Q (buffer[2-3]) and Parity P (buffer[20-23]) are typically left as zeros in file-based CDG.
+   * CD+G Magic does the same, and file-based players ignore parity.
    */
   setParity(): void {
     // Leave parity bytes as zero (standard practice in .cdg files)
     // buffer[2-3] = parity Q (already zero from constructor)
     // buffer[20-23] = parity P (set to zero)
-    // This matches CD+G Magic's approach: zero parity is safe and widely compatible
+    this.buffer[2] = 0
+    this.buffer[3] = 0
     this.buffer[20] = 0
     this.buffer[21] = 0
     this.buffer[22] = 0

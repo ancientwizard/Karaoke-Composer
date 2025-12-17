@@ -374,33 +374,48 @@ export function generateScrollPacket(
 export function generatePaletteLoadPackets(palette?: CDGPalette): CDGPacket[] {
   const pal = palette || new CDGPalette();
   const pkts: CDGPacket[] = [];
-  // Build low (0..7) and high (8..15) the way reference does (pack 4-bit channels into two bytes)
+
+  // Build low (0..7) and high (8..15) palettes using correct CDG encoding
+  // Following reference: CDGMagic_CDGExporter::create_load_low_packet and create_load_high_packet
+  //
+  // Palette colors are stored internally as 8-bit RGB (0-255 per channel).
+  // CDG encodes them as 4-bit per channel, using division by 17 for the conversion.
+  //
+  // Encoding format for each color pair (2 bytes):
+  // Byte 0: [Red(5:2), Green(5:4)] = (r4 << 2) | (g4 >> 2)
+  // Byte 1: [Blue(3:0), Green(1:0)] = b4 | ((g4 & 0x03) << 4)
+
   const colors = pal.getColors();
+
   for (let hi = 0; hi < 2; hi++) {
-  const packet = new CDGPacketClass();
-  const instr = hi ? CDGCommand.CDG_LOAD_COLOR_TABLE_HIGH : CDGCommand.CDG_LOAD_COLOR_TABLE_LOW;
-  packet.setCommand(instr, 0);
+    const packet = new CDGPacketClass();
+    const instr = hi ? CDGCommand.CDG_LOAD_COLOR_TABLE_HIGH : CDGCommand.CDG_LOAD_COLOR_TABLE_LOW;
+    packet.setCommand(instr, 0);
+
     const data: number[] = new Array(16).fill(0);
     const pal_offset = hi * 8;
+
     for (let pal_inc = 0; pal_inc < 8; pal_inc++) {
       const actual_idx = pal_inc + pal_offset;
-      const temp = colors[actual_idx] || 0; // stored as 12-bit r4/g4/b4
-      const r4 = (temp >> 8) & 0x1F;
-      const g4 = (temp >> 4) & 0x0F;
-      const b4 = temp & 0x0F;
 
-      const byte1 = ((r4 & 0x1f) << 2) | ((g4 & 0x1f) >> 2)
-      const byte2 = ((g4 & 0x03) << 4) | (b4 & 0x0f)
+      // Get color as 12-bit r4/g4/b4 format (from CDGPalette.rgbToCDG)
+      const color12bit = colors[actual_idx] || 0;
+      const r4 = (color12bit >> 8) & 0x0F;
+      const g4 = (color12bit >> 4) & 0x0F;
+      const b4 = color12bit & 0x0F;
 
-      if (hi === 1 && pal_inc === 3)
-        console.log(`encoder: ${hi?"HI":"LO"}`, pal_inc, ' B1:', byte1.toString(2).padStart(8, '0'), ' B2:', byte2.toString(2).padStart(8, '0'))
+      // Encode as two 6-bit data bytes per the reference implementation
+      const byte1 = (r4 << 2) | ((g4 >> 2) & 0x03);
+      const byte2 = (b4 & 0x0F) | ((g4 & 0x03) << 4);
 
-      data[pal_inc * 2 + 0] = byte1 & 0x3F
-      data[pal_inc * 2 + 1] = byte2 & 0x3F
+      data[pal_inc * 2 + 0] = byte1 & 0x3F;
+      data[pal_inc * 2 + 1] = byte2 & 0x3F;
     }
+
     packet.setData(data);
     pkts.push(new Uint8Array(packet.toBuffer()));
   }
+
   return pkts;
 }
 

@@ -32,7 +32,7 @@
 </template>
 
 <script setup lang="ts">
-// App component logic can go here
+// App component logic
 </script>
 
 <style scoped>
