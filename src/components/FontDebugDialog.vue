@@ -237,7 +237,7 @@ function drawGlyph(canvas: HTMLCanvasElement, char: string) {
   for (let row = 0; row < 12; row++) {
     const pixelRow = glyph.rows[row] || 0
 
-    // Check all 6 bits (CDG standard format)
+    // Check all 6 bits (CDG standard format: bit 5-0 maps to pixel positions left-to-right)
     for (let col = 0; col < 6; col++) {
       const bit = (pixelRow >> (5 - col)) & 1
       if (bit) {
@@ -283,7 +283,6 @@ function drawPreview() {
     const lineHeight = 24
 
     ctx.fillStyle = '#0066ff'
-    const font = document.querySelector('.preview-canvas') as any
     const charWidth = 8
 
     for (const char of previewText.value) {
@@ -358,7 +357,10 @@ function close() {
 }
 
 // Expose to parent
-defineExpose({ open, close })
+defineExpose({
+  open,
+  close
+})
 
 onMounted(() => {
   computeDisplayedChars()

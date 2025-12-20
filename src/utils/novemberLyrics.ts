@@ -274,4 +274,4 @@ export function debugNovemberParsing() {
   console.log(`\n✅ Result: ${lyricsOnly.length} lyrics lines, ${lyrics.length - lyricsOnly.length} metadata lines skipped`)
 }
 
-export { type TimedWord, type Syllable }
+export { type TimedWord, type Syllable, NOVEMBER_LYRICS }

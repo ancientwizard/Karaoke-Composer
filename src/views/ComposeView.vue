@@ -263,7 +263,7 @@
             Fix Badges
           </button>
           <button class="btn btn-outline-info btn-sm me-2" @click="openFontDebug">
-            <i class="bi bi-type me-1"></i>
+            <i class="bi bi-type me-1"></i>not cut things 
             Font Debug
           </button>
         </div>

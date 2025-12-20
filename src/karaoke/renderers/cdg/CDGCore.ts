@@ -14,7 +14,7 @@ interface TrackedText {
   row: number
   col: number
   color: LogicalColor
-  tiles: Array<{ row: number; col: number; tileData: number[] }>
+  tiles: Array<{ pixelX: number; pixelY: number; width: number; rows: number[] }>
 }
 
 /**
@@ -356,24 +356,26 @@ export class CDGCore {
     const row = Math.floor((position.y / 1000) * CDG_SCREEN.ROWS)
     const col = Math.floor((position.x / 1000) * CDG_SCREEN.COLS)
 
-    const tiles = this.textRenderer.renderCentered(text, row)
+    const glyphs = this.textRenderer.renderCentered(text, row)
 
     const colorIndex = this.colorMapping.get(color) ?? this.cdgConfig.transitionColor
 
-    for (const tile of tiles) {
+    for (const glyph of glyphs) {
+      const glyphTileRow = Math.floor(glyph.pixelY / CDG_SCREEN.TILE_HEIGHT)
+      const glyphTileCol = Math.floor(glyph.pixelX / CDG_SCREEN.TILE_WIDTH)
       const packet = CDGPacket.tileBlock(
         this.cdgConfig.backgroundColor,
         colorIndex,
-        tile.row,
-        tile.col,
-        tile.tileData,
+        glyphTileRow,
+        glyphTileCol,
+        glyph.rows,
         false
       )
       this.packets.push(packet)
     }
 
     this.displayedTexts.set(textId, {
- textId, text, row, col, color, tiles 
+ textId, text, row, col, color, tiles: glyphs 
 })
   }
 
@@ -404,13 +406,15 @@ export class CDGCore {
 
     const colorIndex = this.colorMapping.get(color as any) ?? this.cdgConfig.activeColor
 
-    for (const tile of trackedText.tiles) {
+    for (const glyph of trackedText.tiles) {
+      const glyphTileRow = Math.floor(glyph.pixelY / CDG_SCREEN.TILE_HEIGHT)
+      const glyphTileCol = Math.floor(glyph.pixelX / CDG_SCREEN.TILE_WIDTH)
       const packet = CDGPacket.tileBlock(
         this.cdgConfig.backgroundColor,
         colorIndex,
-        tile.row,
-        tile.col,
-        tile.tileData,
+        glyphTileRow,
+        glyphTileCol,
+        glyph.rows,
         false
       )
       this.packets.push(packet)
@@ -424,12 +428,14 @@ export class CDGCore {
     if (!trackedText) return
 
     const emptyTile = new Array(12).fill(0)
-    for (const tile of trackedText.tiles) {
+    for (const glyph of trackedText.tiles) {
+      const glyphTileRow = Math.floor(glyph.pixelY / CDG_SCREEN.TILE_HEIGHT)
+      const glyphTileCol = Math.floor(glyph.pixelX / CDG_SCREEN.TILE_WIDTH)
       const packet = CDGPacket.tileBlock(
         this.cdgConfig.backgroundColor,
         this.cdgConfig.backgroundColor,
-        tile.row,
-        tile.col,
+        glyphTileRow,
+        glyphTileCol,
         emptyTile,
         false
       )

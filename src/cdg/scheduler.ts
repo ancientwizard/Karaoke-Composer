@@ -64,6 +64,14 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
   // Track XOR packets separately for statistics
   let xorPacketsGenerated = 0;
   let copyPacketsGenerated = 0;
+  // NEW: Track dropped packets by reason
+  const dropStats = {
+    expiredEvents: 0,
+    skippedEvents: 0,
+    failedPlacement: 0,
+    failedOverwrite: 0,
+    droppedBySetPacketSafely: 0,
+  };
 
   // Compute a conservative placement cap: do not allow scheduler to place
   // events arbitrarily far past the last intended event. This prevents
@@ -91,9 +99,6 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
   const diagWriteStats = diagnostics.writeStats !== false; // default true
   const diagTraceEvent = diagnostics.traceEvent || null;
 
-  // Small helper to set a packet with a safety-assertion that we don't write
-  // into the reserved prelude. Declared at outer scope so all placement
-  // branches use the same protection.
   function setPacketSafely(i: number, p: CDGPacket): boolean {
     // Returns true if the write was performed, false if it was dropped.
     if (i <= reservedStart) {
@@ -105,6 +110,7 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
     if (i > placementCap) {
       // Defensive: never write beyond the conservative placement cap.
       if (diagEnabled) console.warn(`Dropping write at index=${i} beyond placementCap=${placementCap}`)
+      dropStats.droppedBySetPacketSafely++;
       return false
     }
     // Respect caller-provided prefilled slots. By default we refuse to
@@ -114,6 +120,7 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
     // updated by the scheduler.
     if (initialPrefilledMask[i] && !(opts as any).allowOverwritePrefilled) {
       if (diagEnabled) console.warn(`Dropping write at index=${i} because slot was prefilled by caller and is immutable`)
+      dropStats.droppedBySetPacketSafely++;
       return false
     }
     packetSlots[i] = p
@@ -295,6 +302,13 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
       // writeFontBlock may update VRAM; here we only need the packet bytes
       // for placement sizing and copying later.
       (ev as any).__probePackets = writeFontBlock(tmpV, ev.blockX, ev.blockY, ev.pixels, 0, comp as any, ev.xorOnly || false);
+      // CRITICAL FIX: Also update the main VRAM during probe phase to ensure
+      // that packet generation later will see the accumulated state and avoid
+      // redundant writes. This ensures that when multiple events target the same
+      // block at different times, VRAM reflects the most recent rendered state.
+      if (!ev.xorOnly) {
+        vram.writeBlock(ev.blockX, ev.blockY, ev.pixels);
+      }
     } catch (e) {
       (ev as any).__probePackets = [];
     }

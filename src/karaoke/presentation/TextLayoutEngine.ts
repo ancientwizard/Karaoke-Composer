@@ -6,10 +6,12 @@
  * - Line breaking and wrapping
  * - Multi-position vertical placement
  * - Character-to-position mapping
+ * - Variable-width character spacing
  */
 
 import type { Position } from './PresentationCommand'
 import { TextAlign } from './PresentationCommand'
+import { CDGFont } from '@/karaoke/renderers/cdg/CDGFont'
 
 /**
  * Configuration for text layout
@@ -48,9 +50,11 @@ export class TextLayoutEngine {
   private config: LayoutConfig
   private verticalPresets: VerticalPreset[]
   private lastUsedPresetIndex: number = -1
+  private font: CDGFont
 
   constructor(config: LayoutConfig) {
     this.config = config
+    this.font = new CDGFont()
 
     // Define vertical position presets
     // Default position used primarily, others for variety
@@ -76,6 +80,10 @@ export class TextLayoutEngine {
   /**
    * Calculate layout for a line of text
    *
+   * WARNING: For accurate character-to-position mapping, the input text should NOT wrap
+   * (i.e., it should fit within maxCharsPerLine). If text wraps internally, the charPositions
+   * array will have fewer entries than the input text length, causing a mismatch when rendering.
+   *
    * @param text - The text to layout
    * @param align - Horizontal alignment
    * @param forcePosition - Optional forced Y position (overrides random selection)
@@ -87,6 +95,19 @@ export class TextLayoutEngine {
     forcePosition?: number
   ): LayoutResult {
     const lines = this.breakIntoLines(text)
+    
+    // WARN if text wrapped - this indicates a data problem
+    if (lines.length > 1) {
+      const totalWrappedLength = lines.reduce((sum, line) => sum + line.length, 0)
+      console.warn(
+        `[TextLayoutEngine] WARNING: Text wrapping detected!`,
+        `Input: "${text}" (${text.length} chars)`,
+        `Wrapped to: ${lines.length} lines with total ${totalWrappedLength} chars.`,
+        `This will cause a position mismatch (${text.length - totalWrappedLength} missing chars) during rendering!`,
+        `Solution: Split long lyrics into shorter individual lines.`
+      )
+    }
+    
     const position = this.calculatePosition(lines, align, forcePosition)
     const charPositions = this.calculateCharacterPositions(lines, position, align)
 
@@ -137,6 +158,7 @@ export class TextLayoutEngine {
   /**
    * Break text into lines based on max characters
    * Breaks at word boundaries when possible
+   * Breaks long words to avoid overflow
    */
   private breakIntoLines(text: string): string[] {
     if (text.length <= this.config.maxCharsPerLine) {
@@ -148,21 +170,34 @@ export class TextLayoutEngine {
     let currentLine = ''
 
     for (const word of words) {
-      const testLine = currentLine ? `${currentLine} ${word}` : word
-
-      if (testLine.length <= this.config.maxCharsPerLine) {
-        currentLine = testLine
-      } else {
+      // Handle word that is itself longer than max chars
+      if (word.length > this.config.maxCharsPerLine) {
+        // First, flush current line if it has content
         if (currentLine) {
           lines.push(currentLine)
+          currentLine = ''
         }
-        currentLine = word
 
-        // If single word is longer than max, we have to break it
-        if (word.length > this.config.maxCharsPerLine) {
-          // This is a rare case, but handle it
-          lines.push(word.substring(0, this.config.maxCharsPerLine))
-          currentLine = word.substring(this.config.maxCharsPerLine)
+        // Break long word into chunks
+        let remaining = word
+        while (remaining.length > this.config.maxCharsPerLine) {
+          lines.push(remaining.substring(0, this.config.maxCharsPerLine))
+          remaining = remaining.substring(this.config.maxCharsPerLine)
+        }
+        // Keep remaining part for next line
+        currentLine = remaining
+      } else {
+        // Word fits in remaining space
+        const testLine = currentLine ? `${currentLine} ${word}` : word
+
+        if (testLine.length <= this.config.maxCharsPerLine) {
+          currentLine = testLine
+        } else {
+          // Word doesn't fit, start new line
+          if (currentLine) {
+            lines.push(currentLine)
+          }
+          currentLine = word
         }
       }
     }
@@ -208,7 +243,8 @@ export class TextLayoutEngine {
 
   /**
    * Calculate position of each character in the text
-   * Used for precise syllable highlighting
+   * Returns positions in PIXEL coordinates (0-300 for X, 0-216 for Y)
+   * Uses actual glyph widths for proper character spacing
    */
   private calculateCharacterPositions(
     lines: string[],
@@ -216,36 +252,59 @@ export class TextLayoutEngine {
     align: TextAlign
   ): Position[] {
     const positions: Position[] = []
-    const charWidth = this.config.fontSize * 0.6
-    const lineHeight = this.config.fontSize * 1.2
+    
+    // Convert abstract positions (0-1000) to pixel coordinates (0-300, 0-216)
+    const pixelWidth = 300 // CDG screen width
+    const pixelHeight = 216 // CDG screen height
+    
+    const basePx = (basePosition.x / this.config.screenWidth) * pixelWidth
+    const basePy = (basePosition.y / this.config.screenHeight) * pixelHeight
+
+    const linePixelHeight = 12 // Line height
 
     for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
       const line = lines[lineIdx]
-      const lineWidth = line.length * charWidth
+      
+      // Calculate line width based on actual glyph widths + inter-character spacing
+      let linePixelWidth = 0
+      for (let i = 0; i < line.length; i++) {
+        const glyph = this.font.getGlyph(line[i])
+        linePixelWidth += glyph.width
+        // Add inter-character spacing (except after last character)
+        if (i < line.length - 1) {
+          linePixelWidth += 1
+        }
+      }
 
       // Calculate starting X for this line based on alignment
       let startX: number
       switch (align) {
         case TextAlign.Left:
-          startX = basePosition.x
+          startX = 10
           break
         case TextAlign.Right:
-          startX = basePosition.x - lineWidth
+          startX = pixelWidth - linePixelWidth - 10
           break
         case TextAlign.Center:
         default:
-          startX = basePosition.x - (lineWidth / 2)
+          startX = (pixelWidth - linePixelWidth) / 2
           break
       }
 
-      const y = basePosition.y + (lineIdx * lineHeight)
+      const y = basePy + (lineIdx * linePixelHeight)
+      const clampedY = Math.max(10, Math.min(y, pixelHeight - 20))
 
-      // Add position for each character
+      // Add position for each character using actual glyph widths
+      let currentX = startX
       for (let charIdx = 0; charIdx < line.length; charIdx++) {
         positions.push({
-          x: startX + (charIdx * charWidth),
-          y
+          x: currentX,
+          y: clampedY
         })
+        
+        // Move X by actual glyph width + inter-character spacing for next character
+        const glyph = this.font.getGlyph(line[charIdx])
+        currentX += glyph.width + 1 // Add 1 pixel gap between characters for readability
       }
     }
 

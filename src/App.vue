@@ -8,17 +8,20 @@
         </button>
         <div class="collapse navbar-collapse" id="navbarNav">
           <ul class="navbar-nav ms-auto">
-            <li class="nav-item">
-              <router-link class="nav-link" to="/">Home</router-link>
+            <li class="nav-item btn btn-primary">
+              <router-link class="nav-link text-white" to="/">🏠 Home</router-link>
             </li>
-            <li class="nav-item">
-              <router-link class="nav-link" to="/compose">🎼 Compose</router-link>
+            <li class="nav-item btn btn-primary">
+              <router-link class="nav-link text-white" to="/compose">🎼 Compose</router-link>
             </li>
-            <li class="nav-item">
-              <router-link class="nav-link" to="/library">Song Library</router-link>
+            <li class="nav-item btn btn-primary">
+              <router-link class="nav-link text-white" to="/library">🎵 Library</router-link>
             </li>
-            <li class="nav-item">
-              <router-link class="nav-link" to="/about">About</router-link>
+            <li class="nav-item btn btn-primary">
+              <router-link class="nav-link text-white" to="/about">🌐 About</router-link>
+            </li>
+            <li v-if="developerMode" class="nav-item btn btn-primary">
+              <router-link class="nav-link text-white" to="/developer">🔧 Developer</router-link>
             </li>
           </ul>
         </div>
@@ -32,7 +35,16 @@
 </template>
 
 <script setup lang="ts">
-// App component logic
+/**
+ * App component
+ * Root application shell with navigation and router view
+ */
+import { ref } from 'vue'
+
+/**
+ * Enable developer mode to show developer tools in navigation
+ */
+const developerMode = ref(true)
 </script>
 
 <style scoped>

@@ -10,9 +10,9 @@
  * Renderers map these to their specific color systems
  */
 export enum LogicalColor {
-  Background = 'background',    // Black or dark blue
-  ActiveText = 'active',         // Bright yellow (currently singing)
-  TransitionText = 'transition'  // Used during fade effects between lines
+  Background      = 'background', // Black or dark blue
+  ActiveText      = 'active',     // Bright yellow (currently singing)
+  TransitionText  = 'transition'  // Used during fade effects between lines
 }
 
 /**
@@ -21,16 +21,16 @@ export enum LogicalColor {
  */
 export interface Position {
   x: number  // Horizontal position (0-1000 abstract units)
-  y: number  // Vertical position (0-1000 abstract units)
+  y: number  //   Vertical position (0-1000 abstract units)
 }
 
 /**
  * Text alignment options
  */
 export enum TextAlign {
-  Left = 'left',
-  Center = 'center',
-  Right = 'right'
+  Left    = 'left',
+  Center  = 'center',
+  Right   = 'right'
 }
 
 /**

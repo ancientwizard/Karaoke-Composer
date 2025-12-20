@@ -77,7 +77,8 @@ export class CDGPacket {
    */
   setData(data: number[]): void {
     for (let i = 0; i < 16; i++) {
-      this.buffer[4 + i] = (i < data.length ? data[i] : 0)  // Data at [4..19]
+      // Ensure each data byte is masked to 8 bits to prevent overflow into adjacent buffer positions
+      this.buffer[4 + i] = (i < data.length ? (data[i] & 0xFF) : 0)  // Data at [4..19]
     }
   }
 

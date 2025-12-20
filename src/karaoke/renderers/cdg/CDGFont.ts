@@ -1246,6 +1246,19 @@ export class CDGFont {
   }
 
   /**
+   * Publicly register a custom glyph (for testing, debug glyphs, etc.)
+   */
+  public registerGlyph(char: string, width: number, rows: number[]): void {
+    if (rows.length !== 12) {
+      throw new Error(`Glyph rows must be exactly 12, got ${rows.length}`)
+    }
+    if (width < 1 || width > 6) {
+      throw new Error(`Glyph width must be 1-6, got ${width}`)
+    }
+    this.addGlyph(char, width, rows)
+  }
+
+  /**
    * Get glyph for a character (returns space if not found)
    */
   getGlyph(char: string): CharacterGlyph {
@@ -1253,46 +1266,46 @@ export class CDGFont {
   }
 
   /**
-   * Render a string to tile data
-   * Returns array of tiles, each tile is 6x12 pixels
+   * Render a string to pixel data
+   * Returns glyphs with their absolute pixel positions (not tile-aligned)
+   * Each glyph is 6x12 pixels at pixel coordinates (pixelX, pixelY)
    */
   renderString(text: string): {
-    tiles: number[][]  // Array of tiles, each tile is 12 rows of 6-bit data
-    widthInTiles: number
+    glyphs: Array<{
+      pixelX: number       // Absolute X position in pixels
+      pixelY: number       // Absolute Y position in pixels
+      width: number        // Actual glyph width (3-6 pixels)
+      rows: number[]       // 12 rows of 6-bit pixel data
+    }>
+    widthInPixels: number
   } {
-    const tiles: number[][] = []
-    let currentTile: number[] = new Array(12).fill(0)
-    let currentX = 0
+    const glyphs: Array<{
+      pixelX: number
+      pixelY: number
+      width: number
+      rows: number[]
+    }> = []
+
+    let pixelX = 0
 
     for (const char of text) {
       const glyph = this.getGlyph(char)
 
-      // Check if glyph fits in current tile
-      if (currentX + glyph.width > this.tileWidth) {
-        // Save current tile and start new one
-        tiles.push(currentTile)
-        currentTile = new Array(12).fill(0)
-        currentX = 0
-      }
+      // Add glyph at current pixel position (no tile alignment)
+      glyphs.push({
+        pixelX,
+        pixelY: 0,  // Base Y; caller can offset
+        width: glyph.width,
+        rows: glyph.rows
+      })
 
-      // Add glyph to current tile
-      for (let row = 0; row < this.tileHeight; row++) {
-        const glyphRow = glyph.rows[row] || 0
-        // Shift glyph data to current position in tile
-        currentTile[row] |= (glyphRow >> (6 - glyph.width)) << (this.tileWidth - currentX - glyph.width)
-      }
-
-      currentX += glyph.width
-    }
-
-    // Add last tile if it has content
-    if (currentX > 0) {
-      tiles.push(currentTile)
+      // Move X by glyph width
+      pixelX += glyph.width
     }
 
     return {
-      tiles,
-      widthInTiles: tiles.length
+      glyphs,
+      widthInPixels: pixelX
     }
   }
 
@@ -1328,52 +1341,75 @@ export class CDGTextRenderer {
   }
 
   /**
-   * Render text centered at a specific row
-   * Returns array of { row, col, tileData } objects
+   * Render text centered at a specific row (in tile coordinates)
+   * Returns pixel-based glyphs that can be drawn to VRAM
+   * Row is in tile units (0-17); converts to pixel Y
    */
   renderCentered(
     text: string,
-    row: number
-  ): Array<{ row: number; col: number; tileData: number[] }> {
-    const { tiles } = this.font.renderString(text)
-    const widthInTiles = tiles.length
+    tileRow: number
+  ): Array<{ pixelX: number; pixelY: number; width: number; rows: number[] }> {
+    const { glyphs, widthInPixels } = this.font.renderString(text)
 
-    // Calculate starting column for centered text
-    const startCol = Math.floor((CDG_SCREEN.COLS - widthInTiles) / 2)
+    // Convert tile row to pixel Y
+    const pixelY = tileRow * CDG_SCREEN.TILE_HEIGHT
 
-    const result: Array<{ row: number; col: number; tileData: number[] }> = []
+    // Center text horizontally (in pixels)
+    const totalPixelWidth = CDG_SCREEN.WIDTH
+    const startPixelX = Math.floor((totalPixelWidth - widthInPixels) / 2)
 
-    for (let i = 0; i < tiles.length; i++) {
-      result.push({
-        row,
-        col: startCol + i,
-        tileData: tiles[i]
-      })
-    }
-
-    return result
+    // Offset all glyphs by centered X position
+    return glyphs.map(g => ({
+      pixelX: startPixelX + g.pixelX,
+      pixelY,
+      width: g.width,
+      rows: g.rows
+    }))
   }
 
   /**
-   * Render text at a specific position
+   * Render text at a specific position (in tile coordinates)
+   * Returns pixel-based glyphs that can be drawn to VRAM
+   * Row/Col are in tile units; converts to pixel coordinates
    */
   renderAt(
     text: string,
-    row: number,
-    col: number
-  ): Array<{ row: number; col: number; tileData: number[] }> {
-    const { tiles } = this.font.renderString(text)
-    const result: Array<{ row: number; col: number; tileData: number[] }> = []
+    tileRow: number,
+    tileCol: number
+  ): Array<{ pixelX: number; pixelY: number; width: number; rows: number[] }> {
+    const { glyphs } = this.font.renderString(text)
 
-    for (let i = 0; i < tiles.length; i++) {
-      result.push({
-        row,
-        col: col + i,
-        tileData: tiles[i]
-      })
-    }
+    // Convert tile coords to pixel coords
+    const pixelX = tileCol * CDG_SCREEN.TILE_WIDTH
+    const pixelY = tileRow * CDG_SCREEN.TILE_HEIGHT
 
-    return result
+    // Offset all glyphs by tile position
+    return glyphs.map(g => ({
+      pixelX: pixelX + g.pixelX,
+      pixelY,
+      width: g.width,
+      rows: g.rows
+    }))
+  }
+
+  /**
+   * Render text at absolute pixel coordinates
+   * Allows precise placement for testing/debugging
+   */
+  renderAtPixels(
+    text: string,
+    pixelX: number,
+    pixelY: number
+  ): Array<{ pixelX: number; pixelY: number; width: number; rows: number[] }> {
+    const { glyphs } = this.font.renderString(text)
+
+    // Offset all glyphs by absolute pixel position
+    return glyphs.map(g => ({
+      pixelX: pixelX + g.pixelX,
+      pixelY,
+      width: g.width,
+      rows: g.rows
+    }))
   }
 
   /**

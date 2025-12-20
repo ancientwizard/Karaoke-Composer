@@ -107,13 +107,13 @@ export function synthesizePrelude(parsed: any, opts: PreludeOptions = {}) {
           // aggressive mode: synthesize all tiles
           const tileRow = Math.floor((ev.clip_y_offset || 0) / CDG_SCREEN.TILE_HEIGHT)
           const tileCol = Math.floor((ev.clip_x_offset || 0) / CDG_SCREEN.TILE_WIDTH)
-          const tiles = textRenderer.renderAt(c.text || '', tileRow, tileCol)
-          // sort tiles by row then col to ensure deterministic ordering
-          tiles.sort((a: any, b: any) => (a.row - b.row) || (a.col - b.col))
-          for (const t of tiles) {
+          const glyphs = textRenderer.renderAt(c.text || '', tileRow, tileCol)
+          // sort glyphs by Y then X to ensure deterministic ordering
+          glyphs.sort((a: any, b: any) => (a.pixelY - b.pixelY) || (a.pixelX - b.pixelX))
+          for (const g of glyphs) {
             const pixels: number[][] = []
-            for (let r = 0; r < Math.min(12, t.tileData.length); r++) {
-              const rowbits = t.tileData[r]
+            for (let r = 0; r < Math.min(12, g.rows.length); r++) {
+              const rowbits = g.rows[r]
               const rowArr: number[] = []
               for (let cbit = 0; cbit < 6; cbit++) {
                 const bit = (rowbits >> (5 - cbit)) & 1
@@ -123,7 +123,9 @@ export function synthesizePrelude(parsed: any, opts: PreludeOptions = {}) {
             }
             try {
               const vv = new VRAM()
-              const pkts = writeFontBlock(vv, t.col, t.row, pixels)
+              const tileCol = Math.floor(g.pixelX / CDG_SCREEN.TILE_WIDTH)
+              const tileRow = Math.floor(g.pixelY / CDG_SCREEN.TILE_HEIGHT)
+              const pkts = writeFontBlock(vv, tileCol, tileRow, pixels)
               for (const p of pkts) fontPkts.push(p)
             } catch (e) {
               // ignore per-block failures to keep synthesizer robust

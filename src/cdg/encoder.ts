@@ -2,7 +2,6 @@
 // Purpose: provide a deterministic translation of 6x12 font blocks into 24-byte CDG packets
 // following CDGMagic's high-level algorithm (COPY/XOR, bitplane fallback).
 
-import { writeFileSync } from 'fs';
 import type Compositor from './compositor';
 import { CDGPacket as CDGPacketClass, CDGPalette, CDGCommand } from '../karaoke/renderers/cdg/CDGPacket';
 import { CDG_PACKET_SIZE, CDG_PPS } from './constants'
@@ -144,12 +143,17 @@ export function writeFontBlock(
   } else if (channelOrCompositor) {
     compositorObj = channelOrCompositor as Compositor;
   }
-  // If a compositor is provided, compare against its composited block first.
-  if (compositorObj) {
-    if (blockEqualsComposited(compositorObj, blockX, blockY, blockPixels)) return [];
-  } else {
-    // Skip if block is identical to VRAM
-    if (blockEqualsVRAM(vram, blockX, blockY, blockPixels)) return [];
+  
+  // XOR-only blocks should NEVER be skipped, as they're highlighting operations
+  // on top of existing VRAM content, not replacements of it.
+  if (!xorOnly) {
+    // If a compositor is provided, compare against its composited block first.
+    if (compositorObj) {
+      if (blockEqualsComposited(compositorObj, blockX, blockY, blockPixels)) return [];
+    } else {
+      // Skip if block is identical to VRAM
+      if (blockEqualsVRAM(vram, blockX, blockY, blockPixels)) return [];
+    }
   }
   // Build a prominence-ordered color list (most common first)
   const counts = new Map<number, number>();
@@ -301,7 +305,12 @@ export function writeFontBlock(
 }
 
 // Small helper used by debug script to write packets to a raw .cdg (concatenate 24-byte packets)
-export function writePacketsToFile(path: string, packets: CDGPacket[]) {
+// Node.js only - not available in browser
+export async function writePacketsToFile(path: string, packets: CDGPacket[]) {
+  if (typeof window !== 'undefined') {
+    throw new Error('writePacketsToFile is only available in Node.js environments');
+  }
+  const { writeFileSync } = await import('fs');
   const buf = Buffer.concat(packets.map((p) => Buffer.from(p)));
   writeFileSync(path, buf);
 }

@@ -36,6 +36,11 @@ const router = createRouter({
       name: 'test-timing',
       component: () => import('@/views/TestTimingView.vue'),
     },
+    {
+      path: '/developer',
+      name: 'developer',
+      component: () => import('@/views/DeveloperView.vue'),
+    },
   ],
 })
 

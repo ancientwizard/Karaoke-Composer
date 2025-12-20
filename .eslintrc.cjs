@@ -18,7 +18,7 @@ module.exports = {
     'vue/multi-word-component-names': 'warn',
     'brace-style': [
       'error',
-      '1tbs', // K&R / "one true brace style" - opening braces on same line
+      'allman', // Allman style - opening braces on next line (as per AGENTS.md)
       { allowSingleLine: true },
     ],
     'object-curly-newline': [
