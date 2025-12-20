@@ -53,14 +53,13 @@ export function renderGlyphToVRAM(
   for (let y = 0; y < 12; y++)
   {
     const row = glyph.rows[y] || 0
-    // Glyphs are LEFT-aligned in a 6-bit value
-    // For width=5, pixels occupy bits 4,3,2,1,0
-    // For width=6, pixels occupy bits 5,4,3,2,1,0 (full range)
-    // Extract from left side: pixel x is at bit (width - 1 - x)
+    // Glyphs are LEFT-aligned in a 6-bit value (bits 5-0)
+    // All glyphs regardless of width start rendering from bit 5
+    // A width=4 glyph occupies bits [5,4,3,2], width=2 occupies [5,4], etc.
     for (let x = 0; x < glyph.width; x++)
     {
-      // Extract bit (width - 1 - x) for pixel x, going from left to right
-      const bit = (row >> (glyph.width - 1 - x)) & 1
+      // Extract from left (MSB): pixel x is at bit (5 - x)
+      const bit = (row >> (5 - x)) & 1
       if (bit)
       {
         const absPosX = pixelX + x
