@@ -408,16 +408,6 @@ function onFrame(now: number): void
       // TextLayoutEngine already returns pixel coordinates (0-300 x 0-216)
       // No need to scale; use positions directly
 
-      // DEBUG: Log first line positions
-      if (line.id === lyricLines.value[0]?.id)
-      {
-        console.log(`Rendering line: "${fullText}"`)
-        console.log(`Total positions: ${layout.charPositions.length}`)
-        layout.charPositions.slice(0, Math.min(10, layout.charPositions.length)).forEach((p: Position, i: number) => {
-          console.log(`  Pos ${i}: x=${p.x.toFixed(1)}`)
-        })
-      }
-
       // Render the full text using positions from layout
       // We iterate through fullText to match the character positions calculated by TextLayoutEngine
       let positionIndex = 0 // Track position in layout.charPositions
