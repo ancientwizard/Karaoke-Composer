@@ -9,7 +9,7 @@ import type {
   PresentationScript,
   AnyPresentationCommand,
   LogicalColor
-} from '../presentation/PresentationCommand'
+} from '../presentation/Command'
 
 /**
  * Renderer capabilities - describes what a renderer supports

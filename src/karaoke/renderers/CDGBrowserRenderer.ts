@@ -1,6 +1,6 @@
 import { BaseRenderer, type RendererConfig, type RendererCapabilities } from './BaseRenderer'
-import type { PresentationScript, AnyPresentationCommand } from '../presentation/PresentationCommand'
-import { LogicalColor } from '../presentation/PresentationCommand'
+import type { PresentationScript, AnyPresentationCommand } from '../presentation/Command'
+import { LogicalColor } from '../presentation/Command'
 import { CDG_SCREEN } from './cdg/CDGPacket'
 import { CDGCore } from './cdg/CDGCore'
 

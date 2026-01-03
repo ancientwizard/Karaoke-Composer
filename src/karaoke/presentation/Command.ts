@@ -210,3 +210,6 @@ export const PresentationCommands = {
     ...metadata
   })
 }
+
+// VIM: set filetype=typescript :
+// END

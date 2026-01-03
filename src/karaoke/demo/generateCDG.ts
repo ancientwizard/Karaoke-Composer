@@ -7,7 +7,7 @@
 import { LRCParser } from '../../formats/LRCFormat'
 import { TimingConverter } from '../presentation/TimingConverter'
 import { CDGFileRenderer } from '../renderers/CDGFileRenderer'
-import type { AnyPresentationCommand } from '../presentation/PresentationCommand'
+import type { AnyPresentationCommand } from '../presentation/Command'
 import * as fs from 'fs'
 import * as path from 'path'
 

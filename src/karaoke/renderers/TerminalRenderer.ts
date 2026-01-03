@@ -20,9 +20,9 @@ import {
 import type {
   PresentationScript,
   AnyPresentationCommand
-} from '../presentation/PresentationCommand'
+} from '../presentation/Command'
 
-import { LogicalColor, TextAlign } from '../presentation/PresentationCommand'
+import { LogicalColor, TextAlign } from '../presentation/Command'
 
 /**
  * ANSI color codes for karaoke display

@@ -9,7 +9,7 @@ import {
   // type ClearScreenCommand,
   // type ShowTextCommand,
   // type ChangeColorCommand
-} from '../karaoke/presentation/PresentationCommand'
+} from '../karaoke/presentation/Command'
 
 describe('PresentationCommand', () => {
   describe('LogicalColor enum', () => {

@@ -15,8 +15,8 @@ import {
 import type {
   PresentationScript,
   AnyPresentationCommand
-} from '../presentation/PresentationCommand'
-import { LogicalColor } from '../presentation/PresentationCommand'
+} from '../presentation/Command'
+import { LogicalColor } from '../presentation/Command'
 import { CDG_SCREEN } from './cdg/CDGPacket'
 import type { CDGPacket } from './cdg/CDGPacket'
 import { CDGCore } from './cdg/CDGCore'

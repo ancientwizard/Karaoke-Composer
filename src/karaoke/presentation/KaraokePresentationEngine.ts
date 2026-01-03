@@ -6,7 +6,7 @@
  */
 
 import type { KaraokeProject } from '../../types/karaoke'
-import type { PresentationScript } from './PresentationCommand'
+import type { PresentationScript } from './Command'
 import { TimingConverter, type TimingConverterConfig } from './TimingConverter'
 
 /**

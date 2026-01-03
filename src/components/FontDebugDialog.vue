@@ -160,14 +160,14 @@ import { CDGFont } from '../karaoke/renderers/cdg/CDGFont'
 const isOpen = ref(false)
 const activeTab = ref('Glyphs')
 const tabs = ['Glyphs', 'Preview', 'Info']
-const showUppercase = ref(true)
+const showUppercase = ref(false)
 
 // Character set to display
 const charSets = {
   uppercase: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
   lowercase: 'abcdefghijklmnopqrstuvwxyz',
   digits: '0123456789',
-  punct: '.!?\'",-+/()'
+  punct: '.!?:;\'",-+/()\\'
 }
 
 const displayedChars = ref<string[]>([])

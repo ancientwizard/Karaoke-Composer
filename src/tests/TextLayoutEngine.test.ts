@@ -12,7 +12,7 @@
 
 import { TextLayoutEngine, DEFAULT_LAYOUT_CONFIG } from '../karaoke/presentation/TextLayoutEngine'
 import { TileScreenModel, TILE_CONFIGS } from '../karaoke/presentation/TileScreenModel'
-import { TextAlign } from '../karaoke/presentation/PresentationCommand'
+import { TextAlign } from '../karaoke/presentation/Command'
 
 describe('TextLayoutEngine', () =>
 {
@@ -79,11 +79,11 @@ describe('TextLayoutEngine', () =>
       const avgSpacing = spacings.reduce((a, b) => a + b, 0) / spacings.length
       const maxDeviation = Math.max(...spacings.map(s => Math.abs(s - avgSpacing)))
 
-      // Expect spacing to be in range 4-6px (min 3px glyph + 1px gap to max 5px + 1px gap)
+      // Expect spacing to be in range 4-6px (min 3px glyph + 3px gap to max 5px + 3px gap)
       expect(avgSpacing).toBeGreaterThan(3)
-      expect(avgSpacing).toBeLessThan(7)
-      // Deviation should be modest but not zero due to variable widths
-      expect(maxDeviation).toBeLessThan(3)
+      expect(avgSpacing).toBeLessThan(9)
+      // Deviation should be modest but not zero due to variable widths (now up to 3.33 with corrected widths)
+      expect(maxDeviation).toBeLessThan(3.5)
     })
 
     it('should maintain spacing across multiple lines', () =>

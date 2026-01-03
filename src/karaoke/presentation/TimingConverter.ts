@@ -12,7 +12,7 @@ import {
   TextAlign,
   type AnyPresentationCommand,
   type Position
-} from './PresentationCommand'
+} from './Command'
 import {
   TextLayoutEngine,
   DEFAULT_LAYOUT_CONFIG,

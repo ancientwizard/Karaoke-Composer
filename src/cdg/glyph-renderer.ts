@@ -9,12 +9,17 @@
 import { VRAM } from './encoder'
 
 /**
- * Glyph data: 12 rows of 6-bit pixel data
+ * Glyph data: bitmap representation with variable dimensions
+ *
+ * Supports both fixed-size glyphs (from CDGFont) and dynamic glyphs
+ * (from DynamicGlyphRasterizer). Rows array length determines glyph height.
  */
 export interface GlyphData
 {
-  width: number      // 1-6 pixels wide
-  rows: number[]     // 12 rows (array of 6-bit values)
+  width: number      // Glyph width in pixels (variable)
+  height?: number    // Glyph height in pixels (optional; if omitted, defaults to rows.length)
+  rows: number[]     // Array of pixel rows (length = height); each element is a packed bit row
+  yOffset?: number   // Y offset (pixels from baseline top to glyph top); positive = glyph above baseline
 }
 
 /**
@@ -29,13 +34,14 @@ export interface GlyphRenderResult
 /**
  * Render a glyph to VRAM at pixel coordinates
  *
- * Glyphs are LEFT-aligned in 6-bit values.
- * For width W, pixels occupy bits (W-1) down to 0
+ * Supports variable-size glyphs from both static and dynamic sources.
+ * Each row value is a packed bit representation where bit position
+ * corresponds to pixel column.
  *
  * @param vram - Target VRAM
- * @param pixelX - Absolute X pixel coordinate
- * @param pixelY - Absolute Y pixel coordinate
- * @param glyph - Glyph data
+ * @param pixelX - Absolute X pixel coordinate (top-left of glyph)
+ * @param pixelY - Absolute Y pixel coordinate (top-left of glyph)
+ * @param glyph - Glyph data (variable width/height)
  * @param colorIndex - Color index (0-15)
  * @returns Render statistics
  */
@@ -50,22 +56,28 @@ export function renderGlyphToVRAM(
   let pixelsSet = 0
   let pixelsOutOfBounds = 0
 
-  for (let y = 0; y < 12; y++)
+  const glyphHeight = glyph.height || glyph.rows.length
+  const glyphWidth = glyph.width
+  const yOffset = glyph.yOffset || 0  // Baseline offset (positive = above)
+
+  for (let y = 0; y < glyphHeight && y < glyph.rows.length; y++)
   {
     const row = glyph.rows[y] || 0
-    // Glyphs are LEFT-aligned in a 6-bit value (bits 5-0)
-    // All glyphs regardless of width start rendering from bit 5
-    // A width=4 glyph occupies bits [5,4,3,2], width=2 occupies [5,4], etc.
-    for (let x = 0; x < glyph.width; x++)
+
+    // Extract bits from row value
+    // Bit position maps to pixel column: bit (glyphWidth - 1 - x) = pixel at column x
+    for (let x = 0; x < glyphWidth; x++)
     {
-      // Extract from left (MSB): pixel x is at bit (5 - x)
-      const bit = (row >> (5 - x)) & 1
+      // MSB-first extraction for variable-width glyphs
+      const bitPosition = glyphWidth - 1 - x
+      const bit = (row >> bitPosition) & 1
+
       if (bit)
       {
         const absPosX = pixelX + x
-        const absPosY = pixelY + y
+        const absPosY = pixelY + yOffset + y  // Apply baseline offset
 
-        // Check bounds
+        // Bounds check
         if (absPosX < 0 || absPosX >= vram.width || absPosY < 0 || absPosY >= vram.height)
         {
           pixelsOutOfBounds++

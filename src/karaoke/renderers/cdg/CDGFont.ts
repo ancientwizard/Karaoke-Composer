@@ -3,30 +3,72 @@
  *
  * Renders text characters to CDG tiles (6x12 pixels per tile)
  * Uses a simple bitmap font suitable for karaoke display
+ *
+ * CURRENT LIMITATION: All glyphs are fixed at 6 pixels wide × 12 pixels tall.
+ * To support larger fonts, we would need either:
+ * - Multiple glyph sets (e.g., 6x12, 8x16, 10x20)
+ * - Pixel-based scaling in the renderer
+ * - Vector font rendering with rasterization
+ *
+ * For now, increasing font size is approximated by reducing maxCharsPerLine
+ * in TextLayoutEngine config, which creates more space between characters.
  */
 
 import { CDG_SCREEN } from './CDGPacket'
 
 /**
  * Character glyph (6x12 pixel bitmap)
- * Each row is represented as a 6-bit value (1 = foreground, 0 = background)
+ * 
+ * Each row is represented as a 6-bit value where:
+ * - Bit positions: [5=leftmost, 4, 3, 2, 1, 0=rightmost]
+ * - 1 = foreground pixel, 0 = background (transparent)
+ * 
+ * BIT ALIGNMENT CONVENTION (IMPORTANT):
+ * All glyphs are RIGHT-ALIGNED within the 6-bit field.
+ * The `width` parameter specifies how many significant bits are used (1-6).
+ * Leading zeros in the binary patterns are padding on the left side.
+ * 
+ * EXAMPLE:
+ * For width=3, pattern 0b000111 uses only bits [2:0]:
+ *   Bit positions: [5  4  3  2  1  0]
+ *   0b000111:      [0  0  0  1  1  1]
+ *   Rendered:              [■  ■  ■]  (only 3 pixels shown)
+ * 
+ * This right-alignment ensures all glyphs, regardless of width,
+ * are positioned consistently at the right edge of their 6-pixel tile.
  */
 export interface CharacterGlyph {
   char: string
-  width: number  // Actual character width (1-6 pixels)
-  rows: number[] // 12 rows of pixel data (6 bits each)
+  width: number  // Number of significant bits used (1-6 pixels, right-aligned)
+  rows: number[] // 12 rows of pixel data (6 bits each, right-aligned)
 }
 
 /**
  * Simple bitmap font for CDG display
  * Optimized for readability on low-resolution screens
+ * 
+ * GLYPH DEFINITION GUIDE:
+ * When adding or modifying glyphs using addGlyph(char, width, rows):
+ * 
+ * 1. Choose width (1-6): Number of significant pixel columns used
+ * 2. For each of 12 rows, provide a 6-bit value (0b000000 to 0b111111)
+ * 3. RIGHT-ALIGN your pixels: significant bits occupy positions [width-1:0]
+ *    Leading zeros are padding on the left (bits [5:width])
+ * 
+ * EXAMPLE (width=4):
+ *   Row: 0b001111  means pixels at positions [3:0] are active
+ *   Visual: [_  _  ■  ■  ■  ■]  (bits 5,4 are padding; bits 3-0 are rendered)
+ * 
+ * This convention ensures consistent spacing and alignment across all glyphs.
  */
-export class CDGFont {
+export class CDGFont
+{
   private glyphs: Map<string, CharacterGlyph>
   private readonly tileWidth = CDG_SCREEN.TILE_WIDTH   // 6 pixels
   private readonly tileHeight = CDG_SCREEN.TILE_HEIGHT // 12 pixels
 
-  constructor() {
+  constructor()
+  {
     this.glyphs = new Map()
     this.initializeBasicFont()
   }
@@ -35,7 +77,8 @@ export class CDGFont {
    * Initialize a basic ASCII font
    * For now, using a simple readable font suitable for karaoke
    */
-  private initializeBasicFont(): void {
+  private initializeBasicFont(): void
+  {
     // Space
     this.addGlyph(' ', 3, [
       0b000000,
@@ -188,13 +231,13 @@ export class CDGFont {
       0b000000
     ])
 
-    this.addGlyph('J', 4, [
-      0b001110,
-      0b000100,
-      0b000100,
-      0b000100,
-      0b000100,
-      0b010100,
+    this.addGlyph('J', 3, [
+      0b000111,
+      0b000010,
+      0b000010,
+      0b000010,
+      0b000010,
+      0b001010,
       0b001000,
       0b000000,
       0b000000,
@@ -219,13 +262,13 @@ export class CDGFont {
     ])
 
     this.addGlyph('L', 4, [
-      0b010000,
-      0b010000,
-      0b010000,
-      0b010000,
-      0b010000,
-      0b010000,
-      0b011110,
+      0b001000,
+      0b001000,
+      0b001000,
+      0b001000,
+      0b001000,
+      0b001000,
+      0b001111,
       0b000000,
       0b000000,
       0b000000,
@@ -294,6 +337,7 @@ export class CDGFont {
     ])
 
     this.addGlyph('Q', 5, [
+      0b000000,
       0b001110,
       0b010001,
       0b010001,
@@ -301,7 +345,6 @@ export class CDGFont {
       0b010011,
       0b010001,
       0b001111,
-      0b000000,
       0b000000,
       0b000000,
       0b000000,
@@ -444,13 +487,13 @@ export class CDGFont {
     ])
 
     // Lowercase letters - simpler versions
-    this.addGlyph('a', 4, [
+    this.addGlyph('a', 5, [
+      0b000000,
       0b000000,
       0b000000,
       0b001110,
       0b000001,
       0b001111,
-      0b010001,
       0b010011,
       0b001101,
       0b000000,
@@ -459,13 +502,13 @@ export class CDGFont {
       0b000000
     ])
 
-    this.addGlyph('b', 4, [
+    this.addGlyph('b', 5, [
+      0b000000,
       0b000000,
       0b010000,
       0b010000,
       0b010110,
       0b011001,
-      0b010001,
       0b010001,
       0b011110,
       0b000000,
@@ -477,25 +520,25 @@ export class CDGFont {
     this.addGlyph('c', 4, [
       0b000000,
       0b000000,
-      0b001110,
-      0b010000,
-      0b010000,
-      0b010000,
-      0b010001,
-      0b001110,
+      0b000000,
+      0b000111,
+      0b001000,
+      0b001000,
+      0b001000,
+      0b000111,
       0b000000,
       0b000000,
       0b000000,
       0b000000
     ])
 
-    this.addGlyph('d', 4, [
+    this.addGlyph('d', 5, [
+      0b000000,
       0b000000,
       0b000001,
       0b000001,
       0b001101,
       0b010011,
-      0b010001,
       0b010001,
       0b001111,
       0b000000,
@@ -504,14 +547,14 @@ export class CDGFont {
       0b000000
     ])
 
-    this.addGlyph('e', 4, [
+    this.addGlyph('e', 5, [
+      0b000000,
       0b000000,
       0b000000,
       0b001110,
       0b010001,
       0b011111,
       0b010000,
-      0b010001,
       0b001110,
       0b000000,
       0b000000,
@@ -521,24 +564,24 @@ export class CDGFont {
 
     this.addGlyph('f', 3, [
       0b000000,
-      0b000110,
-      0b001000,
-      0b001000,
-      0b011100,
-      0b001000,
-      0b001000,
-      0b001000,
+      0b000011,
+      0b000100,
+      0b001110,
+      0b000100,
+      0b000100,
+      0b000100,
+      0b000100,
       0b000000,
       0b000000,
       0b000000,
       0b000000
     ])
 
-    this.addGlyph('g', 4, [
+    this.addGlyph('g', 5, [
+      0b000000,
       0b000000,
       0b000000,
       0b001111,
-      0b010001,
       0b010001,
       0b001111,
       0b000001,
@@ -549,7 +592,7 @@ export class CDGFont {
       0b000000
     ])
 
-    this.addGlyph('h', 4, [
+    this.addGlyph('h', 5, [
       0b000000,
       0b010000,
       0b010000,
@@ -564,30 +607,30 @@ export class CDGFont {
       0b000000
     ])
 
-    this.addGlyph('i', 2, [
+    this.addGlyph('i', 1, [
       0b000000,
-      0b010000,
+      0b000001,
       0b000000,
-      0b010000,
-      0b010000,
-      0b010000,
-      0b010000,
-      0b010000,
+      0b000001,
+      0b000001,
+      0b000001,
+      0b000001,
+      0b000001,
       0b000000,
       0b000000,
       0b000000,
       0b000000
     ])
 
-    this.addGlyph('j', 3, [
+    this.addGlyph('j', 2, [
       0b000000,
-      0b000100,
       0b000000,
-      0b000100,
-      0b000100,
-      0b000100,
-      0b000100,
-      0b001000,
+      0b000001,
+      0b000000,
+      0b000001,
+      0b000001,
+      0b000001,
+      0b000010,
       0b000000,
       0b000000,
       0b000000,
@@ -596,28 +639,28 @@ export class CDGFont {
 
     this.addGlyph('k', 4, [
       0b000000,
-      0b010000,
-      0b010000,
-      0b010010,
-      0b010100,
-      0b011000,
-      0b010100,
-      0b010010,
+      0b000000,
+      0b001000,
+      0b001001,
+      0b001010,
+      0b001100,
+      0b001010,
+      0b001001,
       0b000000,
       0b000000,
       0b000000,
       0b000000
     ])
 
-    this.addGlyph('l', 2, [
+    this.addGlyph('l', 1, [
       0b000000,
-      0b010000,
-      0b010000,
-      0b010000,
-      0b010000,
-      0b010000,
-      0b010000,
-      0b010000,
+      0b000001,
+      0b000001,
+      0b000001,
+      0b000001,
+      0b000001,
+      0b000001,
+      0b000001,
       0b000000,
       0b000000,
       0b000000,
@@ -627,8 +670,8 @@ export class CDGFont {
     this.addGlyph('m', 5, [
       0b000000,
       0b000000,
+      0b000000,
       0b011010,
-      0b010101,
       0b010101,
       0b010101,
       0b010101,
@@ -639,7 +682,8 @@ export class CDGFont {
       0b000000
     ])
 
-    this.addGlyph('n', 4, [
+    this.addGlyph('n', 5, [
+      0b000000,
       0b000000,
       0b000000,
       0b010110,
@@ -647,14 +691,14 @@ export class CDGFont {
       0b010001,
       0b010001,
       0b010001,
-      0b010001,
       0b000000,
       0b000000,
       0b000000,
       0b000000
     ])
 
-    this.addGlyph('o', 3, [
+    this.addGlyph('o', 5, [
+      0b000000,
       0b000000,
       0b000000,
       0b001110,
@@ -665,26 +709,26 @@ export class CDGFont {
       0b000000,
       0b000000,
       0b000000,
+      0b000000
+    ])
+
+    this.addGlyph('p', 5, [
+      0b000000,
+      0b000000,
+      0b000000,
+      0b011110,
+      0b010001,
+      0b010001,
+      0b011110,
+      0b010000,
+      0b010000,
+      0b000000,
       0b000000,
       0b000000
     ])
 
-    this.addGlyph('p', 4, [
+    this.addGlyph('q', 5, [
       0b000000,
-      0b000000,
-      0b111100,
-      0b100010,
-      0b100010,
-      0b111100,
-      0b100000,
-      0b100000,
-      0b000000,
-      0b000000,
-      0b000000,
-      0b000000
-    ])
-
-    this.addGlyph('q', 4, [
       0b000000,
       0b000000,
       0b001111,
@@ -693,7 +737,6 @@ export class CDGFont {
       0b001111,
       0b000001,
       0b000001,
-      0b000000,
       0b000000,
       0b000000,
       0b000000
@@ -702,25 +745,25 @@ export class CDGFont {
     this.addGlyph('r', 3, [
       0b000000,
       0b000000,
-      0b011100,
-      0b010000,
-      0b010000,
-      0b010000,
-      0b010000,
-      0b010000,
+      0b000000,
+      0b000111,
+      0b000100,
+      0b000100,
+      0b000100,
+      0b000100,
       0b000000,
       0b000000,
       0b000000,
       0b000000
     ])
 
-    this.addGlyph('s', 4, [
+    this.addGlyph('s', 5, [
+      0b000000,
       0b000000,
       0b000000,
       0b001110,
       0b010000,
       0b001110,
-      0b000001,
       0b010001,
       0b001110,
       0b000000,
@@ -731,23 +774,23 @@ export class CDGFont {
 
     this.addGlyph('t', 3, [
       0b000000,
-      0b001000,
-      0b001000,
-      0b011100,
-      0b001000,
-      0b001000,
-      0b001000,
-      0b000110,
+      0b000100,
+      0b000100,
+      0b001110,
+      0b000100,
+      0b000100,
+      0b000100,
+      0b000011,
       0b000000,
       0b000000,
       0b000000,
       0b000000
     ])
 
-    this.addGlyph('u', 4, [
+    this.addGlyph('u', 5, [
       0b000000,
       0b000000,
-      0b010001,
+      0b000000,
       0b010001,
       0b010001,
       0b010001,
@@ -759,10 +802,10 @@ export class CDGFont {
       0b000000
     ])
 
-    this.addGlyph('v', 4, [
+    this.addGlyph('v', 5, [
       0b000000,
       0b000000,
-      0b010001,
+      0b000000,
       0b010001,
       0b010001,
       0b001010,
@@ -777,8 +820,8 @@ export class CDGFont {
     this.addGlyph('w', 5, [
       0b000000,
       0b000000,
+      0b000000,
       0b010001,
-      0b010101,
       0b010101,
       0b010101,
       0b011011,
@@ -789,12 +832,12 @@ export class CDGFont {
       0b000000
     ])
 
-    this.addGlyph('x', 4, [
+    this.addGlyph('x', 5, [
+      0b000000,
       0b000000,
       0b000000,
       0b010001,
       0b001010,
-      0b000100,
       0b000100,
       0b001010,
       0b010001,
@@ -804,7 +847,7 @@ export class CDGFont {
       0b000000
     ])
 
-    this.addGlyph('y', 4, [
+    this.addGlyph('y', 5, [
       0b000000,
       0b000000,
       0b010001,
@@ -819,7 +862,7 @@ export class CDGFont {
       0b000000
     ])
 
-    this.addGlyph('z', 4, [
+    this.addGlyph('z', 5, [
       0b000000,
       0b000000,
       0b011111,
@@ -851,13 +894,13 @@ export class CDGFont {
     ])
 
     this.addGlyph('1', 3, [
-      0b001000,
-      0b011000,
-      0b001000,
-      0b001000,
-      0b001000,
-      0b001000,
-      0b011100,
+      0b000000,
+      0b000010,
+      0b000110,
+      0b000010,
+      0b000010,
+      0b000010,
+      0b000111,
       0b000000,
       0b000000,
       0b000000,
@@ -986,7 +1029,7 @@ export class CDGFont {
     ])
 
     // Add common punctuation
-    this.addGlyph('.', 2, [
+    this.addGlyph('.', 1, [
       0b000000,
       0b000000,
       0b000000,
@@ -994,7 +1037,7 @@ export class CDGFont {
       0b000000,
       0b000000,
       0b000000,
-      0b100000,
+      0b000001,
       0b000000,
       0b000000,
       0b000000,
@@ -1008,32 +1051,32 @@ export class CDGFont {
       0b000000,
       0b000000,
       0b000000,
-      0b010000,
-      0b010000,
+      0b000001,
+      0b000010,
       0b000000,
       0b000000,
       0b000000,
       0b000000
     ])
 
-    this.addGlyph('!', 2, [
-      0b110000,
-      0b110000,
-      0b110000,
-      0b110000,
-      0b110000,
+    this.addGlyph('!', 1, [
       0b000000,
-      0b110000,
+      0b000001,
+      0b000001,
+      0b000001,
+      0b000001,
       0b000000,
+      0b000001,
       0b000000,
       0b000000,
       0b000000,
       0b000000
     ])
 
-    this.addGlyph('?', 5, [
-      0b001110,
-      0b010001,
+    this.addGlyph('?', 4, [
+      0b000000,
+      0b000110,
+      0b001001,
       0b000001,
       0b000010,
       0b000100,
@@ -1042,48 +1085,32 @@ export class CDGFont {
       0b000000,
       0b000000,
       0b000000,
-      0b000000,
       0b000000
     ])
 
-    this.addGlyph(':', 2, [
+    this.addGlyph(';', 1, [
       0b000000,
       0b000000,
-      0b010000,
-      0b000000,
-      0b000000,
-      0b000000,
-      0b010000,
+      0b000001,
       0b000000,
       0b000000,
       0b000000,
-      0b000000,
-      0b000000
-    ])
-
-    this.addGlyph(';', 2, [
-      0b100000,
-      0b000000,
-      0b000000,
-      0b000000,
-      0b100000,
-      0b100000,
-      0b000000,
-      0b000000,
+      0b000001,
+      0b000010,
       0b000000,
       0b000000,
       0b000000,
       0b000000
     ])
 
-    this.addGlyph('\'', 2, [
-      0b100000,
-      0b100000,
-      0b100000,
+    this.addGlyph(':', 1, [
+      0b000000,
+      0b000000,
+      0b000001,
       0b000000,
       0b000000,
       0b000000,
-      0b000000,
+      0b000001,
       0b000000,
       0b000000,
       0b000000,
@@ -1091,10 +1118,10 @@ export class CDGFont {
       0b000000
     ])
 
-    this.addGlyph('"', 4, [
-      0b101000,
-      0b101000,
-      0b101000,
+    this.addGlyph('\'', 1, [
+      0b000001,
+      0b000001,
+      0b000001,
       0b000000,
       0b000000,
       0b000000,
@@ -1106,12 +1133,27 @@ export class CDGFont {
       0b000000
     ])
 
-    this.addGlyph('-', 5, [
+    this.addGlyph('"', 3, [
+      0b000101,
+      0b000101,
+      0b000101,
       0b000000,
       0b000000,
       0b000000,
       0b000000,
-      0b111110,
+      0b000000,
+      0b000000,
+      0b000000,
+      0b000000,
+      0b000000
+    ])
+
+    this.addGlyph('-', 4, [
+      0b000000,
+      0b000000,
+      0b000000,
+      0b000000,
+      0b001111,
       0b000000,
       0b000000,
       0b000000,
@@ -1136,14 +1178,14 @@ export class CDGFont {
       0b000000
     ])
 
-    this.addGlyph('/', 5, [
+    this.addGlyph('/', 4, [
+      0b000000,
       0b000001,
       0b000010,
+      0b000010,
+      0b000100,
       0b000100,
       0b001000,
-      0b010000,
-      0b100000,
-      0b000000,
       0b000000,
       0b000000,
       0b000000,
@@ -1151,30 +1193,45 @@ export class CDGFont {
       0b000000
     ])
 
-    this.addGlyph('(', 3, [
+    this.addGlyph('\\', 4, [
+      0b000000,
       0b001000,
-      0b010000,
-      0b010000,
-      0b010000,
-      0b010000,
-      0b010000,
-      0b010000,
-      0b001000,
+      0b000100,
+      0b000100,
+      0b000010,
+      0b000010,
+      0b000001,
+      0b000000,
       0b000000,
       0b000000,
       0b000000,
       0b000000
     ])
 
-    this.addGlyph(')', 3, [
-      0b001000,
-      0b000100,
-      0b000100,
-      0b000100,
-      0b000100,
-      0b000100,
-      0b000100,
-      0b001000,
+    this.addGlyph('(', 1, [
+      0b000000,
+      0b000001,
+      0b000010,
+      0b000010,
+      0b000010,
+      0b000010,
+      0b000010,
+      0b000001,
+      0b000000,
+      0b000000,
+      0b000000,
+      0b000000
+    ])
+
+    this.addGlyph(')', 1, [
+      0b000000,
+      0b000010,
+      0b000001,
+      0b000001,
+      0b000001,
+      0b000001,
+      0b000001,
+      0b000010,
       0b000000,
       0b000000,
       0b000000,
@@ -1207,7 +1264,7 @@ export class CDGFont {
   private addDefaultGlyph(): void {
     // For any character not explicitly defined, use a simple space (empty block)
     // This prevents crashes when unknown characters are encountered
-    const defaultChars = 'BCDEFGHIJKLMNOPQRSTUVWXYZ' +
+    const defaultChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' +
       'abcdefghijklmnopqrstuvwxyz' +
       '0123456789' +
       '!@#$%^&*()_+-=[]{}|;:\'",.<>?/\\`~' +

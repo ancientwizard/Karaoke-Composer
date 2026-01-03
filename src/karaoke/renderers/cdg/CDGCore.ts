@@ -1,6 +1,6 @@
 import { CDGPacket, CDGPalette, CDG_SCREEN } from './CDGPacket'
 import { CDGTextRenderer, CDGFont } from './CDGFont'
-import type { AnyPresentationCommand, PresentationScript, LogicalColor } from '../../presentation/PresentationCommand'
+import type { AnyPresentationCommand, PresentationScript, LogicalColor } from '../../presentation/Command'
 
 export interface CDGCoreConfig {
   backgroundColor?: number

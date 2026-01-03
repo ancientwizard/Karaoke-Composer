@@ -38,6 +38,27 @@
           {{ (playbackSpeed * 100).toFixed(0) }}%
         </label>
 
+        <div style="flex: 1; min-width: 300px; border-left: 1px solid #ccc; padding-left: 1rem;">
+          <label class="checkbox-label">
+            <strong>Glyph Source:</strong>
+            <select v-model="glyphSource" style="margin: 0 0.5rem;">
+              <option value="static">Static CDGFont (Fixed)</option>
+              <option value="dynamic">Dynamic Rasterizer (Browser Font)</option>
+            </select>
+          </label>
+          <div v-if="glyphSource === 'dynamic'" style="margin-top: 0.5rem;">
+            <label>
+              Font:
+              <input v-model="dynamicFontFamily" type="text" placeholder="Arial" style="width: 100px; margin: 0 0.5rem;" />
+            </label>
+            <label>
+              Size:
+              <input v-model.number="dynamicFontSize" type="range" min="8" max="48" step="2" style="width: 80px; margin: 0 0.5rem;" />
+              {{ dynamicFontSize }}px
+            </label>
+          </div>
+        </div>
+
         <div class="playback-time">
           {{ formatTime(currentTimeMs) }} / {{ formatTime(totalDurationMs) }}
           (Packet {{ currentPacketIndex }} / {{ totalPackets }})
@@ -52,10 +73,10 @@
       </div>
 
       <div>
-        Lyrics:
+        Lyrics (Placeable Lines):
           <div style="font-family: monospace; white-space: nowrap; padding: 8px; background: #1e1e1e; border: 1px solid #444; min-height: 60px; color: #0f0;">
-            <div v-for="(line, idx) in visibleLyricLines" :key="idx">
-              {{ line.words.map(word => word.word).join(' ') }}
+            <div v-for="(line, idx) in visibleLyricLines" :key="idx" style="margin: 2px 0;">
+              [Y{{ line.leasedYPosition.toFixed(0) }}] {{ line.text }}
             </div>
             <div v-if="visibleLyricLines.length === 0" style="color: #888;">
               (no lyrics visible at {{ formatTime(currentTimeMs) }})
@@ -72,6 +93,9 @@
         <div>Pixels set: {{ diagnostics.pixelCount }}</div>
         <div>Colors: {{ Object.keys(diagnostics.colorCounts).join(', ') || 'none' }}</div>
         <div>Last render: {{ diagnostics.lastRender }}</div>
+        <div style="grid-column: 1 / -1; padding-top: 1rem; border-top: 1px solid #ccc; margin-top: 1rem;">
+          <strong>Glyph Source:</strong> {{ glyphSource === 'static' ? 'Static CDGFont (Fixed)' : `Dynamic Rasterizer (${dynamicFontFamily}, ${dynamicFontSize}px)` }}
+        </div>
       </div>
     </section>
   </div>
@@ -92,27 +116,53 @@ import CDGCanvasDisplay from '@/components/CDGCanvasDisplay.vue'
 import { VRAM } from '@/cdg/encoder'
 import { renderGlyphToVRAM } from '@/cdg/glyph-renderer'
 import { CDGFont } from '@/karaoke/renderers/cdg/CDGFont'
+import { DynamicGlyphRasterizer } from '@/cdg/DynamicGlyphRasterizer'
 import { parseLyricsWithMetadata } from '@/utils/lyricsParser'
 import type { LyricLine } from '@/types/karaoke'
 import { NOVEMBER_LYRICS } from '@/utils/novemberLyrics'
 import { TextLayoutEngine, DEFAULT_LAYOUT_CONFIG } from '@/karaoke/presentation/TextLayoutEngine'
 import { LineLeaseManager } from '@/karaoke/presentation/LineLeaseManager'
-import { TextAlign } from '@/karaoke/presentation/PresentationCommand'
-import type { Position } from '@/karaoke/presentation/PresentationCommand'
+import { TextAlign } from '@/karaoke/presentation/Command'
 
 import { CDG, DefaultPalette, ColorUtils } from '@/cdg/constants'
 import type { GlyphData } from '@/cdg/glyph-renderer'
+import { TextRenderQueue } from '@/karaoke/presentation/TextRenderQueue'
+
+/**
+ * Placeable Line - A unit of text that will occupy one screen row
+ * When a lyric unit (from source lyrics) is too long to fit one row,
+ * it's split into multiple placeable lines, each with its own timing and row lease.
+ */
+interface PlaceableLine
+{
+  id: string                    // Unique ID for this placeable line
+  sourceId: string              // Original lyric unit ID
+  text: string                  // The text to render on this row
+  startTime: number
+  endTime: number
+  words: any[]                  // References to word objects for syllable highlighting
+  leasedYPosition: number       // Y position (in abstract 0-1000 space) assigned during composition
+}
 
 const activeTab = ref('Glyph Alignment')
 const availableTabs = ['Glyph Alignment']
 const font = new CDGFont()
+const dynamicRasterizer = new DynamicGlyphRasterizer()
 const layoutEngine = new TextLayoutEngine(DEFAULT_LAYOUT_CONFIG)
 const leaseManager = new LineLeaseManager()
-const lyricLines = ref<LyricLine[]>([])
+const renderQueue = new TextRenderQueue(14)  // 14 pixels per line (12px glyph + 2px gap)
 const isPlaying = ref(false)
 const autoRepeat = ref(true)
 const currentTimeMs = ref(0)
-const playbackSpeed = ref(1.0) // Dial from 0.1x to 2x speed
+const playbackSpeed = ref(0.5) // Dial from 0.1x to 2x speed
+
+// Glyph source selection
+const glyphSource = ref<'static' | 'dynamic'>('dynamic')  // Use dynamic rasterizer by default
+const dynamicFontFamily = ref('Arial')
+const dynamicFontSize = ref(16)
+
+// Track placeable lines (compositions of source lyric units)
+const placeableLines = ref<PlaceableLine[]>([])
 
 // Timing configuration for syllable display
 // Adjust these values to change pacing, gaps, and breaks
@@ -139,8 +189,13 @@ const diagnostics = ref({
 })
 // Cache layout positions for each line to avoid recalculating every frame
 const lineLayoutCache = new Map<string, any>()
+// Track actual rendered bounding boxes for each line (for precise clearing)
+const lineRenderBounds = new Map<string, { minY: number; maxY: number }>()
+// Track which Y position (row) each line is using for display
+const lineRowAssignments = new Map<string, number>()
 
 let vram: VRAM | null = null
+let vramPristine: VRAM | null = null  // Pristine copy (before text rendering)
 let animationFrameId: number | null = null
 let lastFrameTime = 0
 const packets = ref<Uint8Array[]>([])
@@ -173,10 +228,10 @@ const currentPacketIndex = computed(() => Math.floor(currentTimeMs.value / MS_PE
 // Show only lines that are currently playing or near current time
 const visibleLyricLines = computed(() =>
 {
-  const lines = lyricLines.value.filter(line =>
+  const lines = placeableLines.value.filter((line) =>
   {
-    const lineStart = line.startTime ?? 0
-    const lineEnd = line.endTime ?? 0
+    const lineStart = line.startTime
+    const lineEnd = line.endTime
     // Show lines that are currently playing or up to 2 seconds after they end
     const showWindow = 2000
     return currentTimeMs.value >= lineStart - 500 && currentTimeMs.value <= lineEnd + showWindow
@@ -189,6 +244,115 @@ function formatTime(ms: number): string
   const sec = Math.floor(ms / 1000)
   const msec = Math.floor(ms % 1000)
   return `${sec}.${msec.toString().padStart(3, '0')}s`
+}
+
+/**
+ * Pre-compose lyric units into placeable lines
+ * 
+ * A lyric unit (from source) may be too long to fit on one screen row.
+ * This function detects that and splits it into multiple placeable lines,
+ * each guaranteed to fit on its own row.
+ * 
+ * Uses LOOK-AHEAD to detect when multiple lines from the same source
+ * won't fit together at the current scroll position, and leaps them to
+ * the top together to keep related content grouped.
+ * 
+ * During composition, we also REQUEST a screen row lease from LineLeaseManager
+ * for each placeable line. This lease is assigned ONCE and stored in the
+ * placeable line object. This ensures consistent positioning throughout playback.
+ * 
+ * Each placeable line gets:
+ * - Its own unique ID (sourceId + row number)
+ * - A leased Y position (from LineLeaseManager)
+ * - The same timing as its source (so all parts highlight together)
+ * - A reference to the word/syllable structure for proper highlighting
+ */
+function composeSourceLyricsToPlaceableLines(lyricUnits: LyricLine[]): PlaceableLine[]
+{
+  const placeable: PlaceableLine[] = []
+
+  lyricUnits.forEach((unit, unitIdx) =>
+  {
+    const fullText = unit.words.map(w => w.word).join(' ')
+    
+    // Use TextLayoutEngine to detect if this text will wrap
+    // (i.e., break into multiple layout lines)
+    const layout = layoutEngine.layoutText(fullText, TextAlign.Center, 0)
+    
+    if (layout.lines.length === 1)
+    {
+      // Fits on one row - straightforward
+      // Lease a Y position for this placeable line
+      const leasedYPosition = leaseManager.leasePosition(unit.id, unit.startTime || 0, unit.endTime || 0)
+      
+      placeable.push({
+        id: `${unit.id}:0`,
+        sourceId: unit.id,
+        text: fullText,
+        startTime: unit.startTime || 0,
+        endTime: unit.endTime || 0,
+        words: unit.words,
+        leasedYPosition  // Store the leased position
+      })
+    }
+    else
+    {
+      // Text spans multiple rows
+      const numLinesThisUnit = layout.lines.length
+      
+      // Check if leasing these lines individually would cause them to wrap across boundary
+      // by peeking at available positions starting from next lease point
+      const wouldSplitAcrossBoundary = leaseManager.wouldSplitAcrossBoundary(
+        unit.id,
+        unit.startTime || 0,
+        unit.endTime || 0,
+        numLinesThisUnit
+      )
+      
+      let positions: number[]
+      
+      if (wouldSplitAcrossBoundary)
+      {
+        // Lines would split - request grouped lease to keep them together
+        positions = leaseManager.leasePositionGroup(
+          unit.id,
+          unit.startTime || 0,
+          unit.endTime || 0,
+          numLinesThisUnit
+        )
+      }
+      else
+      {
+        // Lines fit contiguously - lease individually
+        positions = []
+        for (let i = 0; i < numLinesThisUnit; i++)
+        {
+          const yPos = leaseManager.leasePosition(
+            `${unit.id}:${i}`,
+            unit.startTime || 0,
+            unit.endTime || 0
+          )
+          positions.push(yPos)
+        }
+      }
+
+      // Assign lines to placeable array using leased positions
+      layout.lines.forEach((lineText, lineIdx) =>
+      {
+        placeable.push({
+          id: `${unit.id}:${lineIdx}`,
+          sourceId: unit.id,
+          text: lineText,
+          startTime: unit.startTime || 0,
+          endTime: unit.endTime || 0,
+          words: unit.words,  // Keep reference for highlighting
+          leasedYPosition: positions[lineIdx]  // Use leased position
+        })
+      })
+    }
+  })
+
+  return placeable
 }
 
 function togglePlayback(): void
@@ -214,6 +378,9 @@ function clearCanvas(): void
     vram.clear(0)
     updateCanvasFromVRAM()
   }
+  renderQueue.reset()
+  lineRenderBounds.clear()
+  lineRowAssignments.clear()
   resetPlayback()
 }
 
@@ -227,19 +394,35 @@ function generateGlyphTest(): void
   packets.value = []
   vram.clear(0)
   lineLayoutCache.clear()  // Clear cached layouts for new test
+  lineRenderBounds.clear() // Clear tracked render bounds for new test
+  lineRowAssignments.clear() // Clear row assignments for new test
+  placeableLines.value = [] // Clear placeable lines
   leaseManager.reset()  // Reset line leasing for new song
+  renderQueue.reset()  // Reset render queue for new test
+
+  // IMPORTANT: After background setup (palettes, tiles, etc.) we save pristine state
+  // This pristine copy will be restored each frame before rendering text
+  // This allows expired text to vanish without destroying background imagery
+  vramPristine = new VRAM()
+  for (let y = 0; y < CDG.screenHeight; y++)
+  {
+    for (let x = 0; x < CDG.screenWidth; x++)
+    {
+      vramPristine.setPixel(x, y, vram.getPixel(x, y))
+    }
+  }
 
   // Use the COMPLETE "Meet Me In November" song from the source file
   const { lyrics } = parseLyricsWithMetadata(NOVEMBER_LYRICS)
-  lyricLines.value = lyrics.filter(line => line.type === 'lyrics' || !line.type)
+  const sourcelyricUnits = lyrics.filter(line => line.type === 'lyrics' || !line.type)
 
   // Assign SYLLABLE timing with realistic durations
   // Slower, readable pace: 300-500ms per syllable depending on word position
   let currentTime = 0
 
-  lyricLines.value.forEach((line) =>
+  sourcelyricUnits.forEach((unit) =>
   {
-    line.words.forEach((word) =>
+    unit.words.forEach((word) =>
     {
       word.syllables.forEach((syllable, sylIdx) =>
       {
@@ -273,24 +456,24 @@ function generateGlyphTest(): void
       currentTime += TIMING_CONFIG.gapBetweenWords
     })
 
-    // Line's timing is span of its words
-    if (line.words.length > 0)
+    // Unit's timing is span of its words
+    if (unit.words.length > 0)
     {
-      line.startTime = line.words[0].startTime
-      line.endTime = line.words[line.words.length - 1].endTime
+      unit.startTime = unit.words[0].startTime
+      unit.endTime = unit.words[unit.words.length - 1].endTime
     }
 
-    // Lease a Y position for this line based on its timing
-    // This implements the "page view" model where lines flow from bottom to top
-    leaseManager.leasePosition(line.id, line.startTime || 0, line.endTime || 0)
-
-    // Larger gap between ACTUAL lyric lines (phrases/verses)
-    // This is a property of the lyrics structure, NOT screen line wrapping
+    // Larger gap between ACTUAL lyric units (phrases/verses)
     currentTime += TIMING_CONFIG.gapBetweenLines
   })
 
-  // Calculate total duration
-  const maxTime = Math.max(...lyricLines.value.flatMap(line =>
+  // Pre-compose source lyric units into placeable lines
+  // This detects which units are too long and splits them into multiple rows
+  const composed = composeSourceLyricsToPlaceableLines(sourcelyricUnits)
+  placeableLines.value = composed
+
+  // Calculate total duration from source lyric units
+  const maxTime = Math.max(...sourcelyricUnits.flatMap(line =>
     line.words.flatMap(word =>
       word.syllables.map(s => s.endTime || 0)
     )
@@ -309,10 +492,18 @@ function generateGlyphTest(): void
 
 function createCharGlyph(char: string): GlyphData
 {
-  const glyph = font.getGlyph(char)
-  return {
-    width: glyph.width,
-    rows: glyph.rows
+  if (glyphSource.value === 'dynamic')
+  {
+    return dynamicRasterizer.getGlyph(char, dynamicFontFamily.value, dynamicFontSize.value)
+  }
+  else
+  {
+    // Static CDGFont
+    const glyph = font.getGlyph(char)
+    return {
+      width: glyph.width,
+      rows: glyph.rows
+    }
   }
 }
 
@@ -366,6 +557,29 @@ function onFrame(now: number): void
   {
     if (autoRepeat.value)
     {
+      // Before restarting, clear all remaining rendered lines from lineRenderBounds
+      // Ensure a clean slate for the next cycle
+      for (const [lineId, bounds] of lineRenderBounds.entries())
+      {
+        if (vramPristine)
+        {
+          for (let y = bounds.minY; y <= bounds.maxY; y++)
+          {
+            for (let x = 0; x < CDG.screenWidth; x++)
+            {
+              const bgPixel = vramPristine.getPixel(x, y)
+              vram.setPixel(x, y, bgPixel)
+            }
+          }
+        }
+      }
+      // Clear all tracking after cleaning screen
+      lineRenderBounds.clear()
+      lineLayoutCache.clear()
+      lineRowAssignments.clear()
+      leaseManager.reset()
+      
+      // Reset to start of song
       currentTimeMs.value = 0
     }
     else
@@ -375,42 +589,113 @@ function onFrame(now: number): void
     }
   }
 
-  vram.clear(0)
-
   const timeMs = currentTimeMs.value
+
+  // LIFECYCLE STEP 1: Clear expired text regions using ACTUAL rendered bounds
+  // Use the real Y ranges where text was actually rendered, not estimated positions
+  for (const [lineId, bounds] of lineRenderBounds.entries())
+  {
+    // Check if this line has expired
+    const line = placeableLines.value.find(l => l.id === lineId)
+    if (line && timeMs > line.endTime)
+    {
+      // Clear the actual region where this line was rendered
+      if (vramPristine)
+      {
+        for (let y = bounds.minY; y <= bounds.maxY; y++)
+        {
+          for (let x = 0; x < CDG.screenWidth; x++)
+          {
+            const bgPixel = vramPristine.getPixel(x, y)
+            vram.setPixel(x, y, bgPixel)
+          }
+        }
+      }
+      // Mark for removal (don't modify map while iterating)
+      lineRenderBounds.delete(lineId)
+    }
+  }
+
   const COLOR_UNHIGHLIGHTED = 15  // White
   const COLOR_HIGHLIGHTED = 15    // Also white (will use intensity for highlighting)
 
-  // Render only visible lines to avoid overlapping/breaking
+  // LIFECYCLE STEP 2: Render only VISIBLE (non-expired) lines
+  // These write into VRAM, modifying its state
   const linesToRender = visibleLyricLines.value
   
   if (linesToRender.length > 0)
   {
-    // Use TextLayoutEngine + LineLeaseManager to position lyrics
-    linesToRender.forEach((line) =>
+    // Render each placeable line at its pre-assigned Y position
+    // (assigned during composition phase, not re-leased each frame)
+    linesToRender.forEach((placeable) =>
     {
-      // Get full text for this line
-      const fullText = line.words.map(word => word.word).join(' ')
+      // Use the Y position assigned during composition
+      const leasedYPosition = placeable.leasedYPosition
       
-      // Get the leased Y position for this line (in abstract 0-1000 space)
-      // If no lease, fall back to default position (for backward compatibility)
-      const leasedYPosition = leaseManager.getPosition(line.id) ?? layoutEngine.getDefaultVerticalPosition()
+      // Store for display in Lyrics box
+      lineRowAssignments.set(placeable.id, leasedYPosition)
       
-      // Use cached layout or create new one with the leased Y position
-      let layout = lineLayoutCache.get(line.id)
+      // Get full text for this placeable line
+      const fullText = placeable.text
+      
+      // Use cached layout or create new one with the assigned Y position
+      let layout = lineLayoutCache.get(placeable.id)
       if (!layout)
       {
-        // Calculate layout using the Y position (consistent across frames)
-        layout = layoutEngine.layoutText(fullText, TextAlign.Center, leasedYPosition)
-        lineLayoutCache.set(line.id, layout)
+        // For dynamic glyphs, calculate positions using actual glyph widths
+        // For static glyphs, use TextLayoutEngine estimation
+        if (glyphSource.value === 'dynamic')
+        {
+          // Convert abstract Y position (0-1000) to pixel Y coordinate
+          const pixelY = Math.round((leasedYPosition / 1000) * CDG.screenHeight)
+          
+          // Build custom layout with actual rasterized glyph widths
+          const charPositions: Array<{ x: number; y: number }> = []
+          const charWidths: number[] = []
+          const charSpacing = Math.max(1, Math.ceil(dynamicFontSize.value * 0.15))  // ~15% of font size
+
+          // First pass: measure each character
+          for (let i = 0; i < fullText.length; i++)
+          {
+            const char = fullText[i]
+            const glyph = createCharGlyph(char)
+            charWidths.push(glyph.width)
+          }
+
+          // Calculate total width with spacing
+          const totalWidth = charWidths.reduce((sum, w) => sum + w, 0) + 
+                           (charWidths.length - 1) * charSpacing
+
+          // Start position (centered horizontally)
+          let cursorX = Math.max(0, (CDG.screenWidth - totalWidth) / 2)
+
+          // Build positions
+          for (let i = 0; i < fullText.length; i++)
+          {
+            charPositions.push({ x: cursorX, y: pixelY })
+            cursorX += charWidths[i] + charSpacing
+          }
+
+          layout = { lines: [fullText], charPositions }
+        }
+        else
+        {
+          // Use TextLayoutEngine for static glyphs
+          layout = layoutEngine.layoutText(fullText, TextAlign.Center, leasedYPosition)
+        }
+        lineLayoutCache.set(placeable.id, layout)
       }
 
       // TextLayoutEngine already returns pixel coordinates (0-300 x 0-216)
       // No need to scale; use positions directly
 
-      // Render the full text using positions from layout
-      // We iterate through fullText to match the character positions calculated by TextLayoutEngine
-      let positionIndex = 0 // Track position in layout.charPositions
+      // Track bounds of actual rendered glyphs for this placeable line
+      let lineMinY = CDG.screenHeight
+      let lineMaxY = 0
+
+      // Render the text using positions from layout
+      // charPositions array includes positions for ALL characters (including spaces)
+      // We iterate through fullText and use charIdx to access charPositions directly
       for (let charIdx = 0; charIdx < fullText.length; charIdx++)
       {
         const char = fullText[charIdx]
@@ -418,7 +703,6 @@ function onFrame(now: number): void
         // Spaces have positions but we don't render them visually
         if (char === ' ')
         {
-          positionIndex++ // Skip the position for this space
           continue
         }
         
@@ -429,7 +713,8 @@ function onFrame(now: number): void
         let charCountSoFar = 0
         
         // Find which syllable this character belongs to
-        for (const word of line.words)
+        // Need to search through the source lyric unit's words since placeable.words is the reference
+        for (const word of placeable.words)
         {
           for (const syl of word.syllables)
           {
@@ -454,20 +739,35 @@ function onFrame(now: number): void
 
         const colorIndex = isHighlighted ? COLOR_HIGHLIGHTED : COLOR_UNHIGHLIGHTED
 
-        // Get character position from layout using the position index (not charIdx, since we skip spaces)
-        if (positionIndex < layout.charPositions.length)
+        // Get character position from layout using charIdx directly (1:1 mapping)
+        if (charIdx < layout.charPositions.length)
         {
-          const charPos = layout.charPositions[positionIndex]
+          const charPos = layout.charPositions[charIdx]
           const screenX = Math.floor(charPos.x)
           const screenY = Math.floor(charPos.y)
 
           if (vram && screenX >= 0 && screenX < CDG.screenWidth && screenY >= 0 && screenY < CDG.screenHeight)
           {
             renderGlyphToVRAM(vram, screenX, screenY, glyph, colorIndex)
+            
+            // Track actual bounds including yOffset and glyph height
+            const glyphHeight = glyph.height || glyph.rows.length
+            const yOffset = glyph.yOffset || 0
+            const glyphTop = screenY + yOffset
+            const glyphBottom = glyphTop + glyphHeight
+            lineMinY = Math.min(lineMinY, glyphTop)
+            lineMaxY = Math.max(lineMaxY, glyphBottom)
           }
         }
-        
-        positionIndex++ // Move to next position in layout
+      }
+
+      // Store actual bounds for later clearing
+      if (lineMinY <= lineMaxY)
+      {
+        lineRenderBounds.set(placeable.id, {
+          minY: lineMinY,
+          maxY: lineMaxY
+        })
       }
     })
   }

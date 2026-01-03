@@ -7,7 +7,7 @@
 
 import { TextLayoutEngine, DEFAULT_LAYOUT_CONFIG } from './TextLayoutEngine'
 import { TileScreenModel, TILE_CONFIGS } from './TileScreenModel'
-import { TextAlign } from './PresentationCommand'
+import { TextAlign } from './Command'
 
 /**
  * Test helper: visualize layout on tile screen
