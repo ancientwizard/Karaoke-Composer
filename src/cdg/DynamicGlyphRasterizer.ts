@@ -63,7 +63,6 @@ export class DynamicGlyphRasterizer
     if (/^\s$/.test(char))
     {
       return {
-        char,
         width: Math.ceil(fontSize * 0.3),  // Space is ~30% of font size
         height: Math.ceil(fontSize),
         rows: [0]
@@ -144,7 +143,6 @@ export class DynamicGlyphRasterizer
   private createEmptyGlyph(char: string): GlyphData
   {
     return {
-      char,
       width: 1,
       height: 1,
       rows: [0b000000]
@@ -274,7 +272,6 @@ export class DynamicGlyphRasterizer
     }
 
     return {
-      char,
       width: finalWidth,
       height: finalHeight,
       rows,

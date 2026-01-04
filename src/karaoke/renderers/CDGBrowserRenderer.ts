@@ -12,6 +12,8 @@ export interface CDGBrowserRendererConfig extends RendererConfig {
   backgroundColor?: number
   activeColor?: number
   transitionColor?: number
+  fontFamily?: string
+  fontSize?: number
 }
 
 // TrackedText handled inside CDGCore
@@ -24,7 +26,9 @@ export class CDGBrowserRenderer extends BaseRenderer {
     this.core = new CDGCore({
       backgroundColor: config.backgroundColor,
       activeColor: config.activeColor,
-      transitionColor: config.transitionColor
+      transitionColor: config.transitionColor,
+      fontFamily: config.fontFamily,
+      fontSize: config.fontSize
     })
   }
 

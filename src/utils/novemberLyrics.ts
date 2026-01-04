@@ -23,9 +23,6 @@ interface TimedWord {
 const NOVEMBER_LYRICS = `[@TITLE:Meet Me In November]
 [@AUTHOR:Ancient Wizard]
 
-[@CAPTION:You GO Marry Poppins!]
-Su/per/cal/i/frag/i/lis/tic/ex/pi/al/i/do/cious!
-
 [@CAPTION:Verse 1]
 Meet me in No/vem/ber, like a song of sto/ries told.
 So per/fect it can't be real, yet hope will make it so.
@@ -275,3 +272,6 @@ export function debugNovemberParsing() {
 }
 
 export { type TimedWord, type Syllable, NOVEMBER_LYRICS }
+
+// VIM: set filetype=typescript :
+// END

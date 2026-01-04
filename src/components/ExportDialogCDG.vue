@@ -10,52 +10,76 @@
         <strong>Settings</strong>
       </div>
       <div class="card-body">
-        <div class="row align-items-center mb-2">
-          <label class="col-sm-4 col-form-label">Background color:</label>
-          <div class="col-sm-8">
-            <input type="color" class="form-control form-control-color" v-model="cdgSettings.backgroundColor" />
+        <div class="row">
+          <!-- Left column: Colors and options -->
+          <div class="col-md-6">
+            <div class="row align-items-center mb-2">
+              <label class="col-sm-5 col-form-label">Background color:</label>
+              <div class="col-sm-7">
+                <input type="color" class="form-control form-control-color" v-model="cdgSettings.backgroundColor" />
+              </div>
+            </div>
+
+            <div class="row align-items-center mb-2">
+              <label class="col-sm-5 col-form-label">Text color:</label>
+              <div class="col-sm-7">
+                <input type="color" class="form-control form-control-color" v-model="cdgSettings.textColor" />
+              </div>
+            </div>
+
+            <div class="row align-items-center mb-2">
+              <label class="col-sm-5 col-form-label">Highlight color:</label>
+              <div class="col-sm-7">
+                <input type="color" class="form-control form-control-color" v-model="cdgSettings.highlightColor" />
+              </div>
+            </div>
+
+            <div class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" v-model="cdgSettings.showBorder" id="cdgBorder" />
+              <label class="form-check-label" for="cdgBorder">
+                Show decorative border
+              </label>
+            </div>
+
+            <div class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" v-model="cdgSettings.centerText" id="cdgCenter" />
+              <label class="form-check-label" for="cdgCenter">
+                Center text on screen
+              </label>
+            </div>
+
+            <div class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" v-model="cdgSettings.showCaptions" id="cdgCaptions" />
+              <label class="form-check-label" for="cdgCaptions">
+                Show captions (e.g., "Verse 1", "Chorus")
+              </label>
+            </div>
+
+            <div v-if="cdgSettings.showCaptions" class="row align-items-center mb-2 ms-4">
+              <label class="col-sm-7 col-form-label small">Caption duration (sec):</label>
+              <div class="col-sm-5">
+                <input type="number" class="form-control form-control-sm" v-model.number="cdgSettings.captionDuration" min="1" max="10" step="0.5" />
+              </div>
+            </div>
           </div>
-        </div>
 
-        <div class="row align-items-center mb-2">
-          <label class="col-sm-4 col-form-label">Text color:</label>
-          <div class="col-sm-8">
-            <input type="color" class="form-control form-control-color" v-model="cdgSettings.textColor" />
-          </div>
-        </div>
+          <!-- Right column: Font settings -->
+          <div class="col-md-6 ps-md-3 border-start-md">
+            <div class="row align-items-center mb-2">
+              <label class="col-sm-5 col-form-label">Font family:</label>
+              <div class="col-sm-7">
+                <input type="text" class="form-control" v-model="cdgSettings.fontFamily" placeholder="Arial" />
+                <small class="text-muted d-block mt-1">e.g., Arial, Courier New</small>
+              </div>
+            </div>
 
-        <div class="row align-items-center mb-2">
-          <label class="col-sm-4 col-form-label">Highlight color:</label>
-          <div class="col-sm-8">
-            <input type="color" class="form-control form-control-color" v-model="cdgSettings.highlightColor" />
-          </div>
-        </div>
-
-        <div class="form-check mb-2">
-          <input class="form-check-input" type="checkbox" v-model="cdgSettings.showBorder" id="cdgBorder" />
-          <label class="form-check-label" for="cdgBorder">
-            Show decorative border
-          </label>
-        </div>
-
-        <div class="form-check mb-2">
-          <input class="form-check-input" type="checkbox" v-model="cdgSettings.centerText" id="cdgCenter" />
-          <label class="form-check-label" for="cdgCenter">
-            Center text on screen
-          </label>
-        </div>
-
-        <div class="form-check mb-2">
-          <input class="form-check-input" type="checkbox" v-model="cdgSettings.showCaptions" id="cdgCaptions" />
-          <label class="form-check-label" for="cdgCaptions">
-            Show captions (e.g., "Verse 1", "Chorus")
-          </label>
-        </div>
-
-        <div v-if="cdgSettings.showCaptions" class="row align-items-center mb-2 ms-4">
-          <label class="col-sm-5 col-form-label small">Caption duration (seconds):</label>
-          <div class="col-sm-7">
-            <input type="number" class="form-control form-control-sm" v-model.number="cdgSettings.captionDuration" min="1" max="10" step="0.5" />
+            <div class="row align-items-center mb-2">
+              <label class="col-sm-5 col-form-label">Font size (px):</label>
+              <div class="col-sm-7">
+                <input type="number" class="form-control" v-model.number="cdgSettings.fontSize" min="8" max="48" step="1" />
+                <small class="text-muted d-block mt-1">Range: 8–48</small>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -171,7 +195,9 @@ const cdgSettings = ref({
   showMetadata: true,
   metadataDuration: 3,
   showCaptions: true,
-  captionDuration: 2
+  captionDuration: 2,
+  fontFamily: 'Arial',
+  fontSize: 16
 })
 
 // Progress state for incremental rendering
@@ -254,7 +280,9 @@ async function exportCDG() {
     const renderer = new CDGBrowserRenderer({
       backgroundColor: 0,
       activeColor: 1,
-      transitionColor: 2
+      transitionColor: 2,
+      fontFamily: cdgSettings.value.fontFamily,
+      fontSize: cdgSettings.value.fontSize
     })
 
     await renderer.initialize()

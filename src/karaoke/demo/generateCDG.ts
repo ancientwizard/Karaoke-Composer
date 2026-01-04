@@ -39,8 +39,11 @@ async function generateCDG(lrcPath: string, cdgPath: string) {
 
   console.log(`\n🎬 ${commands.length} presentation commands generated`)
 
-  // Render to CDG
-  const renderer = new CDGFileRenderer(cdgPath)
+  // Render to CDG with font settings matching DeveloperView POC
+  const renderer = new CDGFileRenderer(cdgPath, {
+    fontFamily: 'Arial',
+    fontSize: 16
+  })
   await renderer.renderToFile(script)
 
   console.log(`\n✨ CDG file generated successfully!`)

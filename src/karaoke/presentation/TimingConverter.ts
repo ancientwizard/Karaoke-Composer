@@ -3,9 +3,13 @@
  *
  * Handles the conversion from syllable/word timing to display commands,
  * including text layout, color changes, and transitions between lines.
+ *
+ * IMPORTANT: Uses TextRenderComposer to get proper PlaceableLines with
+ * leasedYPositions, ensuring consistency with DeveloperView rendering.
  */
 
 import type { KaraokeProject, LyricLine } from '../../types/karaoke'
+import type { Song } from '@/lyrics/types'
 import {
   PresentationCommands,
   LogicalColor,
@@ -18,6 +22,7 @@ import {
   DEFAULT_LAYOUT_CONFIG,
   type LayoutConfig
 } from './TextLayoutEngine'
+import { TextRenderComposer, type ComposerOptions } from './TextRenderComposer'
 
 /**
  * Configuration for timing conversion
@@ -48,6 +53,7 @@ export const DEFAULT_TIMING_CONFIG: TimingConverterConfig = {
  */
 export class TimingConverter {
   private layoutEngine: TextLayoutEngine
+  private textComposer: TextRenderComposer
   private config: Required<TimingConverterConfig>
 
   constructor(config: TimingConverterConfig = {}) {
@@ -62,10 +68,14 @@ export class TimingConverter {
       captionDurationMs: config.captionDurationMs ?? DEFAULT_TIMING_CONFIG.captionDurationMs!
     }
     this.layoutEngine = new TextLayoutEngine(this.config.layoutConfig)
+    this.textComposer = new TextRenderComposer()
   }
 
   /**
    * Convert entire KaraokeProject to presentation commands
+   *
+   * Uses TextRenderComposer to get proper PlaceableLines with leasedYPositions,
+   * ensuring consistency with DeveloperView rendering.
    */
   convert(project: KaraokeProject): AnyPresentationCommand[] {
     const commands: AnyPresentationCommand[] = []
@@ -73,48 +83,116 @@ export class TimingConverter {
     // 1. Clear screen at start
     commands.push(PresentationCommands.clearScreen(0, LogicalColor.Background))
 
-    // 2. Show metadata if enabled
-    if (this.config.showMetadata && project.name && project.artist) {
-      const metadataCommands = this.createMetadataCommands(
-        project.name,
-        project.artist,
-        this.config.metadataDurationMs
-      )
-      commands.push(...metadataCommands)
-    }
+    // 2. Convert KaraokeProject to Song format for TextRenderComposer
+    const song = this.projectToSong(project)
 
-    // 3. Convert each lyric line
-    const lyricsWithTiming = project.lyrics.filter(line =>
-      line.type !== 'title' &&
-      line.type !== 'author' &&
-      line.startTime !== undefined
-    )
+    // 3. Use TextRenderComposer to get PlaceableLines with proper leasedYPositions
+    const placeableLines = this.textComposer.composeSong(song, {
+      includeTitle: this.config.showMetadata,
+      includeArtist: this.config.showMetadata,
+      includeCredit: true
+    })
 
-    let previousPosition: Position | null = null
+    // 4. Convert each PlaceableLine to presentation commands
+    for (let i = 0; i < placeableLines.length; i++)
+    {
+      const placeable = placeableLines[i]
+      const nextPlaceable = placeableLines[i + 1]
 
-    for (let i = 0; i < lyricsWithTiming.length; i++) {
-      const line = lyricsWithTiming[i]
-      const nextLine = lyricsWithTiming[i + 1]
-
-      const lineCommands = this.convertLine(
-        line,
-        i,
-        previousPosition,
-        nextLine
-      )
-      commands.push(...lineCommands)
-
-      // Track position for transition logic
-      if (lineCommands.length > 0) {
-        const showTextCmd = lineCommands.find(cmd => cmd.type === 'show_text')
-        if (showTextCmd && 'position' in showTextCmd) {
-          previousPosition = showTextCmd.position
-        }
+      // Get the Y position from the composed placeable line
+      // Convert from abstract 0-1000 space to Position
+      const position: Position = {
+        x: 500,  // Center horizontally (will be re-centered in CDGCore)
+        y: placeable.leasedYPosition
       }
+
+      // Show text at start time
+      commands.push(
+        PresentationCommands.showText(
+          placeable.startTime,
+          placeable.id,
+          placeable.text,
+          position,
+          LogicalColor.TransitionText,
+          TextAlign.Center
+        )
+      )
+
+      // Create syllable highlighting commands
+      if (placeable.charToSyllableMap && placeable.words) {
+        const highlightCommands = this.createSyllableHighlightsFromMap(
+          placeable.id,
+          placeable.charToSyllableMap
+        )
+        commands.push(...highlightCommands)
+      }
+
+      // Remove text at end time
+      commands.push(
+        PresentationCommands.removeText(placeable.endTime, placeable.id)
+      )
     }
 
-    // Sort commands by timestamp to ensure proper execution order
-    return commands.sort((a, b) => a.timestamp - b.timestamp)
+    return commands
+  }
+
+  /**
+   * Convert KaraokeProject to Song format for TextRenderComposer
+   */
+  private projectToSong(project: KaraokeProject): Song
+  {
+    return {
+      title: project.name,
+      artist: project.artist,
+      duration: project.audioFile.duration || 0,
+      lines: project.lyrics
+        .filter(line => line.type !== 'title' && line.type !== 'author' && line.startTime !== undefined)
+        .map(line => ({
+          text: line.text,
+          startTime: line.startTime || 0,
+          caption: line.metadata?.caption,
+          words: (line.words || []).map(w => ({
+            text: w.word,
+            startTime: w.startTime || 0,
+            syllables: (w.syllables || []).map(s => ({
+              text: s.syllable,
+              startTime: s.startTime || 0
+            }))
+          }))
+        }))
+    }
+  }
+
+  /**
+   * Create syllable highlighting commands from character-to-syllable map
+   */
+  private createSyllableHighlightsFromMap(
+    textId: string,
+    charToSyllableMap: Map<number, any>
+  ): AnyPresentationCommand[] {
+    const commands: AnyPresentationCommand[] = []
+
+    for (const [charIdx, syllableInfo] of charToSyllableMap)
+    {
+      if (syllableInfo.startTime === undefined) continue
+
+      // Change color at syllable start
+      // Highlighting persists after syllable ends (like DeveloperView)
+      commands.push(
+        PresentationCommands.changeColor(
+          syllableInfo.startTime,
+          textId,
+          charIdx,
+          charIdx + 1,
+          LogicalColor.ActiveText
+        )
+      )
+
+      // NOTE: We do NOT revert color at syllable end
+      // Highlighting persists for the rest of the line (see DeveloperView line 660-662)
+    }
+
+    return commands
   }
 
   /**
@@ -227,12 +305,12 @@ export class TimingConverter {
     const commands: AnyPresentationCommand[] = []
 
     // Skip lines without timing
-    if (!line.startTime || !line.endTime) {
+    if (!line.startTime || !line.endTime)
       return commands
-    }
 
     // Add caption if this line has one and captions are enabled
-    if (this.config.showCaptions && line.metadata?.caption) {
+    if (this.config.showCaptions && line.metadata?.caption)
+    {
       const captionCommands = this.createCaptionCommands(
         line.metadata.caption,
         line.startTime,
@@ -241,74 +319,65 @@ export class TimingConverter {
       commands.push(...captionCommands)
     }
 
+    // For CDG export, we don't wrap lines - render full text as single line
+    // This prevents the 12-line stacking issue. Long text will overflow or be truncated by CDG.
     const fullText = this.getLineText(line)
 
-    // Calculate layout position
-    const nextY = previousPosition
-      ? this.layoutEngine.getNextVerticalPosition(previousPosition.y)
-      : this.layoutEngine.getDefaultVerticalPosition()
+    // Calculate fixed Y position based on line index
+    // For CDG export, we don't need rotating positions like DeveloperView
+    // Just use a fixed position per line
+    const lineSpacing = 100 // Abstract units between lines
+    const startingY = 300   // Start from middle of screen
+    const fixedY = startingY + (lineIndex * lineSpacing)
 
-    const layout = this.layoutEngine.layoutText(fullText, this.config.displayAlign, nextY)
+    const layout = this.layoutEngine.layoutText(fullText, this.config.displayAlign, fixedY)
 
     // Show text before first syllable starts (preview)
     const previewTime = Math.max(0, line.startTime - this.config.previewDurationMs)
 
-    // Generate show_text commands for each wrapped line
-    const lineHeight = this.config.layoutConfig.fontSize * 1.2
+    // For CDG: render as single line, not wrapped portions
+    const textId = `line-${lineIndex}`
 
-    for (let wrappedLineIdx = 0; wrappedLineIdx < layout.lines.length; wrappedLineIdx++) {
-      const wrappedText = layout.lines[wrappedLineIdx]
-      const textId = `line-${lineIndex}-${wrappedLineIdx}`
-
-      // Calculate Y position for this wrapped line
-      const yOffset = wrappedLineIdx * lineHeight
-      const linePosition: Position = {
-        x: layout.position.x,
-        y: layout.position.y + yOffset
-      }
-
-      commands.push(
-        PresentationCommands.showText(
-          previewTime,
-          textId,
-          wrappedText,
-          linePosition,
-          LogicalColor.TransitionText,  // Start with dim color
-          this.config.displayAlign
-        )
+    commands.push(
+      PresentationCommands.showText(
+        previewTime,
+        textId,
+        fullText,
+        layout.position,
+        LogicalColor.TransitionText,  // Start with dim color
+        this.config.displayAlign
       )
-    }
+    )
 
-    // Create syllable highlighting commands across all wrapped lines
+    // Create syllable highlighting commands for the full line
     const highlightCommands = this.createSyllableHighlights(
       line,
       lineIndex,
-      layout.lines
+      [fullText]  // Single wrapped line = the full text
     )
     commands.push(...highlightCommands)
 
-    // Remove all wrapped line texts after line ends
-    for (let wrappedLineIdx = 0; wrappedLineIdx < layout.lines.length; wrappedLineIdx++) {
-      const textId = `line-${lineIndex}-${wrappedLineIdx}`
-
-      if (nextLine) {
-        // Transition to next line
-        const transitionStart = line.endTime
-        commands.push(
-          PresentationCommands.removeText(
-            transitionStart + this.config.transitionDurationMs,
-            textId
-          )
+    // Remove the text after line ends
+    if (nextLine)
+    {
+      // Transition to next line
+      const transitionStart = line.endTime
+      commands.push(
+        PresentationCommands.removeText(
+          transitionStart + this.config.transitionDurationMs,
+          textId
         )
-      } else {
-        // Last line - just remove after a delay
-        commands.push(
-          PresentationCommands.removeText(
-            line.endTime + 2000,  // Keep last line visible for 2 seconds
-            textId
-          )
+      )
+    }
+    else
+    {
+      // Last line - just remove after a delay
+      commands.push(
+        PresentationCommands.removeText(
+          line.endTime + 2000,  // Keep last line visible for 2 seconds
+          textId
         )
-      }
+      )
     }
 
     return commands
@@ -322,7 +391,8 @@ export class TimingConverter {
     line: LyricLine,
     lineIndex: number,
     wrappedLines: string[]
-  ): AnyPresentationCommand[] {
+  ): AnyPresentationCommand[]
+  {
     const commands: AnyPresentationCommand[] = []
 
     // Build a map of character index in full text to wrapped line
@@ -332,7 +402,8 @@ export class TimingConverter {
     let currentLineIdx = 0
     let charInLine = 0
 
-    for (let i = 0; i < fullText.length; i++) {
+    for (let i = 0; i < fullText.length; i++)
+    {
       charToLineMap.push({
         lineIdx: currentLineIdx,
         charIdx: charInLine
@@ -342,13 +413,15 @@ export class TimingConverter {
 
       // Check if we're at the end of current wrapped line
       if (currentLineIdx < wrappedLines.length - 1 &&
-        charInLine >= wrappedLines[currentLineIdx].length) {
+        charInLine >= wrappedLines[currentLineIdx].length)
+      {
         currentLineIdx++
         charInLine = 0
 
         // Skip the space character that was used to wrap
         // This space won't appear in the next line, so skip it in the fullText as well
-        if (i + 1 < fullText.length && fullText[i + 1] === ' ') {
+        if (i + 1 < fullText.length && fullText[i + 1] === ' ')
+        {
           i++  // Skip space in fullText iteration
           // Don't add mapping for the skipped space - it won't be displayed
         }
@@ -357,13 +430,17 @@ export class TimingConverter {
 
     let charOffset = 0
 
-    for (const word of line.words) {
-      for (const syllable of word.syllables) {
-        if (syllable.startTime !== undefined) {
+    for (const word of line.words)
+    {
+      for (const syllable of word.syllables)
+      {
+        if (syllable.startTime !== undefined)
+        {
           const syllableLength = syllable.syllable.length
 
           // Ensure we don't go out of bounds
-          if (charOffset >= charToLineMap.length) {
+          if (charOffset >= charToLineMap.length)
+          {
             console.warn(`[TimingConverter] charOffset ${charOffset} exceeds charToLineMap length ${charToLineMap.length}`)
             break
           }
@@ -373,11 +450,17 @@ export class TimingConverter {
           const endIdx = Math.min(charOffset + syllableLength - 1, charToLineMap.length - 1)
           const endMapping = charToLineMap[endIdx]
 
-          if (startMapping && endMapping) {
-            // Syllable might span multiple wrapped lines (rare but possible)
-            for (let lineIdx = startMapping.lineIdx; lineIdx <= endMapping.lineIdx; lineIdx++) {
-              const textId = `line-${lineIndex}-${lineIdx}`
+          if (startMapping && endMapping)
+          {
+            // For CDG export: we only have a single line (wrappedLines.length === 1)
+            // So textId should be `line-${lineIndex}` without wrapped line index
+            const textId = wrappedLines.length === 1 ? 
+              `line-${lineIndex}` : 
+              `line-${lineIndex}-${startMapping.lineIdx}`
 
+            // Syllable might span multiple wrapped lines (rare but possible)
+            for (let lineIdx = startMapping.lineIdx; lineIdx <= endMapping.lineIdx; lineIdx++)
+            {
               // Calculate start and end positions within this wrapped line
               const isFirstLine = lineIdx === startMapping.lineIdx
               const isLastLine = lineIdx === endMapping.lineIdx
@@ -394,20 +477,33 @@ export class TimingConverter {
                   LogicalColor.ActiveText
                 )
               )
+
+              // Add command to revert color at syllable end time
+              if (syllable.endTime !== undefined)
+              {
+                commands.push(
+                  PresentationCommands.changeColor(
+                    syllable.endTime,
+                    textId,
+                    startChar,
+                    endChar,
+                    LogicalColor.TransitionText
+                  )
+                )
+              }
             }
           }
 
           charOffset += syllableLength
-        } else {
-          charOffset += syllable.syllable.length
         }
+        else
+          charOffset += syllable.syllable.length
       }
 
       // Account for space between words - but only if it's not already been skipped
       // If the next char in charToLineMap exists, add 1; otherwise we're at the end or space was skipped
-      if (charOffset < charToLineMap.length) {
+      if (charOffset < charToLineMap.length)
         charOffset += 1
-      }
     }
 
     return commands
@@ -416,7 +512,8 @@ export class TimingConverter {
   /**
    * Get the full text of a line (concatenating syllables)
    */
-  private getLineText(line: LyricLine): string {
+  private getLineText(line: LyricLine): string
+  {
     return line.words
       .map(word => word.syllables.map(s => s.syllable).join(''))
       .join(' ')
@@ -429,20 +526,24 @@ export class TimingConverter {
     line: LyricLine,
     wordIndex: number,
     syllableIndex: number
-  ): number {
+  ): number
+  {
     let charIndex = 0
 
-    for (let w = 0; w < wordIndex; w++) {
-      for (const syllable of line.words[w].syllables) {
+    for (let w = 0; w < wordIndex; w++)
+    {
+      for (const syllable of line.words[w].syllables)
         charIndex += syllable.syllable.length
-      }
+
       charIndex += 1 // Space between words
     }
 
-    for (let s = 0; s < syllableIndex; s++) {
+    for (let s = 0; s < syllableIndex; s++)
       charIndex += line.words[wordIndex].syllables[s].syllable.length
-    }
 
     return charIndex
   }
 }
+
+// VIM: set filetype=typescript :
+// END

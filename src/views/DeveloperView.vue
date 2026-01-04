@@ -126,11 +126,9 @@ import { VRAM } from '@/cdg/encoder'
 import { renderGlyphToVRAM } from '@/cdg/glyph-renderer'
 import { CDGFont } from '@/karaoke/renderers/cdg/CDGFont'
 import { DynamicGlyphRasterizer } from '@/cdg/DynamicGlyphRasterizer'
-import type { LyricLine } from '@/types/karaoke'
-import type { Song, SongLine, SongWord, SongSyllable } from '@/lyrics/types'
 import { SongsLibrary } from '@/lyrics/library'
 import { TextLayoutEngine, DEFAULT_LAYOUT_CONFIG } from '@/karaoke/presentation/TextLayoutEngine'
-import { LineLeaseManager } from '@/karaoke/presentation/LineLeaseManager'
+import { TextRenderComposer, type PlaceableLine } from '@/karaoke/presentation/TextRenderComposer'
 import { TextAlign } from '@/karaoke/presentation/Command'
 
 import { CDG, DefaultPalette, ColorUtils } from '@/cdg/constants'
@@ -138,154 +136,16 @@ import type { GlyphData } from '@/cdg/glyph-renderer'
 import { TextRenderQueue } from '@/karaoke/presentation/TextRenderQueue'
 
 /**
- * Placeable Line - A unit of text that will occupy one screen row
- * When a lyric unit (from source lyrics) is too long to fit one row,
- * it's split into multiple placeable lines, each with its own timing and row lease.
- */
-interface PlaceableLine
-{
-  id: string                    // Unique ID for this placeable line
-  sourceId: string              // Original lyric unit ID
-  text: string                  // The text to render on this row
-  startTime: number
-  endTime: number
-  words: any[]                  // References to word objects for syllable highlighting
-  charOffsetInSource?: number   // For wrapped lines: where this text starts in the original source text
-  charToSyllableMap?: Map<number, any>  // Direct character-to-syllable mapping for fast lookup during rendering
-  leasedYPosition: number       // Y position (in abstract 0-1000 space) assigned during composition
-}
-
-/**
- * Render Item - Text ready for rendering with computed show/highlight/hide timing
- * Includes metadata (title, artist), lyric lines, and credit
- */
-interface RenderItem
-{
-  id: string
-  text: string
-  type: 'metadata' | 'lyrics' | 'credit'  // What kind of content this is
-  showTime: number              // When to display on screen (ms)
-  highlightStartTime?: number   // When to start highlighting (may be undefined for metadata)
-  highlightEndTime?: number     // When to stop highlighting (may be undefined for metadata)
-  hideTime: number              // When to clear from screen (ms)
-  words?: any[]                 // Word/syllable data for highlighting (only for lyrics)
-  alignment?: 'left' | 'center' | 'right'
-}
-
-/**
- * Convert Song object from library to LyricLine array format
- * Preserves all timing information (lyrics use highlight timings from Song)
- */
-function songToLyricLines(song: Song): LyricLine[]
-{
-  const lines: LyricLine[] = []
-  
-  song.lines.forEach((songLine: SongLine, lineIdx: number) =>
-  {
-    const line: LyricLine = {
-      id: `line-${lineIdx}`,
-      lineNumber: lineIdx + 1,
-      text: songLine.words.map((w: SongWord) => w.text).join(' '),
-      type: songLine.caption ? 'caption' : 'lyrics',
-      startTime: songLine.startTime,
-      endTime: songLine.startTime,
-      words: []
-    }
-    
-    // Convert SongWord to WordTiming
-    songLine.words.forEach((songWord: SongWord, wordIdx: number) =>
-    {
-      const word = {
-        word: songWord.text,
-        syllables: songWord.syllables.map((syl: SongSyllable) => ({
-          syllable: syl.text,
-          startTime: syl.startTime
-        })),
-        startTime: songWord.startTime,
-        endTime: songWord.startTime + 500 // Placeholder, will be set by timing logic
-      }
-      
-      // Debug first line, first word, first syllable
-      if (lineIdx === 0 && wordIdx === 0)
-      {
-        const firstSyl = word.syllables[0]
-        console.log('🎼 First syllable timing:', {
-          syllable: firstSyl.syllable,
-          startTime: firstSyl.startTime,
-          wordStartTime: word.startTime
-        })
-      }
-      
-      line.words.push(word)
-    })
-    
-    // Update line endTime based on last word
-    if (line.words.length > 0)
-    {
-      const lastWord = line.words[line.words.length - 1]
-      line.endTime = (lastWord.startTime || 0) + 500
-    }
-    
-    lines.push(line)
-  })
-  
-  return lines
-}
-
-/**
  * Build karaoke render plan with intelligent timing
  * 
- * Creates metadata placeholder lines that will be composed into placeable lines
- * Returns array of metadata items with timing for show/hide
+ * Uses TextRenderComposer to orchestrate all text rendering
  */
-function buildMetadataItems(song: Song, firstLyricHighlightTime: number): RenderItem[]
-{
-  const items: RenderItem[] = []
-  
-  // Title appears immediately, hides just before first lyric
-  items.push({
-    id: 'title',
-    text: `Title: ${song.title}`,
-    type: 'metadata',
-    showTime: 0,  // Show immediately
-    hideTime: Math.max(500, firstLyricHighlightTime - 500),  // Hide before lyrics start
-    alignment: 'center'
-  })
-  
-  // Author appears immediately after title, hides with title
-  items.push({
-    id: 'author',
-    text: `by: ${song.artist}`,
-    type: 'metadata',
-    showTime: 100,  // Brief delay after title
-    hideTime: Math.max(500, firstLyricHighlightTime - 500),  // Hide with title
-    alignment: 'center'
-  })
-  
-  return items
-}
-
-/**
- * Build credit item that appears at song end
- */
-function buildCreditItem(lastLyricHighlightTime: number): RenderItem
-{
-  return {
-    id: 'credit',
-    text: 'Karaoke Composer by Ancient-Wizard',
-    type: 'credit',
-    showTime: lastLyricHighlightTime + 500,   // Show 0.5s after lyrics end (earlier for more visibility)
-    hideTime: lastLyricHighlightTime + 5500,  // Display for 5s (longer to read)
-    alignment: 'center'
-  }
-}
-
 const activeTab = ref('Glyph Alignment')
 const availableTabs = ['Glyph Alignment']
 const font = new CDGFont()
 const dynamicRasterizer = new DynamicGlyphRasterizer()
 const layoutEngine = new TextLayoutEngine(DEFAULT_LAYOUT_CONFIG)
-const leaseManager = new LineLeaseManager()
+const renderComposer = new TextRenderComposer()  // Core composition engine
 const renderQueue = new TextRenderQueue(14)  // 14 pixels per line (12px glyph + 2px gap)
 const isPlaying = ref(false)
 const autoRepeat = ref(true)
@@ -304,24 +164,7 @@ const dynamicFontSize = ref(16)
 // Track placeable lines (compositions of source lyric units)
 const placeableLines = ref<PlaceableLine[]>([])
 
-// Track render plan (metadata, lyrics, credit with timing)
-const renderPlan = ref<RenderItem[]>([])
-
 // Timing configuration for syllable display
-// Adjust these values to change pacing, gaps, and breaks
-const TIMING_CONFIG = {
-  // Syllable durations (in milliseconds)
-  syllableDurationFirst:  100,   // First syllable in a word (quicker start)
-  syllableDurationMiddle: 200,   // Middle syllables
-  syllableDurationLast:   250,   // Last syllable (lingering)
-  
-  // Gaps and breaks (in milliseconds)
-  gapBetweenSyllables:  25,      // Breathing space between syllables
-  gapBetweenWords:     150,      // Space between words
-  // Large gap between actual lines/phrases/ a verse, bridge for example
-  //  (NOT! applied to line wraps where our modlel breaks lines as a natural behavior to make things fit nicely)
-  gapBetweenLines:     800
-}
 
 const vramPixelData = ref(new Uint8Array(CDG.screenWidth * CDG.screenHeight).fill(0))
 const canvasRefreshKey = ref(0)
@@ -410,154 +253,6 @@ function formatTime(ms: number): string
  * - The same timing as its source (so all parts highlight together)
  * - A reference to the word/syllable structure for proper highlighting
  */
-function composeRenderItemsToPlaceableLines(items: RenderItem[]): PlaceableLine[]
-{
-  const placeable: PlaceableLine[] = []
-
-  items.forEach((item) =>
-  {
-    const fullText = item.text
-    
-    // All items (metadata, lyrics, credit) use the leasing system for proper spacing
-    // This ensures title, author, lyrics, and credit all get proper vertical slots
-    // and respect the 7-line layout with even spacing
-    
-    // FIRST PASS: Calculate layout to know how many lines this item will span
-    const layout = layoutEngine.layoutText(fullText, TextAlign.Center, 0)  // Dummy Y position
-    const lineCount = layout.lines.length
-
-    console.log(`📝 Composing item: id=${item.id}, type=${item.type}, text="${fullText}", layoutLines=${lineCount}`)
-    
-    // Check if this multiline item would split across the boundary
-    let leasedPositions: number[]
-    
-    if (lineCount > 1 && item.type === 'lyrics')
-    {
-      // Only lyrics need split-boundary checking
-      if (leaseManager.wouldSplitAcrossBoundary(item.id, item.showTime, item.hideTime, lineCount))
-      {
-        // Would split: request all positions as a group instead
-        // This ensures the manager will either keep them together OR jump them all to top
-        console.log(`⚠️  Item "${item.id}" would split across boundary - requesting as group`)
-        leasedPositions = leaseManager.leasePositionGroup(item.id, item.showTime, item.hideTime, lineCount)
-      }
-      else
-      {
-        // Won't split: request positions normally (one per line)
-        leasedPositions = []
-        leasedPositions.push(leaseManager.leasePosition(item.id, item.showTime, item.hideTime))
-        for (let i = 1; i < lineCount; i++)
-        {
-          leasedPositions.push(
-            leaseManager.leasePosition(`${item.id}:${i}`, item.showTime, item.hideTime)
-          )
-        }
-      }
-    }
-    else if (lineCount > 1)
-    {
-      // Multiline metadata (title, author, credit) - no split-boundary check, just lease one per line
-      leasedPositions = []
-      leasedPositions.push(leaseManager.leasePosition(item.id, item.showTime, item.hideTime))
-      for (let i = 1; i < lineCount; i++)
-      {
-        leasedPositions.push(
-          leaseManager.leasePosition(`${item.id}:${i}`, item.showTime, item.hideTime)
-        )
-      }
-    }
-    else
-    {
-      // Single line item - lease just one position
-      leasedPositions = [leaseManager.leasePosition(item.id, item.showTime, item.hideTime)]
-    }
-    
-    // Build a character-to-syllable map for fast lookup during rendering
-    // This map ties each character position to its syllable timing
-    const buildCharToSyllableMap = () =>
-    {
-      const map = new Map<number, any>()
-      
-      if (item.type !== 'lyrics')
-      {
-        return map  // Only lyrics have syllables
-      }
-      
-      let charCountInSource = 0
-      
-      for (const word of (item.words || []))
-      {
-        for (const syl of (word.syllables || []))
-        {
-          // Mark each character in this syllable
-          for (let i = 0; i < syl.syllable.length; i++)
-          {
-            map.set(charCountInSource + i, {
-              syllable: syl.syllable,
-              startTime: syl.startTime,
-              endTime: syl.endTime
-            })
-          }
-          charCountInSource += syl.syllable.length
-        }
-        charCountInSource++  // Account for space between words
-      }
-      
-      return map
-    }
-    
-    const charToSyllableMap = buildCharToSyllableMap()
-    
-    // For wrapped lines, calculate character offset by comparing layout text to original
-    // The layout engine may trim spaces, so we need to find where each wrapped line starts in the original
-    let charOffsetInSource = 0
-    let accumulatedText = ''
-    
-    // Create placeable lines (handle wrapping if needed)
-    // Use the pre-allocated positions from leasedPositions array
-    layout.lines.forEach((lineText, lineIdx) =>
-    {
-      // Get the Y position that was allocated for this line
-      const leasedYPosition = leasedPositions[lineIdx] || leasedPositions[0]  // Fallback to first if somehow out of bounds
-      
-      // For wrapped lines, find where this line's text starts in the original full text
-      // Account for text that's already been placed on previous lines
-      if (lineIdx > 0 && item.type === 'lyrics')
-      {
-        // Find this line's text in the original, accounting for previous accumulated text
-        const searchStart = accumulatedText.length
-        const matchIdx = fullText.indexOf(lineText.trim(), searchStart)
-        
-        if (matchIdx !== -1)
-        {
-          charOffsetInSource = matchIdx
-        }
-        else
-        {
-          // Fallback: accumulate previous line lengths
-          charOffsetInSource = accumulatedText.length
-        }
-      }
-      
-      accumulatedText += lineText
-      
-      placeable.push({
-        id: `${item.id}:${lineIdx}`,
-        sourceId: item.id,
-        text: lineText,
-        startTime: item.showTime,
-        endTime: item.hideTime,
-        words: item.words || [],  // Keep reference to original words with their timing
-        charOffsetInSource: item.type === 'lyrics' ? charOffsetInSource : undefined,  // Track char offset for lyrics
-        charToSyllableMap: item.type === 'lyrics' ? charToSyllableMap : undefined,  // Pass the pre-built map
-        leasedYPosition  // Use the leased position from LineLeaseManager
-      })
-    })
-  })
-
-  return placeable
-}
-
 function togglePlayback(): void
 {
   isPlaying.value = !isPlaying.value
@@ -596,16 +291,14 @@ function generateGlyphTest(): void
 
   packets.value = []
   vram.clear(0)
-  lineLayoutCache.clear()  // Clear cached layouts for new test
-  lineRenderBounds.clear() // Clear tracked render bounds for new test
-  lineRowAssignments.clear() // Clear row assignments for new test
-  placeableLines.value = [] // Clear placeable lines
-  leaseManager.reset()  // Reset line leasing for new song
-  renderQueue.reset()  // Reset render queue for new test
+  lineLayoutCache.clear()
+  lineRenderBounds.clear()
+  lineRowAssignments.clear()
+  placeableLines.value = []
+  renderComposer.reset()
+  renderQueue.reset()
 
-  // IMPORTANT: After background setup (palettes, tiles, etc.) we save pristine state
-  // This pristine copy will be restored each frame before rendering text
-  // This allows expired text to vanish without destroying background imagery
+  // Save pristine VRAM state (background before text)
   vramPristine = new VRAM()
   for (let y = 0; y < CDG.screenHeight; y++)
   {
@@ -615,261 +308,46 @@ function generateGlyphTest(): void
     }
   }
 
-  // Load the selected song from the SongsLibrary
+  // Load song from library
   const song = SongsLibrary.get(selectedSongKey.value)
   if (!song)
   {
     console.error(`Song "${selectedSongKey.value}" not found in library!`)
     return
   }
-  
+
   console.log('🎵 Loaded song:', {
     title: song.title,
-    duration: song.duration,
-    lineCount: song.lines.length,
-    firstLine: song.lines[0]
-  })
-  
-  const sourcelyricUnits = songToLyricLines(song).filter(line =>
-  {
-    // Include lines that have words with timing (both lyrics and captioned sections)
-    return line.words && line.words.length > 0
+    lineCount: song.lines.length
   })
 
-  // The Song from library already has syllable timing from the parsed format
-  // We need to calculate endTime for syllables and words based on next timing point
-  let maxTime = 0
-  
-  sourcelyricUnits.forEach((unit) =>
-  {
-    unit.words.forEach((word, wordIdx) =>
-    {
-      word.syllables.forEach((syllable, sylIdx) =>
-      {
-        // Syllable already has startTime from Song
-        // Calculate endTime based on next syllable or estimated duration
-        const nextSyllable = word.syllables[sylIdx + 1]
-        const nextWord = unit.words[wordIdx + 1]
-        
-        if (nextSyllable)
-        {
-          // Next syllable in same word
-          syllable.endTime = nextSyllable.startTime
-        }
-        else if (nextWord && nextWord.startTime)
-        {
-          // Next word exists - end this syllable when next word starts
-          syllable.endTime = nextWord.startTime
-        }
-        else
-        {
-          // Fallback: estimate from TIMING_CONFIG
-          let duration: number
-          if (sylIdx === 0 && word.syllables.length > 1)
-          {
-            duration = TIMING_CONFIG.syllableDurationFirst
-          }
-          else if (sylIdx === word.syllables.length - 1)
-          {
-            duration = TIMING_CONFIG.syllableDurationLast
-          }
-          else
-          {
-            duration = TIMING_CONFIG.syllableDurationMiddle
-          }
-          syllable.endTime = (syllable.startTime || 0) + duration
-        }
-        
-        if (syllable.endTime)
-        {
-          maxTime = Math.max(maxTime, syllable.endTime)
-        }
-        
-        // Debug first few syllables
-        if (!unit.id || unit.id.startsWith('line-0') || unit.id.startsWith('line-1'))
-        {
-          if (sylIdx < 3)
-          {
-            console.log(`📍 Syllable timing: "${syllable.syllable}" start=${syllable.startTime} end=${syllable.endTime}`)
-          }
-        }
-      })
-
-      // Word's timing is span of its syllables
-      if (word.syllables.length > 0)
-      {
-        word.startTime = word.syllables[0].startTime || word.startTime
-        word.endTime = word.syllables[word.syllables.length - 1].endTime || word.startTime
-      }
-    })
-
-    // Unit's timing is span of its words
-    if (unit.words.length > 0)
-    {
-      unit.startTime = unit.words[0].startTime || 0
-      unit.endTime = unit.words[unit.words.length - 1].endTime || 0
-    }
+  // Use TextRenderComposer to build all placeable lines
+  const composed = renderComposer.composeSong(song, {
+    includeTitle: true,
+    includeArtist: true,
+    includeCredit: true
   })
 
-  console.log('⏱️ Timing calculated:', { maxTime })
-
-  // Find first and last highlight times for metadata timing
-  let firstHighlightTime = Infinity
-  let lastHighlightTime = 0
-  
-  sourcelyricUnits.forEach(line =>
-  {
-    line.words.forEach(word =>
-    {
-      word.syllables.forEach(syl =>
-      {
-        if (syl.startTime !== undefined)
-        {
-          firstHighlightTime = Math.min(firstHighlightTime, syl.startTime)
-          lastHighlightTime = Math.max(lastHighlightTime, syl.endTime || syl.startTime)
-        }
-      })
-    })
-  })
-  
-  if (firstHighlightTime === Infinity) firstHighlightTime = 1000
-  
-  // Build metadata items (title, author, credit) with proper timing
-  const metadataItems = buildMetadataItems(song, firstHighlightTime)
-  const creditItem = buildCreditItem(lastHighlightTime)
-  
-  // Combine all render items: metadata + lyrics + credit
-  // First pass: extract timing info for all lyric lines
-  const lyricTimings = sourcelyricUnits.map((line, idx) =>
-  {
-    let firstSylTime = Infinity
-    let lastSylTime = 0
-    
-    line.words.forEach(word =>
-    {
-      word.syllables.forEach(syl =>
-      {
-        if (syl.startTime !== undefined)
-        {
-          firstSylTime = Math.min(firstSylTime, syl.startTime)
-          lastSylTime = Math.max(lastSylTime, syl.endTime || syl.startTime)
-        }
-      })
-    })
-    
-    if (firstSylTime === Infinity) return null
-    
-    return {
-      idx,
-      line,
-      highlightStart: firstSylTime,
-      highlightEnd: lastSylTime
-    }
-  }).filter(Boolean) as any[]
-  
-  // Second pass: build render items with intelligent timing
-  const allRenderItems: RenderItem[] = [
-    ...metadataItems,
-    ...lyricTimings.map((timing, timelineIdx) =>
-    {
-      const idx = timing.idx
-      const line = timing.line
-      const highlightStart = timing.highlightStart
-      const highlightEnd = timing.highlightEnd
-      const nextTiming = lyricTimings[timelineIdx + 1]
-      
-      // Intelligent lead-in calculation
-      // Available time before this line's highlight is limited by previous line's content
-      // Give reasonable lead-in, but cap it based on what's available
-      const idealLeadIn = 1000  // Ideal 1s before highlighting
-      const showTime = Math.max(0, highlightStart - idealLeadIn)
-      
-      // Intelligent trail calculation
-      // Available time after this line is limited by when next line appears
-      // Next line appears at: nextHighlightStart - leadIn
-      // We want to clear before that, but allow some overlap for context
-      let hideTime: number
-      
-      if (nextTiming)
-      {
-        // Calculate when the next line will appear (with its own lead-in)
-        const nextShowTime = Math.max(0, nextTiming.highlightStart - 1000)
-        
-        // Available time from end of this line to start of next line's appearance
-        const availableTrail = nextShowTime - highlightEnd
-        
-        if (availableTrail > 500)
-        {
-          // Plenty of time: use a reasonable trail duration (max 1.5s)
-          hideTime = highlightEnd + Math.min(1500, availableTrail - 200)
-        }
-        else if (availableTrail > 0)
-        {
-          // Limited time but still some: use what's available minus buffer
-          hideTime = highlightEnd + Math.max(300, availableTrail - 100)
-        }
-        else
-        {
-          // No gap: clear quickly but give minimum visibility time
-          // Next line is coming before this one naturally ends, show some overlap
-          hideTime = Math.max(
-            highlightEnd + 300,  // Minimum 300ms trail
-            nextShowTime - 100   // But clear before next line shows
-          )
-        }
-      }
-      else
-      {
-        // Last lyric line: use a generous trail
-        hideTime = highlightEnd + 2000
-      }
-      
-      return {
-        id: `lyric-${idx}`,
-        text: line.text,
-        type: 'lyrics' as const,
-        showTime,
-        highlightStartTime: highlightStart,
-        highlightEndTime: highlightEnd,
-        hideTime,
-        words: line.words,
-        alignment: 'center' as const
-      }
-    }),
-    creditItem
-  ]
-  
-  renderPlan.value = allRenderItems
-
-  console.log('📋 Render plan built:', {
-    itemCount: allRenderItems.length,
-    metadataItems: metadataItems.length,
-    lyricItems: sourcelyricUnits.length,
-    creditItem: 1,
-    firstHighlight: firstHighlightTime,
-    lastHighlight: lastHighlightTime
-  })
-
-  // Compose ALL render items (metadata, lyrics, credit) through unified pipeline
-  // This ensures consistent character spacing and styling across all text types
-  const composed = composeRenderItemsToPlaceableLines(allRenderItems)
   placeableLines.value = composed
 
   console.log('📌 Placeable lines composed:', {
     totalComposed: composed.length,
-    details: composed.map(p =>
-    {
-      return {
-        id: p.id,
-        text: p.text.substring(0, 30),
-        startTime: p.startTime,
-        yPos: p.leasedYPosition
-      }
-    })
+    details: composed.slice(0, 5).map(p => ({
+      id: p.id,
+      text: p.text.substring(0, 30),
+      startTime: p.startTime,
+      yPos: p.leasedYPosition
+    }))
   })
 
-  // Calculate total duration (already computed above in timing loop)
-  const totalDuration = maxTime + 1000
+  // Calculate duration from last line's end time
+  let maxEndTime = 0
+  composed.forEach(line =>
+  {
+    maxEndTime = Math.max(maxEndTime, line.endTime)
+  })
+
+  const totalDuration = maxEndTime + 1000
   const totalPktCount = Math.floor(totalDuration * 300 / 1000) + 100
 
   for (let i = 0; i < totalPktCount; i++)
@@ -880,6 +358,7 @@ function generateGlyphTest(): void
   isPlaying.value = false
   currentTimeMs.value = 0
 }
+
 
 function createCharGlyph(char: string): GlyphData
 {
@@ -968,7 +447,6 @@ function onFrame(now: number): void
       lineRenderBounds.clear()
       lineLayoutCache.clear()
       lineRowAssignments.clear()
-      leaseManager.reset()
       
       // Reset to start of song
       currentTimeMs.value = 0
@@ -1116,20 +594,79 @@ function onFrame(now: number): void
           const sourceCharIdx = (placeable.charOffsetInSource || 0) + charIdx
           const syllableInfo = placeable.charToSyllableMap.get(sourceCharIdx)
           
-          if (syllableInfo && syllableInfo.startTime !== undefined)
+          if (syllableInfo && syllableInfo.startTime !== undefined && syllableInfo.endTime !== undefined)
           {
-            // Once a syllable's highlight time arrives, character stays highlighted
-            // It does NOT revert - it persists until the entire line is cleared
-            // This creates a visual "wipe" effect as time progresses through the line
-            if (timeMs >= syllableInfo.startTime)
+            // Calculate wipe progress: 0.0 (not started) to 1.0 (complete)
+            const wipeProgress = Math.max(0, Math.min(1, (timeMs - syllableInfo.startTime) / (syllableInfo.endTime - syllableInfo.startTime)))
+            
+            // If we're within the syllable's time window, apply wipe animation
+            if (timeMs >= syllableInfo.startTime && timeMs < syllableInfo.endTime)
             {
+              // Find the first and last character of this syllable
+              let syllableFirstCharIdx = charIdx
+              let syllableLastCharIdx = charIdx
+              
+              for (let i = 0; i < placeable.text.length; i++)
+              {
+                const syl = placeable.charToSyllableMap.get(i)
+                if (syl && syl.syllable === syllableInfo.syllable)
+                {
+                  syllableFirstCharIdx = Math.min(syllableFirstCharIdx, i)
+                  syllableLastCharIdx = Math.max(syllableLastCharIdx, i)
+                }
+              }
+              
+              // Get pixel positions of syllable bounds
+              const firstCharPos = layout.charPositions[syllableFirstCharIdx]
+              const lastCharPos = layout.charPositions[syllableLastCharIdx]
+              
+              if (firstCharPos && lastCharPos)
+              {
+                // Syllable spans from first char X to last char X + last glyph width
+                const syllableStartX = firstCharPos.x
+                const lastGlyph = glyphSource.value === 'dynamic'
+                  ? dynamicRasterizer.getGlyph(placeable.text[syllableLastCharIdx], dynamicFontFamily.value, dynamicFontSize.value)
+                  : font.getGlyph(placeable.text[syllableLastCharIdx])
+                
+                if (lastGlyph)
+                {
+                  const syllableEndX = lastCharPos.x + lastGlyph.width
+                  const syllableWidth = syllableEndX - syllableStartX
+                  
+                  // Calculate wipe position in pixels
+                  const wipeX = syllableStartX + (wipeProgress * syllableWidth)
+                  
+                  // Check if current character position is before or after wipe
+                  const charPos = layout.charPositions[charIdx]
+                  if (charPos)
+                  {
+                    const currentGlyph = glyphSource.value === 'dynamic'
+                      ? dynamicRasterizer.getGlyph(placeable.text[charIdx], dynamicFontFamily.value, dynamicFontSize.value)
+                      : font.getGlyph(placeable.text[charIdx])
+                    
+                    if (currentGlyph)
+                    {
+                      // Highlight if character's START position is before the wipe
+                      // The wipe is a boundary: everything to the left stays highlighted, everything to the right doesn't
+                      if (charPos.x < wipeX)
+                      {
+                        isHighlighted = true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            else if (timeMs >= syllableInfo.endTime)
+            {
+              // After syllable ends, keep highlighted (persistence)
               isHighlighted = true
             }
             
             // Debug output (limited to first few frames per line)
             if (charIdx === 0 && timeMs < 5000)
             {
-              console.log(`🎯 Line "${placeable.id}" char 0: syl="${syllableInfo.syllable}" startTime=${syllableInfo.startTime} current=${timeMs} highlighted=${isHighlighted}`)
+              console.log(`🎯 Line "${placeable.id}" char 0: syl="${syllableInfo.syllable}" startTime=${syllableInfo.startTime} endTime=${syllableInfo.endTime} current=${timeMs} highlighted=${isHighlighted}`)
             }
           }
         }

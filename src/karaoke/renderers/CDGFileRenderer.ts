@@ -28,6 +28,8 @@ export interface CDGRendererConfig extends RendererConfig {
   backgroundColor?: number  // Background color index (default: 0 = black)
   activeColor?: number      // Active text color index (default: 1 = yellow)
   transitionColor?: number  // Transition text color index (default: 2 = light gray)
+  fontFamily?: string       // Font family for text rendering (default: Arial)
+  fontSize?: number         // Font size in pixels (default: 16)
 }
 
 /**
@@ -49,7 +51,9 @@ export class CDGFileRenderer extends FileRenderer {
     this.core = new CDGCore({
       backgroundColor: config.backgroundColor,
       activeColor: config.activeColor,
-      transitionColor: config.transitionColor
+      transitionColor: config.transitionColor,
+      fontFamily: config.fontFamily,
+      fontSize: config.fontSize
     })
   }
 

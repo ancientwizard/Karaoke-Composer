@@ -57,11 +57,7 @@ export class TextLayoutEngine
   }
 
   /**
-   * Calculate layout for a line of text
-   *
-   * WARNING: For accurate character-to-position mapping, the input text should NOT wrap
-   * (i.e., it should fit within maxCharsPerLine). If text wraps internally, the charPositions
-   * array will have fewer entries than the input text length, causing a mismatch when rendering.
+   * Calculate layout for a line of text/lyrics as karaoke lines
    *
    * @param text - The text to layout
    * @param align - Horizontal alignment
@@ -71,20 +67,6 @@ export class TextLayoutEngine
   layoutText( text: string, align: TextAlign = TextAlign.Center, forcePosition?: number ): LayoutResult
   {
     const lines = this.breakIntoLines(text)
-    
-    // WARN if text wrapped - this indicates a data problem
-    if (lines.length > 1)
-    {
-      const totalWrappedLength = lines.reduce((sum, line) => sum + line.length, 0)
-      console.warn(
-        `[TextLayoutEngine] WARNING: Text wrapping detected!`,
-        `Input: "${text}" (${text.length} chars)`,
-        `Wrapped to: ${lines.length} lines with total ${totalWrappedLength} chars.`,
-        `This will cause a position mismatch (${text.length - totalWrappedLength} missing chars) during rendering!`,
-        `Solution: Split long lyrics into shorter individual lines.`
-      )
-    }
-    
     const position = this.calculatePosition(lines, align, forcePosition)
     const charPositions = this.calculateCharacterPositions(lines, position, align)
 
@@ -150,7 +132,7 @@ export class TextLayoutEngine
       // If still no good split, just break at maxCharsPerLine
       if (splitPos === -1)
       {
-        splitPos = this.config.maxCharsPerLine
+        splitPos = this.config.maxCharsPerLine * 0.75
       }
 
       lines.push(remaining.substring(0, splitPos).trim())
@@ -316,8 +298,15 @@ export class TextLayoutEngine
 export const DEFAULT_LAYOUT_CONFIG: LayoutConfig = {
   screenWidth: 1000,
   screenHeight: 1000,
-  maxCharsPerLine: 30,  // Reduced from 40 to make text appear larger
-  fontSize: 50          // Increased from 40
+  // I'll assume these were used with our fixed 5x7 Glyphs buffered for 6x12 rendering
+  maxCharsPerLine: 30,  // Reduced from 40 to make(allow?) text appear larger
+                        //  (so lame AI, size is user defined and the number
+                        //    is a function of size. We'll need to fix this later
+                        //    as we fine tune later now that we use actual fonts and size)
+                        //  (however I see the consumer can override based on font size)
+  fontSize: 50          // This specific value is too large but at the momnet I can't be
+                        //  sure of its meaning. If it was point size it was far too big
+                        //  for karaoke .cdg rendering.
 }
 
 // VIM: set filetype=typescript :
