@@ -429,7 +429,7 @@ function composeRenderItemsToPlaceableLines(items: RenderItem[]): PlaceableLine[
     console.log(`📝 Composing item: id=${item.id}, type=${item.type}, text="${fullText}", layoutLines=${layout.lines.length}, lines:`, layout.lines)
     
     // Build a character-to-syllable map for fast lookup during rendering
-    // This map ties each VISUAL character position (excluding spaces) to its syllable timing
+    // This map ties each character position to its syllable timing
     const buildCharToSyllableMap = () =>
     {
       const map = new Map<number, any>()
@@ -439,34 +439,35 @@ function composeRenderItemsToPlaceableLines(items: RenderItem[]): PlaceableLine[
         return map  // Only lyrics have syllables
       }
       
-      let visualCharIndex = 0  // Index of non-space characters only (as rendered)
+      let charCountInSource = 0
       
       for (const word of (item.words || []))
       {
         for (const syl of (word.syllables || []))
         {
-          // Mark each VISUAL character in this syllable (spaces don't get indices)
+          // Mark each character in this syllable
           for (let i = 0; i < syl.syllable.length; i++)
           {
-            const char = syl.syllable[i]
-            if (char !== ' ')
-            {
-              map.set(visualCharIndex, {
-                syllable: syl.syllable,
-                startTime: syl.startTime,
-                endTime: syl.endTime
-              })
-              visualCharIndex++
-            }
+            map.set(charCountInSource + i, {
+              syllable: syl.syllable,
+              startTime: syl.startTime,
+              endTime: syl.endTime
+            })
           }
+          charCountInSource += syl.syllable.length
         }
-        // Word separator space is not counted in visual index (spaces aren't rendered)
+        charCountInSource++  // Account for space between words
       }
       
       return map
     }
     
     const charToSyllableMap = buildCharToSyllableMap()
+    
+    // For wrapped lines, calculate character offset by comparing layout text to original
+    // The layout engine may trim spaces, so we need to find where each wrapped line starts in the original
+    let charOffsetInSource = 0
+    let accumulatedText = ''
     
     // Create placeable lines (handle wrapping if needed)
     layout.lines.forEach((lineText, lineIdx) =>
@@ -489,6 +490,27 @@ function composeRenderItemsToPlaceableLines(items: RenderItem[]): PlaceableLine[
         )
       }
       
+      // For wrapped lines, find where this line's text starts in the original full text
+      // Account for text that's already been placed on previous lines
+      if (lineIdx > 0 && item.type === 'lyrics')
+      {
+        // Find this line's text in the original, accounting for previous accumulated text
+        const searchStart = accumulatedText.length
+        const matchIdx = fullText.indexOf(lineText.trim(), searchStart)
+        
+        if (matchIdx !== -1)
+        {
+          charOffsetInSource = matchIdx
+        }
+        else
+        {
+          // Fallback: accumulate previous line lengths
+          charOffsetInSource = accumulatedText.length
+        }
+      }
+      
+      accumulatedText += lineText
+      
       placeable.push({
         id: `${item.id}:${lineIdx}`,
         sourceId: item.id,
@@ -496,6 +518,7 @@ function composeRenderItemsToPlaceableLines(items: RenderItem[]): PlaceableLine[
         startTime: item.showTime,
         endTime: item.hideTime,
         words: item.words || [],  // Keep reference to original words with their timing
+        charOffsetInSource: item.type === 'lyrics' ? charOffsetInSource : undefined,  // Track char offset for lyrics
         charToSyllableMap: item.type === 'lyrics' ? charToSyllableMap : undefined,  // Pass the pre-built map
         leasedYPosition  // Use the leased position from LineLeaseManager
       })
@@ -1062,7 +1085,6 @@ function onFrame(now: number): void
       // Render the text using positions from layout
       // charPositions array includes positions for ALL characters (including spaces)
       // We iterate through fullText and use charIdx to access charPositions directly
-      let visualCharIdx = 0  // Index of non-space characters only (as rendered)
       for (let charIdx = 0; charIdx < fullText.length; charIdx++)
       {
         const char = fullText[charIdx]
@@ -1078,10 +1100,11 @@ function onFrame(now: number): void
         // Determine if this character is highlighted based on syllable timing
         let isHighlighted = false
         
-        // For lyrics with a character-to-syllable map, use VISUAL character index (excluding spaces)
+        // For lyrics with a character-to-syllable map, direct lookup
         if (placeable.charToSyllableMap)
         {
-          const syllableInfo = placeable.charToSyllableMap.get(visualCharIdx)
+          const sourceCharIdx = (placeable.charOffsetInSource || 0) + charIdx
+          const syllableInfo = placeable.charToSyllableMap.get(sourceCharIdx)
           
           if (syllableInfo && syllableInfo.startTime !== undefined && syllableInfo.endTime !== undefined)
           {
@@ -1092,9 +1115,9 @@ function onFrame(now: number): void
             }
             
             // Debug output (limited to first few frames per line)
-            if (visualCharIdx === 0 && timeMs < 5000)
+            if (charIdx === 0 && timeMs < 5000)
             {
-              console.log(`🎯 Line "${placeable.id}" vis-char 0: syl="${syllableInfo.syllable}" time=${syllableInfo.startTime}-${syllableInfo.endTime} current=${timeMs} highlighted=${isHighlighted}`)
+              console.log(`🎯 Line "${placeable.id}" char 0: syl="${syllableInfo.syllable}" time=${syllableInfo.startTime}-${syllableInfo.endTime} current=${timeMs} highlighted=${isHighlighted}`)
             }
           }
         }
@@ -1121,9 +1144,6 @@ function onFrame(now: number): void
             lineMaxY = Math.max(lineMaxY, glyphBottom)
           }
         }
-
-        // Increment visual character index for next non-space character
-        visualCharIdx++
       }
 
       // Store actual bounds for later clearing
