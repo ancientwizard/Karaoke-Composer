@@ -433,8 +433,7 @@ function composeRenderItemsToPlaceableLines(items: RenderItem[]): PlaceableLine[
     
     if (lineCount > 1 && item.type === 'lyrics')
     {
-      // Check if assigning these lines one-by-one would cause them to split
-      // (first line near bottom, later lines jumping to top)
+      // Only lyrics need split-boundary checking
       if (leaseManager.wouldSplitAcrossBoundary(item.id, item.showTime, item.hideTime, lineCount))
       {
         // Would split: request all positions as a group instead
@@ -455,10 +454,21 @@ function composeRenderItemsToPlaceableLines(items: RenderItem[]): PlaceableLine[
         }
       }
     }
+    else if (lineCount > 1)
+    {
+      // Multiline metadata (title, author, credit) - no split-boundary check, just lease one per line
+      leasedPositions = []
+      leasedPositions.push(leaseManager.leasePosition(item.id, item.showTime, item.hideTime))
+      for (let i = 1; i < lineCount; i++)
+      {
+        leasedPositions.push(
+          leaseManager.leasePosition(`${item.id}:${i}`, item.showTime, item.hideTime)
+        )
+      }
+    }
     else
     {
-      // Single line, metadata (title/author/credit), or non-lyric content: just lease one position
-      // Metadata and credits don't need special multiline handling
+      // Single line item - lease just one position
       leasedPositions = [leaseManager.leasePosition(item.id, item.showTime, item.hideTime)]
     }
     
