@@ -290,7 +290,7 @@ const renderQueue = new TextRenderQueue(14)  // 14 pixels per line (12px glyph +
 const isPlaying = ref(false)
 const autoRepeat = ref(true)
 const currentTimeMs = ref(0)
-const playbackSpeed = ref(0.5) // Dial from 0.1x to 2x speed
+const playbackSpeed = ref(1.8) // Dial from 0.1x to 2x speed
 
 // Song selection
 const selectedSongKey = ref('meet-me-in-november')
@@ -421,12 +421,45 @@ function composeRenderItemsToPlaceableLines(items: RenderItem[]): PlaceableLine[
     // All items (metadata, lyrics, credit) use the leasing system for proper spacing
     // This ensures title, author, lyrics, and credit all get proper vertical slots
     // and respect the 7-line layout with even spacing
-    const baseYPosition = leaseManager.leasePosition(item.id, item.showTime, item.hideTime)
     
-    // Use TextLayoutEngine with the Y position for proper layout calculation
-    const layout = layoutEngine.layoutText(fullText, TextAlign.Center, baseYPosition)
+    // FIRST PASS: Calculate layout to know how many lines this item will span
+    const layout = layoutEngine.layoutText(fullText, TextAlign.Center, 0)  // Dummy Y position
+    const lineCount = layout.lines.length
 
-    console.log(`📝 Composing item: id=${item.id}, type=${item.type}, text="${fullText}", layoutLines=${layout.lines.length}, lines:`, layout.lines)
+    console.log(`📝 Composing item: id=${item.id}, type=${item.type}, text="${fullText}", layoutLines=${lineCount}`)
+    
+    // Check if this multiline item would split across the boundary
+    let leasedPositions: number[]
+    
+    if (lineCount > 1 && item.type === 'lyrics')
+    {
+      // Check if assigning these lines one-by-one would cause them to split
+      // (first line near bottom, later lines jumping to top)
+      if (leaseManager.wouldSplitAcrossBoundary(item.id, item.showTime, item.hideTime, lineCount))
+      {
+        // Would split: request all positions as a group instead
+        // This ensures the manager will either keep them together OR jump them all to top
+        console.log(`⚠️  Item "${item.id}" would split across boundary - requesting as group`)
+        leasedPositions = leaseManager.leasePositionGroup(item.id, item.showTime, item.hideTime, lineCount)
+      }
+      else
+      {
+        // Won't split: request positions normally (one per line)
+        leasedPositions = []
+        leasedPositions.push(leaseManager.leasePosition(item.id, item.showTime, item.hideTime))
+        for (let i = 1; i < lineCount; i++)
+        {
+          leasedPositions.push(
+            leaseManager.leasePosition(`${item.id}:${i}`, item.showTime, item.hideTime)
+          )
+        }
+      }
+    }
+    else
+    {
+      // Single line or metadata: just lease one position
+      leasedPositions = [leaseManager.leasePosition(item.id, item.showTime, item.hideTime)]
+    }
     
     // Build a character-to-syllable map for fast lookup during rendering
     // This map ties each character position to its syllable timing
@@ -470,25 +503,11 @@ function composeRenderItemsToPlaceableLines(items: RenderItem[]): PlaceableLine[
     let accumulatedText = ''
     
     // Create placeable lines (handle wrapping if needed)
+    // Use the pre-allocated positions from leasedPositions array
     layout.lines.forEach((lineText, lineIdx) =>
     {
-      // For multi-line items, each wrapped line gets its own lease
-      let leasedYPosition: number
-      
-      if (lineIdx === 0)
-      {
-        // First line uses the base position we already leased
-        leasedYPosition = baseYPosition
-      }
-      else
-      {
-        // Additional wrapped lines get their own leases
-        leasedYPosition = leaseManager.leasePosition(
-          `${item.id}:${lineIdx}`,
-          item.showTime,
-          item.hideTime
-        )
-      }
+      // Get the Y position that was allocated for this line
+      const leasedYPosition = leasedPositions[lineIdx] || leasedPositions[0]  // Fallback to first if somehow out of bounds
       
       // For wrapped lines, find where this line's text starts in the original full text
       // Account for text that's already been placed on previous lines
