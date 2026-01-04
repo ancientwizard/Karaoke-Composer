@@ -811,26 +811,6 @@ function generateGlyphTest(): void
   
   renderPlan.value = allRenderItems
 
-  // Post-process: extend last syllable of each line to its hideTime for persistence
-  // This makes highlighting persist until the line clears from the screen
-  allRenderItems.forEach(item =>
-  {
-    if (item.type === 'lyrics' && item.words && item.words.length > 0)
-    {
-      const lastWord = item.words[item.words.length - 1]
-      if (lastWord && lastWord.syllables && lastWord.syllables.length > 0)
-      {
-        const lastSyllable = lastWord.syllables[lastWord.syllables.length - 1]
-        // Extend the last syllable's endTime to the line's hideTime
-        // This makes highlighting persist visually until the line clears
-        if (lastSyllable && item.hideTime)
-        {
-          lastSyllable.endTime = item.hideTime
-        }
-      }
-    }
-  })
-
   console.log('📋 Render plan built:', {
     itemCount: allRenderItems.length,
     metadataItems: metadataItems.length,
@@ -1106,10 +1086,12 @@ function onFrame(now: number): void
           const sourceCharIdx = (placeable.charOffsetInSource || 0) + charIdx
           const syllableInfo = placeable.charToSyllableMap.get(sourceCharIdx)
           
-          if (syllableInfo && syllableInfo.startTime !== undefined && syllableInfo.endTime !== undefined)
+          if (syllableInfo && syllableInfo.startTime !== undefined)
           {
-            // Character is within a syllable with timing
-            if (timeMs >= syllableInfo.startTime && timeMs <= syllableInfo.endTime)
+            // Once a syllable's highlight time arrives, character stays highlighted
+            // It does NOT revert - it persists until the entire line is cleared
+            // This creates a visual "wipe" effect as time progresses through the line
+            if (timeMs >= syllableInfo.startTime)
             {
               isHighlighted = true
             }
@@ -1117,7 +1099,7 @@ function onFrame(now: number): void
             // Debug output (limited to first few frames per line)
             if (charIdx === 0 && timeMs < 5000)
             {
-              console.log(`🎯 Line "${placeable.id}" char 0: syl="${syllableInfo.syllable}" time=${syllableInfo.startTime}-${syllableInfo.endTime} current=${timeMs} highlighted=${isHighlighted}`)
+              console.log(`🎯 Line "${placeable.id}" char 0: syl="${syllableInfo.syllable}" startTime=${syllableInfo.startTime} current=${timeMs} highlighted=${isHighlighted}`)
             }
           }
         }
