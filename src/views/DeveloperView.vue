@@ -272,10 +272,10 @@ function buildCreditItem(lastLyricHighlightTime: number): RenderItem
 {
   return {
     id: 'credit',
-    text: 'Created with Karaoke Composer by Ancient-Wizard',
+    text: 'Karaoke Composer by Ancient-Wizard',
     type: 'credit',
-    showTime: lastLyricHighlightTime + 1000,  // 1s after lyrics end
-    hideTime: lastLyricHighlightTime + 4000,  // Display for 3s
+    showTime: lastLyricHighlightTime + 500,   // Show 0.5s after lyrics end (earlier for more visibility)
+    hideTime: lastLyricHighlightTime + 5500,  // Display for 5s (longer to read)
     alignment: 'center'
   }
 }
@@ -290,7 +290,7 @@ const renderQueue = new TextRenderQueue(14)  // 14 pixels per line (12px glyph +
 const isPlaying = ref(false)
 const autoRepeat = ref(true)
 const currentTimeMs = ref(0)
-const playbackSpeed = ref(1.8) // Dial from 0.1x to 2x speed
+const playbackSpeed = ref(0.5) // Dial from 0.1x to 2x speed
 
 // Song selection
 const selectedSongKey = ref('meet-me-in-november')
@@ -457,7 +457,8 @@ function composeRenderItemsToPlaceableLines(items: RenderItem[]): PlaceableLine[
     }
     else
     {
-      // Single line or metadata: just lease one position
+      // Single line, metadata (title/author/credit), or non-lyric content: just lease one position
+      // Metadata and credits don't need special multiline handling
       leasedPositions = [leaseManager.leasePosition(item.id, item.showTime, item.hideTime)]
     }
     
