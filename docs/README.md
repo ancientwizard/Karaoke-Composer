@@ -1,53 +1,146 @@
 # Documentation Guide
 
-This folder contains essential reference materials for the CD+G Magic TypeScript implementation. Start here.
+This folder contains essential reference materials for the CD+G Magic TypeScript implementation.
 
 ---
 
 ## 📍 Quick Navigation
 
-### **For Getting Started**
-- **[REFERENCE.md](REFERENCE.md)** ← **START HERE**
-  - Consolidated reference covering everything you need to know
-  - Core concepts, architecture, implementation details
-  - Known issues and limitations
-  - ~400 lines, highly organized
+### **Core Reference** (Start Here)
+- **[REFERENCE.md](REFERENCE.md)** - Core concepts and implementation reference
+  - Timing model (packets vs milliseconds)
+  - File format concepts
+  - Implementation highlights
+  - Highly organized, ~400 lines
 
-### **For Implementation Decisions**
-- **[INDEX.md](INDEX.md)** - Navigation guide to all documents
-  - Points to specific reference materials by topic
-- **[conversion-order.md](conversion-order.md)** - Strategy for TS conversion
-- **[TYPESCRIPT-IMPLEMENTATION-GUIDE.md](TYPESCRIPT-IMPLEMENTATION-GUIDE.md)** - Implementation patterns
-
-### **For Technical Deep Dives**
-- **[CPP-IMPLEMENTATION-ANALYSIS.md](CPP-IMPLEMENTATION-ANALYSIS.md)** - Complete C++ analysis
-  - How the original C++ code works
-  - Packet encoding algorithms
-  - Font block processing
+### **C++ Analysis** (Understand the Original)
+- **[CPP-IMPLEMENTATION-ANALYSIS.md](CPP-IMPLEMENTATION-ANALYSIS.md)** - Complete C++ source analysis
+  - BMP to CD+G conversion pipeline
+  - FontBlock processing and VRAM comparison
+  - Packet creation algorithms (1/2/3/4+ color encoding)
+  - Global commands and file writing
   - ~800 lines of detailed technical reference
   
-- **[RESEARCH-SUMMARY.md](RESEARCH-SUMMARY.md)** - Research overview
-  - High-level findings from C++ analysis
-  - Key algorithms explained
-  - File statistics and validation
+- **[RESEARCH-SUMMARY.md](RESEARCH-SUMMARY.md)** - High-level research findings
+  - Algorithm overview
+  - Key discoveries from source analysis
+  - File statistics
 
-### **For Format & Binary Details**
-- **[CDG-reference.md](CDG-reference.md)** - CD+G packet format spec
-  - Complete packet structure reference
+### **Binary Format** (Implementation Reference)
+- **[CDG-reference.md](CDG-reference.md)** - CD+G packet format specification
+  - Complete packet structure
   - All instruction codes
   - Palette and color handling
   
 - **[PACKET-BINARY-FORMAT.md](PACKET-BINARY-FORMAT.md)** - Quick reference
-  - 24-byte packet structure
-  - Binary layout diagrams
-  - Common encoding patterns
+  - 24-byte packet structure diagrams
+  - Binary layout and encoding
+  - Common patterns and examples
+
+### **Text Rendering** (Specialized)
+- **[TEXT-RENDERING-SUMMARY.md](TEXT-RENDERING-SUMMARY.md)** - Executive summary
+  - How palette colors are used
+  - Pixel-to-FontBlock mapping
+  - Common pitfalls
+  - **Navigation to detailed text rendering docs**
+
+- **[TEXT-RENDERING-ANALYSIS.md](TEXT-RENDERING-ANALYSIS.md)** - Deep technical analysis
+  - Text rendering to pixels (FLTK details)
+  - Color determination algorithms
+  - BMP to FontBlock conversion
+  - CD+G packet encoding (all color cases)
+  - Transparency and alpha handling
+
+- **[TEXT-RENDERING-EVOLUTION.md](TEXT-RENDERING-EVOLUTION.md)** - Historical development
+  - How text rendering was discovered and refined
+  - Solutions to technical challenges
+  - Implementation iterations
+
+- **[TEXT-RENDERING-IMPLEMENTATION-CHECKLIST.md](TEXT-RENDERING-IMPLEMENTATION-CHECKLIST.md)** - Step-by-step guide
+  - Phase-by-phase implementation plan
+  - Code structure and organization
+  - Testing strategy
+
+- **[TEXT-RENDERING-QUICK-REFERENCE.md](TEXT-RENDERING-QUICK-REFERENCE.md)** - Lookup tables
+  - Palette color index table
+  - Encoding decision tree
+  - Color analysis formulas
+
+- **[TEXT-RENDERING-SOURCE-CODE-REFERENCE.md](TEXT-RENDERING-SOURCE-CODE-REFERENCE.md)** - Code mapping
+  - How C++ source maps to TypeScript
+  - Function equivalents
+  - Data structure conversions
+
+- **[TEXT-RENDERING-ARCHITECTURE.md](TEXT-RENDERING-ARCHITECTURE.md)** - Design patterns
+  - Text clip architecture
+  - Positioning model
+  - Color settings and transparency
+
+### **Implementation Guides**
+- **[TYPESCRIPT-IMPLEMENTATION-GUIDE.md](TYPESCRIPT-IMPLEMENTATION-GUIDE.md)** - TS-specific patterns
+  - Core concepts in TypeScript
+  - Rendering context setup
+  - Type system usage
+
+- **[conversion-order.md](conversion-order.md)** - Conversion strategy
+  - Module organization
+  - Dependency order
+  - Integration sequence
+
+- **[INDEX.md](INDEX.md)** - Document navigation hub
+  - Cross-references between docs
+  - Topic index
+
+### **Progress Tracking**
+- **[RENDERING-PROGRESS.md](RENDERING-PROGRESS.md)** - Implementation status
+  - Completed features
+  - Known issues
+  - Testing status
+
+### **Tool Documentation**
+- **[RENDER-CDG-USAGE.md](RENDER-CDG-USAGE.md)** - render-cdg.ts tool usage
+  - Command-line options
+  - Example usage
+  - Output formats
+
+### **Reference Materials**
+- **[CRITICAL-FACTS.md](CRITICAL-FACTS.md)** - Key facts summary
+  - Important discoveries
+  - Technical notes
+  - Common gotchas
+
+- **[CD+G-Magic-UML.md](CD+G-Magic-UML.md)** - Class hierarchy diagrams
+  - Object relationships
+  - Inheritance structure
+
+- **[vlc-cdg-decoder-summary.md](vlc-cdg-decoder-summary.md)** - VLC decoder reference
+  - How VLC implements CD+G decoding
+  - Alternative approaches for comparison
 
 - **[ARCHITECTURE-NOTES.md](ARCHITECTURE-NOTES.md)** - Design patterns
-  - CMP parser design (round-trip fidelity)
-  - Path normalization facade
+  - CMP parser design
+  - Path normalization
   - Architecture decisions
 
-### **For Architecture Understanding**
+---
+
+## 📊 Documentation Statistics
+
+- **Total files**: 22 documentation files
+- **Total size**: ~150 KB
+- **Focus**: C++ analysis, binary format reference, text rendering implementation
+- **All documents**: Self-contained and cross-referenced
+
+---
+
+## 🎯 How to Use This Documentation
+
+1. **New to the project**: Start with [REFERENCE.md](REFERENCE.md)
+2. **Understanding the algorithm**: Read [CPP-IMPLEMENTATION-ANALYSIS.md](CPP-IMPLEMENTATION-ANALYSIS.md)
+3. **Implementing text rendering**: Follow [TEXT-RENDERING-SUMMARY.md](TEXT-RENDERING-SUMMARY.md) and its sub-docs
+4. **Binary format questions**: Check [PACKET-BINARY-FORMAT.md](PACKET-BINARY-FORMAT.md)
+5. **Implementation patterns**: See [TYPESCRIPT-IMPLEMENTATION-GUIDE.md](TYPESCRIPT-IMPLEMENTATION-GUIDE.md)
+6. **Quick lookup**: Use [TEXT-RENDERING-QUICK-REFERENCE.md](TEXT-RENDERING-QUICK-REFERENCE.md) for tables and formulas
 - **[CD+G-Magic-UML.md](CD+G-Magic-UML.md)** - UML diagrams
   - System architecture diagrams
   - Class relationships

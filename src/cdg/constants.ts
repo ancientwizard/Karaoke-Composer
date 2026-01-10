@@ -1,8 +1,8 @@
-#!/usr/bin/env node
-/*
-# CDG Constants
 
-Constants for CD+G file format.
+/*
+ # CDG Constants
+ #
+ # Constants for CD+G file format.
 */
 
 // CDG packet size (always 24 bytes: 4 header + 16 data + 4 checksum)

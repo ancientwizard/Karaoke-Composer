@@ -1,12 +1,4 @@
-/**
- * Phase 2 Tests: Media Events & Track Configuration
- *
- * Consolidated test suite for all Phase 2 components:
- * - Phase 2.1: MediaEvent and TrackOptions (core versions)
- * - Phase 2.2: TrackOptions_UI (observable/reactive version)
- *
- * Total: 86 tests (36 from 2.1 + 43 from 2.2 + 7 integration)
- */
+/**\n * Tests for Track Options & Media Events\n *\n * This test suite covers track configuration and media event management:\n * - CDGMagic_TrackOptions (Core): Basic track channel and mask configuration\n * - CDGMagic_TrackOptions_UI: Observable/reactive version with observer pattern\n * - CDGMagic_MediaEvent integration: Tests interaction between events and tracks\n * Dependencies: CDGMagic_MediaEvent functions for integration tests\n *\n * Total: 40 tests covering core functionality and reactive patterns\n */
 
 import { createMediaEvent, cloneMediaEvent
   , compareMediaEventsByStart, getMediaEventEnd
@@ -15,10 +7,10 @@ import { CDGMagic_TrackOptions    } from "@/ts/cd+g-magic/CDGMagic_TrackOptions_
 import { CDGMagic_TrackOptions_UI } from "@/ts/cd+g-magic/CDGMagic_TrackOptions_UI";
 
 // ============================================================================
-// PHASE 2.1: Core MediaEvent & TrackOptions
+// MEDIA EVENTS & TRACK OPTIONS CORE
 // ============================================================================
 
-describe("Phase 2.1: Media Event Structures", () => {
+describe("Media Events & Track Options", () => {
   describe("CDGMagic_MediaEvent - Media Event Data Structure", () => {
     test("createMediaEvent creates event with default values", () => {
       const event = createMediaEvent(100, 50);
@@ -162,7 +154,7 @@ describe("Phase 2.1: Media Event Structures", () => {
     });
   });
 
-  describe("Phase 2.1: CDGMagic_TrackOptions (Core)", () => {
+  describe("CDGMagic_TrackOptions (Core) - Channel & Mask Configuration", () => {
     it("should initialize with default values", () => {
       const track = new CDGMagic_TrackOptions();
       expect(track.track()).toBe(0);
@@ -233,7 +225,7 @@ describe("Phase 2.1: Media Event Structures", () => {
     });
   });
 
-  describe("Phase 2.1: Integration - MediaEvent + TrackOptions", () => {
+  describe("Integration - MediaEvent + TrackOptions", () => {
     it("should work with media events and track options together", () => {
       const track1 = new CDGMagic_TrackOptions(1);
       const track2 = new CDGMagic_TrackOptions(2);
@@ -254,10 +246,10 @@ describe("Phase 2.1: Media Event Structures", () => {
 });
 
 // ============================================================================
-// PHASE 2.2: Observable/Reactive TrackOptions
+// TRACK OPTIONS - OBSERVABLE/REACTIVE VARIANT
 // ============================================================================
 
-describe("Phase 2.2: CDGMagic_TrackOptions_UI", () => {
+describe("CDGMagic_TrackOptions_UI - Observable/Reactive Track Configuration", () => {
   describe("initialization", () => {
     it("should initialize with default values", () => {
       const track = new CDGMagic_TrackOptions_UI();

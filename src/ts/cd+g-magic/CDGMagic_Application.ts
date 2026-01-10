@@ -8,6 +8,7 @@ import { CDGMagic_GraphicsDecoder } from "@/ts/cd+g-magic/CDGMagic_GraphicsDecod
 import { CDGMagic_MainWindow      } from "@/ts/cd+g-magic/CDGMagic_MainWindow";
 import { CDGMagic_PreviewWindow   } from "@/ts/cd+g-magic/CDGMagic_PreviewWindow";
 import { CDGMagic_EditingGroup    } from "@/ts/cd+g-magic/CDGMagic_EditingGroup";
+import { CDGEnv } from "@/ts/cd+g-magic/CDGMagic_Environment";
 
 /**
  * Application: Main orchestrator for CD+Graphics Magic
@@ -103,7 +104,7 @@ class CDGMagic_Application {
 
       return true;
     } catch (error) {
-      console.error("Failed to initialize application:", error);
+      CDGEnv.logError("Failed to initialize application:", error);
       return false;
     }
   }
@@ -130,7 +131,7 @@ class CDGMagic_Application {
       this.internal_is_running = true;
       return true;
     } catch (error) {
-      console.error("Failed to start application:", error);
+      CDGEnv.logError("Failed to start application:", error);
       this.internal_is_running = false;
       return false;
     }
@@ -160,7 +161,7 @@ class CDGMagic_Application {
       this.internal_is_running = false;
       return true;
     } catch (error) {
-      console.error("Failed to stop application:", error);
+      CDGEnv.logError("Failed to stop application:", error);
       return false;
     }
   }
@@ -292,7 +293,7 @@ class CDGMagic_Application {
 
       return true;
     } catch (error) {
-      console.error("Failed to create new project:", error);
+      CDGEnv.logError("Failed to create new project:", error);
       return false;
     }
   }
@@ -325,7 +326,7 @@ class CDGMagic_Application {
 
       return true;
     } catch (error) {
-      console.error("Failed to open project:", error);
+      CDGEnv.logError("Failed to open project:", error);
       return false;
     }
   }
@@ -350,7 +351,7 @@ class CDGMagic_Application {
 
       return true;
     } catch (error) {
-      console.error("Failed to save project:", error);
+      CDGEnv.logError("Failed to save project:", error);
       return false;
     }
   }
@@ -379,7 +380,7 @@ class CDGMagic_Application {
 
       return true;
     } catch (error) {
-      console.error("Failed to start playback:", error);
+      CDGEnv.logError("Failed to start playback:", error);
       return false;
     }
   }
@@ -409,7 +410,7 @@ class CDGMagic_Application {
 
       return true;
     } catch (error) {
-      console.error("Failed to stop playback:", error);
+      CDGEnv.logError("Failed to stop playback:", error);
       return false;
     }
   }
@@ -438,7 +439,7 @@ class CDGMagic_Application {
 
       return true;
     } catch (error) {
-      console.error("Failed to pause playback:", error);
+      CDGEnv.logError("Failed to pause playback:", error);
       return false;
     }
   }
@@ -490,7 +491,7 @@ class CDGMagic_Application {
 
       return false;
     } catch (error) {
-      console.error("Failed to undo:", error);
+      CDGEnv.logError("Failed to undo:", error);
       return false;
     }
   }
@@ -515,7 +516,7 @@ class CDGMagic_Application {
 
       return false;
     } catch (error) {
-      console.error("Failed to redo:", error);
+      CDGEnv.logError("Failed to redo:", error);
       return false;
     }
   }
@@ -558,7 +559,7 @@ class CDGMagic_Application {
 
       return true;
     } catch (error) {
-      console.error("Failed to export CDG:", error);
+      CDGEnv.logError("Failed to export CDG:", error);
       return false;
     }
   }

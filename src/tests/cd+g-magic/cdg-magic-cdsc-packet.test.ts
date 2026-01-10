@@ -1,16 +1,19 @@
 /**
- * Phase 4 Tests: CD_SCPacket (24-byte CD+G Subcode Packet)
+ * CDGMagic_CDSCPacket: CD+G Subcode Packet Structure
  *
- * Tests for the fundamental CD+G packet structure:
- * - Packet structure (24 bytes: command, instruction, parity Q, data, parity P)
- * - Serialization/deserialization for .cdg file format
- * - Packet composition and validation
- * - Integration with graphics commands
+ * 24-byte packet structure for CD+Graphics:
+ * - Command byte: 0x09 (TV Graphics mode)
+ * - Instruction byte: Command type (MEMORY_PRESET, BORDER_PRESET, etc.)
+ * - Parity Q: 2-byte error correction
+ * - Data payload: 16 bytes of graphics command data
+ * - Parity P: 4-byte error correction
+ *
+ * Covers serialization, deserialization, cloning, and validation.
  */
 
-import { CDGMagic_CDSCPacket } from "../../ts/cd+g-magic/CDGMagic_CDSCPacket";
+import { CDGMagic_CDSCPacket } from "@/ts/cd+g-magic/CDGMagic_CDSCPacket";
 
-describe("Phase 4: CDGMagic_CDSCPacket", () => {
+describe("CDGMagic_CDSCPacket", () => {
   describe("initialization", () => {
     it("should initialize with default TV Graphics mode", () => {
       const packet = new CDGMagic_CDSCPacket();
@@ -574,5 +577,5 @@ describe("Phase 4: CDGMagic_CDSCPacket", () => {
   });
 });
 
-// VIM: set ft=typescript :
+// vim: ts=2 sw=2 et
 // END

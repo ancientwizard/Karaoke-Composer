@@ -1,15 +1,22 @@
 /**
- * phase-6.test.ts
- * Tests for MediaClip expansion with audio/graphics synchronization
+ * CDGMagic_MediaClip: Media Clip Base Class
+ *
+ * Media clip base class providing core functionality for CD+G clips:
+ * - Audio/graphics synchronization (frame rates, packet/audio frame conversion)
+ * - Graphics buffer caching with invalidation on state changes
+ * - Playback synchronization and packet tracking
+ * - Clip validation and packet estimation
+ * - JSON and binary serialization with full state preservation
+ *
+ * 40 comprehensive tests covering initialization, audio sync, packet conversion,
+ * graphics caching, synchronization, validation, reset, cloning, serialization,
+ * and complete edit workflow integration scenarios.
  */
 
 import { CDGMagic_MediaClip } from "@/ts/cd+g-magic/CDGMagic_MediaClip";
 import { createMediaEvent } from "@/ts/cd+g-magic/CDGMagic_MediaEvent";
 
-/**
- * MediaClip Expansion Tests
- */
-describe("CDGMagic_MediaClip - Phase 6 Expansion", () => {
+describe("CDGMagic_MediaClip", () => {
   let clip: CDGMagic_MediaClip;
 
   beforeAll(() => {
@@ -393,3 +400,6 @@ describe("CDGMagic_MediaClip - Phase 6 Expansion", () => {
     });
   });
 });
+
+// vim: ts=2 sw=2 et
+// END

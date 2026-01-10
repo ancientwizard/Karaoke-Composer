@@ -1,6 +1,15 @@
 # render-cdg: CD+G File Generation Tool
 
+# CLI .cdg render is junk!!!
+
+CLI based .cdg render wont work! The AI and I have been unable to reproduce good looking var-spaced text. Even the fixed fonts look bad!
+The main issue is the AI failed to code them correctly and consistently.
+In the prijects "main/primay" branch I had to manually fix the issues/typos in the glyph bits. They were very inconsistent and many just plain broken!
+The only good solution is to use a browser and take advantage of its font reseouces to create what we need.
+
 ## Overview
+
+NOTE: Will be retired!
 
 `render-cdg.ts` converts CD+Graphics Magic project files (.cmp) to binary CD+G files (.cdg) using the TypeScript CDGMagic_CDGExporter.
 

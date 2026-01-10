@@ -10,7 +10,7 @@ import { CDGMagic_TextClip } from "@/ts/cd+g-magic/CDGMagic_BMPClip";
 import { CMPParser } from "@/ts/cd+g-magic/CMPParser";
 import { convertToMediaClip, type MediaClipInstance } from "@/ts/cd+g-magic/ClipConverter";
 import { CDGMagic_CDGExporter } from "@/ts/cd+g-magic/CDGMagic_CDGExporter";
-import { extractBMPPalette } from "@/ts/cd+g-magic/BMPPaletteLoader";
+import { CDGMagic_BMPLoader } from "@/ts/cd+g-magic/CDGMagic_BMPLoader";
 import fs from "fs";
 import path from "path";
 
@@ -179,10 +179,11 @@ describe("Multi-Event Text Clips", () => {
         const paletteFile = path.join(process.cwd(), "cdg-projects", "simple_sky_2+14.bmp");
         let palette: Array<[number, number, number]> | undefined;
         if (fs.existsSync(paletteFile)) {
-          const bmpData = fs.readFileSync(paletteFile);
-          const extractedPalette = extractBMPPalette(new Uint8Array(bmpData));
-          if (extractedPalette) {
-            palette = extractedPalette as Array<[number, number, number]>;
+          try {
+            const bmpLoader = new CDGMagic_BMPLoader(paletteFile);
+            palette = bmpLoader.get_palette_6bit();
+          } catch (error) {
+            // Palette loading failed, will use default
           }
         }
         

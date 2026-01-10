@@ -1,11 +1,11 @@
 /**
- * Unit tests for Phase 8 CD+Graphics Magic TypeScript conversions
+ * Tests for Editing UI Components
  *
- * Tests:
- * - CDGMagic_TimeOutput: Time formatting (MM:SS:FF)
- * - CDGMagic_EditingLanes_PlaybackHead: Playback head position tracking
- * - CDGMagic_MovableClipBox: Draggable clip box UI element
- * - CDGMagic_EditingLanes: Multi-lane timeline display
+ * This test suite covers the timeline editing UI infrastructure:
+ * - CDGMagic_TimeOutput: Time formatting and display (MM:SS:FF)
+ * - CDGMagic_EditingLanes_PlaybackHead: Playback position indicator
+ * - CDGMagic_MovableClipBox: Draggable clip representation in timeline
+ * - CDGMagic_EditingLanes: Multi-lane timeline container
  * - CDGMagic_EditingGroup: Multi-lane editing controller
  */
 
@@ -16,7 +16,7 @@ import { CDGMagic_EditingLanes              } from "@/ts/cd+g-magic/CDGMagic_Edi
 import { CDGMagic_EditingGroup              } from "@/ts/cd+g-magic/CDGMagic_EditingGroup";
 import { CDGMagic_MediaClip                 } from "@/ts/cd+g-magic/CDGMagic_MediaClip";
 
-describe("Phase 8: UI/Window Classes", () => {
+describe("Editing UI Components", () => {
   describe("CDGMagic_TimeOutput - Time Formatting", () => {
     test("format_frames() converts 0 frames to 00:00:00", () => {
       expect(CDGMagic_TimeOutput.format_frames(0)).toBe("00:00:00");

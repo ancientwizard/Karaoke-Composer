@@ -1,5 +1,19 @@
 # Text Rendering Implementation Summary
 
+## Navigation Guide
+
+This document is part of the Text Rendering documentation. Other related documents:
+
+- **TEXT-RENDERING-ANALYSIS.md** - Detailed technical analysis with source code references
+- **TEXT-RENDERING-OVERVIEW.md** - High-level architecture overview
+- **TEXT-RENDERING-EVOLUTION.md** - Historical evolution and fixes
+- **TEXT-RENDERING-IMPLEMENTATION-CHECKLIST.md** - Step-by-step implementation guide
+- **TEXT-RENDERING-QUICK-REFERENCE.md** - Quick lookup tables and formulas
+- **TEXT-RENDERING-SOURCE-CODE-REFERENCE.md** - Source code mapping
+- **TEXT-RENDERING-ARCHITECTURE.md** - Detailed architecture patterns
+
+---
+
 ## Executive Summary
 
 The CD+G Magic reference implementation renders text through this pipeline:

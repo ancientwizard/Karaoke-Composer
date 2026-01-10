@@ -1,12 +1,16 @@
 /**
- * phase-b-export.test.ts
- * Phase B: CDG export pipeline tests
+ * CDGMagic_CDGExporter: CDG Binary Export Engine
  *
- * Tests export functionality:
- * - Packet generation and scheduling
- * - Color palette management
- * - Binary CDG file output
- * - Clip-to-packet mapping
+ * CDG exporter providing:
+ * - Clip registration and management
+ * - Packet scheduling and generation
+ * - Binary CDG file output (24-byte packets)
+ * - Palette management and prelude generation
+ * - Timeline composition and padding to target duration
+ * - Validation of export state
+ *
+ * 23 tests covering initialization, scheduling, binary export,
+ * composition scenarios, palette management, and edge cases.
  */
 
 import { CDGMagic_CDGExporter } from "@/ts/cd+g-magic/CDGMagic_CDGExporter";
@@ -16,7 +20,7 @@ import { CDGMagic_ScrollClip, ScrollDirection } from "@/ts/cd+g-magic/CDGMagic_S
 import { CDGMagic_PALGlobalClip } from "@/ts/cd+g-magic/CDGMagic_PALGlobalClip";
 import { createMediaEvent } from "@/ts/cd+g-magic/CDGMagic_MediaEvent";
 
-describe("Phase B: CDG Export Pipeline", () => {
+describe("CDGMagic_CDGExporter - CDG Binary Export Engine", () => {
   beforeAll(() => {
     jest.spyOn(console, "error").mockImplementation(() => {});
   });
@@ -371,5 +375,5 @@ describe("Phase B: CDG Export Pipeline", () => {
   });
 });
 
-// VIM: set ft=typescript :
+// vim: ts=2 sw=2 et
 // END

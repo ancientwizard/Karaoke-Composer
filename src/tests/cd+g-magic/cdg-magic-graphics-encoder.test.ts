@@ -1,19 +1,17 @@
 /**
- * Phase 5.2: CDGMagic_GraphicsEncoder - Unit Tests
+ * CDGMagic_GraphicsEncoder: Graphics Encoding & Packet Generation
  *
- * Tests for graphics encoding: CD+G packet generation, VRAM management,
- * palette operations, font block rendering, and composition.
+ * Graphics encoding for CD+G format including:
+ * - VRAM initialization and pixel operations
+ * - Palette and border management
+ * - CD+G packet generation (MEMORY_PRESET, BORDER_PRESET, CLUT, etc.)
+ * - Font block rendering (COPY_FONT, XOR_FONT modes)
+ * - Bitmap-to-font conversion and composition
+ * - Stream encoding and orchestration
  *
- * Test Coverage:
- * - Encoder initialization and state management
- * - Packet generation (MEMORY_PRESET, BORDER_PRESET, CLUT, etc.)
- * - Pixel operations (get/set in VRAM)
- * - Palette management
- * - Font block rendering (COPY_FONT, XOR_FONT)
- * - Bitmap-to-tiles conversion
- * - Composition layer operations
- * - Stream encoding
- * - Integration scenarios
+ * 25 comprehensive tests covering initialization, palette ops, packet generation,
+ * font rendering, bitmap compositing, composition layers, stream encoding,
+ * orchestration, integration scenarios, and edge cases.
  */
 
 import { CDGMagic_GraphicsEncoder } from "@/ts/cd+g-magic/CDGMagic_GraphicsEncoder";
@@ -617,5 +615,5 @@ describe("CDGMagic_GraphicsEncoder", () => {
   });
 });
 
-// VIM: set ft=typescript :
+// vim: ts=2 sw=2 et
 // END

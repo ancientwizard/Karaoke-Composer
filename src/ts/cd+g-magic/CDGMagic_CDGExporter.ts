@@ -11,8 +11,8 @@ import { CDGMagic_TextClip      } from "@/ts/cd+g-magic/CDGMagic_TextClip";
 import { CDGMagic_ScrollClip    } from "@/ts/cd+g-magic/CDGMagic_ScrollClip";
 import { CDGMagic_PALGlobalClip } from "@/ts/cd+g-magic/CDGMagic_PALGlobalClip";
 import { CDGMagic_BMPClip       } from "@/ts/cd+g-magic/CDGMagic_BMPClip";
-import { readBMP                } from "@/ts/cd+g-magic/BMPReader";
-import { bmp_to_fontblocks      } from "@/ts/cd+g-magic/BMPToFontBlockConverter";
+import { CDGMagic_BMPLoader     } from "@/ts/cd+g-magic/CDGMagic_BMPLoader";
+import { CDGMagic_GraphicsEncoder } from "@/ts/cd+g-magic/CDGMagic_GraphicsEncoder";
 import { loadTransitionFile, getDefaultTransition, getNoTransition } from "@/ts/cd+g-magic/TransitionFileReader";
 import {
   getRawCharacterFromFont,
@@ -101,6 +101,9 @@ class CDGMagic_CDGExporter {
   // VRAM buffer for change detection (Phase 2: Rendering Pipeline)
   private internal_vram: VRAMBuffer | null;
 
+  // Graphics encoder for BMP-to-FontBlock conversion
+  private internal_graphics_encoder: CDGMagic_GraphicsEncoder | null;
+
   // FontBlock queue for time-based writing (ensures progressive transitions)
   // Sorted by start_pack value; blocks written only when their time arrives
   private internal_fontblock_queue: Array<{
@@ -127,6 +130,7 @@ class CDGMagic_CDGExporter {
     this.internal_use_reference_prelude = false;
     this.internal_compositor = null;
     this.internal_vram = null;
+    this.internal_graphics_encoder = new CDGMagic_GraphicsEncoder();
     this.internal_fontblock_queue = [];
   }
 
@@ -948,7 +952,7 @@ class CDGMagic_CDGExporter {
     // CRITICAL: Pass track_options to ensure z_location (layer) is set correctly
     // track_options contains the track number (0-7) which determines which layer this clip renders to
     const trackOptions = clip.track_options();
-    const fontblocks = bmp_to_fontblocks(
+    const fontblocks = this.internal_graphics_encoder!.bmp_to_fonts(
       screenBmpData,
       schedulePacket,
       getNoTransition(),
@@ -1023,8 +1027,14 @@ class CDGMagic_CDGExporter {
       if (bmpPath && fs.existsSync(bmpPath)) {
         try {
           // Load BMP file for pixel data AND palette colors
-          const bmpBuffer = fs.readFileSync(bmpPath);
-          const bmpData = readBMP(new Uint8Array(bmpBuffer));
+          const bmpLoader = new CDGMagic_BMPLoader(bmpPath);
+          const bmpData = {
+            width: bmpLoader.width(),
+            height: bmpLoader.height(),
+            bitsPerPixel: 8,
+            palette: bmpLoader.get_palette_8bit(),
+            pixels: bmpLoader.get_pixel_data(),
+          };
 
           // Use the BMP's actual palette colors (not standard palette!)
           // The BMP palette contains the real colors to display
@@ -1106,7 +1116,7 @@ class CDGMagic_CDGExporter {
           // CRITICAL: Pass track_options to ensure z_location (layer) is set correctly
           // BMPClip doesn't have track_options like TextClip/ScrollClip, so check first
           const trackOptions = (clip as any).track_options ? (clip as any).track_options() : null;
-          const fontblocks = bmp_to_fontblocks(
+          const fontblocks = this.internal_graphics_encoder!.bmp_to_fonts(
             bmpData,
             clip.start_pack() + 19,
             transitionData,

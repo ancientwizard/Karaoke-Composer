@@ -23,7 +23,7 @@ import { CMPParser                } from '../src/ts/cd+g-magic/CMPParser';
 import { PathNormalizationFacade  } from '../src/ts/cd+g-magic/PathNormalizationFacade';
 import { convertToMediaClip       } from '../src/ts/cd+g-magic/ClipConverter';
 import { CDGMagic_CDGExporter     } from '../src/ts/cd+g-magic/CDGMagic_CDGExporter';
-import { extractBMPPalette        } from '../src/ts/cd+g-magic/BMPPaletteLoader';
+import { CDGMagic_BMPLoader       } from '../src/ts/cd+g-magic/CDGMagic_BMPLoader';
 
 // ALLOW Exporter to announce debug info
 // CDGMagic_CDGExporter.DEBUG = true;
@@ -108,8 +108,8 @@ function generateCDG(cmpProject: any, options: RenderOptions): Uint8Array {
       const bmpPath = clip.data.events[0].bmpPath;
       if (bmpPath && fs.existsSync(bmpPath)) {
         try {
-          const bmpBuffer = fs.readFileSync(bmpPath);
-          const palette = extractBMPPalette(new Uint8Array(bmpBuffer));
+          const bmpLoader = new CDGMagic_BMPLoader(bmpPath);
+          const palette = bmpLoader.get_palette_6bit();
           exporter.set_palette(palette);
           console.log(`[render-cdg] Loaded palette from BMP: ${bmpPath}`);
           paletteLoaded = true;

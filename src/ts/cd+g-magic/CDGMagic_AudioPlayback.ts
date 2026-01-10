@@ -5,6 +5,8 @@
  * Handles WAVE file loading, playback, sample rate negotiation, and visualization.
  */
 
+import { CDGEnv } from "./CDGMagic_Environment";
+
 /**
  * AudioPlayback: Web Audio API audio management
  *
@@ -96,15 +98,21 @@ export class CDGMagic_AudioPlayback {
    *
    * Must be called before loading or playing audio.
    * Uses default sample rate if available, ensures 44,100 Hz compatible.
+   * In CLI environment, returns true but does not create actual context (graceful degradation).
    *
-   * @returns True if context initialized successfully
+   * @returns True if context initialized successfully (or in CLI mode)
    */
   initialize_context(): boolean {
+    // In CLI environment, skip audio context initialization
+    if (!CDGEnv.isBrowser) {
+      return true; // Allow graceful operation
+    }
+
     try {
       const audioContext =
         (window as any).AudioContext || (window as any).webkitAudioContext;
       if (!audioContext) {
-        console.error("Web Audio API not supported");
+        CDGEnv.logError("Web Audio API not supported");
         return false;
       }
 
@@ -114,14 +122,14 @@ export class CDGMagic_AudioPlayback {
       // We'll accept the system's sample rate and document in meta
       const actual_sr = this.internal_audio_context!.sampleRate;
       if (actual_sr !== 44100 && actual_sr !== 48000) {
-        console.warn(
+        CDGEnv.warnIfBrowser(
           `Audio context sample rate ${actual_sr} Hz (expected 44100 or 48000)`
         );
       }
 
       return true;
     } catch (error) {
-      console.error("Failed to initialize Web Audio context:", error);
+      CDGEnv.logError("Failed to initialize Web Audio context:", error);
       return false;
     }
   }
@@ -130,13 +138,18 @@ export class CDGMagic_AudioPlayback {
    * Load and decode WAVE file from URL or File
    *
    * Handles WAVE format parsing and decoding via Web Audio API.
+   * In CLI environment, returns false (no audio playback).
    *
    * @param source URL string or File object
    * @returns True if loaded successfully
    */
   async load_wave_file(source: string | File): Promise<boolean> {
+    if (!CDGEnv.isBrowser) {
+      return false; // No audio in CLI
+    }
+
     if (!this.internal_audio_context) {
-      console.error("Audio context not initialized");
+      CDGEnv.logError("Audio context not initialized");
       return false;
     }
 
@@ -147,7 +160,7 @@ export class CDGMagic_AudioPlayback {
         // Load from URL
         const response = await fetch(source);
         if (!response.ok) {
-          console.error(`Failed to fetch audio: ${response.statusText}`);
+          CDGEnv.logError(`Failed to fetch audio: ${response.statusText}`);
           return false;
         }
         arrayBuffer = await response.arrayBuffer();
@@ -170,7 +183,7 @@ export class CDGMagic_AudioPlayback {
 
       return true;
     } catch (error) {
-      console.error("Failed to load WAVE file:", error);
+      CDGEnv.logError("Failed to load WAVE file:", error);
       return false;
     }
   }
@@ -180,19 +193,24 @@ export class CDGMagic_AudioPlayback {
    *
    * Requires Web Audio context and loaded audio buffer.
    * First playback requires user gesture (click, keydown, etc.).
+   * In CLI environment, returns false (no audio).
    *
    * @returns True if playback started
    */
   play(): boolean {
+    if (!CDGEnv.isBrowser) {
+      return false; // No audio in CLI
+    }
+
     if (!this.internal_audio_context || !this.internal_audio_buffer) {
-      console.error("Audio context or buffer not ready");
+      CDGEnv.logError("Audio context or buffer not ready");
       return false;
     }
 
     // Resume context if suspended
     if (this.internal_audio_context.state === "suspended") {
       this.internal_audio_context.resume().catch((err) => {
-        console.error("Failed to resume audio context:", err);
+        CDGEnv.logError("Failed to resume audio context:", err);
       });
     }
 
@@ -219,7 +237,7 @@ export class CDGMagic_AudioPlayback {
 
       return true;
     } catch (error) {
-      console.error("Failed to start playback:", error);
+      CDGEnv.logError("Failed to start playback:", error);
       return false;
     }
   }
@@ -232,6 +250,10 @@ export class CDGMagic_AudioPlayback {
    * @returns True if paused successfully
    */
   pause(): boolean {
+    if (!CDGEnv.isBrowser) {
+      return false; // No audio in CLI
+    }
+
     if (!this.internal_is_playing || !this.internal_source_node) {
       return false;
     }
@@ -249,7 +271,7 @@ export class CDGMagic_AudioPlayback {
 
       return true;
     } catch (error) {
-      console.error("Failed to pause playback:", error);
+      CDGEnv.logError("Failed to pause playback:", error);
       return false;
     }
   }
@@ -411,10 +433,15 @@ export class CDGMagic_AudioPlayback {
    *
    * Creates a 2048×128 RGBA bitmap showing audio levels.
    * Samples audio buffer and renders peak levels per pixel column.
+   * Skipped in CLI environment.
    *
    * @returns True if generated successfully
    */
   private generate_waveform_bitmap(): boolean {
+    if (!CDGEnv.isBrowser) {
+      return true; // Skip in CLI (graceful)
+    }
+
     if (!this.internal_audio_buffer) {
       return false;
     }
@@ -467,7 +494,7 @@ export class CDGMagic_AudioPlayback {
 
       return true;
     } catch (error) {
-      console.error("Failed to generate waveform:", error);
+      CDGEnv.logError("Failed to generate waveform:", error);
       return false;
     }
   }

@@ -186,6 +186,9 @@ export class CDGMagic_BMPLoader extends CDGMagic_BMPObject {
       throw new Error(BMPLoaderError.INSUFFICIENT_DATA);
     }
 
+    // Load palette data from BMP into PALObject
+    this.load_palette_from_bmp(data);
+
     // Store BMP data for later use
     this.store_bmp_data(data, data_offset, bmp_width, Math.abs(bmp_height));
   }
@@ -215,6 +218,120 @@ export class CDGMagic_BMPLoader extends CDGMagic_BMPObject {
     (this as any).internal_width = width;
     (this as any).internal_height = height;
     (this as any).internal_pixel_data = pixels;
+  }
+
+  /**
+   * Load BMP palette into PALObject
+   *
+   * Reads 256-color palette from BMP header (starting at offset 0x36).
+   * Each BMP color is 4 bytes: B, G, R, reserved (0).
+   * Converts to 32-bit RGBA format for PALObject storage.
+   *
+   * @param data BMP file buffer
+   * @private
+   */
+  private load_palette_from_bmp(data: Buffer): void {
+    const palette_offset = 0x36; // Standard BMP palette location
+    const pal_obj = this.PALObject();
+
+    // Load up to 256 colors (BMP uses BGR format)
+    for (let i = 0; i < 256 && palette_offset + i * 4 + 3 < data.length; i++) {
+      const offset = palette_offset + i * 4;
+      const b_8bit = data[offset] || 0;
+      const g_8bit = data[offset + 1] || 0;
+      const r_8bit = data[offset + 2] || 0;
+      // Reserved byte at offset + 3 is ignored
+
+      // Store as 32-bit RGBA (RRGGBBAA format where AA=FF for full opacity)
+      const rgba = (r_8bit << 24) | (g_8bit << 16) | (b_8bit << 8) | 0xFF;
+      pal_obj.color(i, rgba);
+    }
+  }
+
+  /**
+   * Extract palette in CD+G 6-bit format
+   *
+   * CONSUMERS (will be retired with CLI):
+   * - bin/render-cdg.ts: Used to extract palette for CDG export
+   * - src/tests/cd+g-magic/multiEventTextClips.test.ts: Used in palette testing
+   *
+   * Converts loaded BMP palette from 8-bit RGB to 6-bit CD+G format.
+   * CD+G uses 6 bits per color channel (0-63 instead of 0-255).
+   * Returns up to 16 colors (CD+G limit), padded with black.
+   *
+   * @returns Array of 16 [R, G, B] tuples in 6-bit CD+G format
+   */
+  get_palette_6bit(): Array<[number, number, number]>
+  {
+    const pal_obj = this.PALObject();
+    const palette: Array<[number, number, number]> = [];
+
+    for (let i = 0; i < 16; i++) {
+      const rgba = pal_obj.color(i);
+
+      // Extract 8-bit channels from RRGGBBAA format
+      const r_8bit = (rgba >> 24) & 0xFF;
+      const g_8bit = (rgba >> 16) & 0xFF;
+      const b_8bit = (rgba >> 8) & 0xFF;
+
+      // Convert 8-bit to 6-bit by scaling
+      const r_6bit = Math.round((r_8bit / 255) * 63);
+      const g_6bit = Math.round((g_8bit / 255) * 63);
+      const b_6bit = Math.round((b_8bit / 255) * 63);
+
+      palette.push([r_6bit, g_6bit, b_6bit]);
+    }
+
+    return palette;
+  }
+
+  /**
+   * Get pixel data in rendering format (8-bit indexed color)
+   *
+   * CONSUMER (will be retired with CLI):
+   * - src/ts/cd+g-magic/CDGMagic_CDGExporter.ts: Used to render BMP clips to screen
+   *
+   * Returns raw pixel data indexed into palette for efficient rendering.
+   * Palette colors are stored as 8-bit RGB (as read from BMP file).
+   *
+   * @returns Uint8Array of pixel data (width × height bytes)
+   */
+  get_pixel_data(): Uint8Array {
+    return (this as any).internal_pixel_data || new Uint8Array(0);
+  }
+
+  /**
+   * Get palette in 8-bit RGB format (for rendering, not CD+G encoding)
+   *
+   * CONSUMER (will be retired with CLI):
+   * - src/ts/cd+g-magic/CDGMagic_CDGExporter.ts: Used to render BMP clips to screen
+   *
+   * Returns palette as 8-bit RGB tuples. Converts from internal 32-bit RGBA storage.
+   * Pads to 16 colors minimum (CD+G requirement).
+   *
+   * @returns Array of [R, G, B] tuples in 8-bit format
+   */
+  get_palette_8bit(): Array<[number, number, number]> {
+    const pal_obj = this.PALObject();
+    const palette: Array<[number, number, number]> = [];
+
+    for (let i = 0; i < 256; i++) {
+      const rgba = pal_obj.color(i);
+
+      // Extract 8-bit channels from RRGGBBAA format
+      const r_8bit = (rgba >> 24) & 0xFF;
+      const g_8bit = (rgba >> 16) & 0xFF;
+      const b_8bit = (rgba >> 8) & 0xFF;
+
+      palette.push([r_8bit, g_8bit, b_8bit]);
+    }
+
+    // Ensure at least 16 colors
+    while (palette.length < 16) {
+      palette.push([0, 0, 0]);
+    }
+
+    return palette;
   }
 
   /**

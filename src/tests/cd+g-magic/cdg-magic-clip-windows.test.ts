@@ -1,6 +1,13 @@
 /**
- * phase-9.test.ts
- * Unit tests for Phase 9 - Specialized clip editor windows
+ * Tests for Clip Editor Windows
+ *
+ * This test suite covers specialized editor windows for each clip type:
+ * - CDGMagic_BMPClip_Window: Bitmap clip editor
+ * - CDGMagic_PALGlobalClip_Window: Palette-only clip editor
+ * - CDGMagic_TextClip_Window: Text clip editor
+ * - CDGMagic_ScrollClip_Window: Scrolling clip editor
+ * - CDGMagic_TrackOptions_MaskWindow: Track mask/options editor
+ * Dependencies: CDGMagic_BMPClip, CDGMagic_TrackOptions_Core
  */
 
 import { describe, test, expect, beforeEach } from "@jest/globals";
@@ -13,7 +20,7 @@ import { CDGMagic_ScrollClip_Window         } from "@/ts/cd+g-magic/CDGMagic_Scr
 import { CDGMagic_TrackOptions_MaskWindow   } from "@/ts/cd+g-magic/CDGMagic_TrackOptions_MaskWindow";
 import { CDGMagic_TrackOptions              } from "@/ts/cd+g-magic/CDGMagic_TrackOptions_Core";
 
-describe("Phase 9: Specialized Clip Editor Windows", () => {
+describe("Clip Editor Windows", () => {
   describe("CDGMagic_BMPClip_Window", () => {
     let bmp_clip: CDGMagic_BMPClip;
     let window: CDGMagic_BMPClip_Window;
