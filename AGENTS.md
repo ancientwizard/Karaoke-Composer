@@ -14,6 +14,7 @@ Global defaults
    everytime you forget to use them your work suffers and I have to redirect you. It wastes time
    due to all the rework.
 - Module format: ESM (import/export). Target runtime: Node 18+.
+- AI will not 'git commit' until asked to do!
 - Package manager: npm.
 - Line endings: LF. Encoding: UTF-8.
 - Bracing style: place opening brace on the next line (Allman-style) is prefered for all new code but

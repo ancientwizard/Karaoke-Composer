@@ -7,14 +7,14 @@
  * using the CDGMagic_CDGExporter. Validates output matches reference file.
  *
  * Usage:
- *   npx ts-node bin/render-cdg.ts <input.cmp> <output.cdg> [reference.cdg] [--no-text-clips]
+ *   npx tsx bin/render-cdg.ts <input.cmp> <output.cdg> [reference.cdg] [--no-text-clips]
  *
  * Options:
  *   --no-text-clips    Exclude text clips from rendering (for transition testing)
  *
  * Example:
- *   npx ts-node bin/render-cdg.ts cdg-projects/sample_project_04.cmp /tmp/output.cdg cdg-projects/sample_project_04.cdg
- *   npx ts-node bin/render-cdg.ts cdg-projects/sample_project_04.cmp /tmp/output.cdg --no-text-clips
+ *   npx tsx bin/render-cdg.ts cdg-projects/sample_project_04.cmp /tmp/output.cdg cdg-projects/sample_project_04.cdg
+ *   npx tsx bin/render-cdg.ts cdg-projects/sample_project_04.cmp /tmp/output.cdg --no-text-clips
  */
 
 import fs   from 'fs';
@@ -89,6 +89,23 @@ function loadCMPProject(filePath: string) {
   });
   project = normalizer.normalize(project);
 
+  // Resolve relative paths in BMP clips to be relative to CMP file directory
+  // But skip if path already appears to be normalized (contains cdg-projects/)
+  const cmpDir = path.dirname(filePath);
+  for (const clip of project.clips) {
+    if (clip.type === 'BMPClip' && clip.data.events) {
+      for (const event of clip.data.events) {
+        if (event.bmpPath && !path.isAbsolute(event.bmpPath)) {
+          // If path starts with cdg-projects/, it's already been normalized
+          // Don't prepend cmpDir again
+          if (!event.bmpPath.startsWith('cdg-projects/')) {
+            event.bmpPath = path.resolve(cmpDir, event.bmpPath);
+          }
+        }
+      }
+    }
+  }
+
   return project;
 }
 
@@ -115,7 +132,8 @@ function generateCDG(cmpProject: any, options: RenderOptions): Uint8Array {
           paletteLoaded = true;
           break;
         } catch (error) {
-          console.warn(`[render-cdg] Failed to load palette from ${bmpPath}: ${error}`);
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          console.warn(`[render-cdg] Failed to load palette from ${bmpPath}: ${errorMsg}`);
         }
       }
     }

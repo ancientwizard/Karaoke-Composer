@@ -6,6 +6,7 @@
  * Extends BMPObject with file I/O and format validation.
  */
 
+import fs from "fs";
 import { CDGMagic_BMPObject } from "@/ts/cd+g-magic/CDGMagic_BMPObject";
 
 /**
@@ -63,10 +64,12 @@ export class CDGMagic_BMPLoader extends CDGMagic_BMPObject {
     try {
       this.load_from_path(file_path);
     } catch (error) {
+      // Always re-throw the original error with its true message
       if (error instanceof Error) {
         throw error;
       }
-      throw new Error(BMPLoaderError.OPEN_FAIL);
+      // Only wrap if it's not an Error object
+      throw new Error(String(error));
     }
   }
 
@@ -82,10 +85,8 @@ export class CDGMagic_BMPLoader extends CDGMagic_BMPObject {
     let data: Buffer | undefined;
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const fs = require("fs");
       data = fs.readFileSync(file_path);
-    } catch {
+    } catch (e) {
       throw new Error(BMPLoaderError.OPEN_FAIL);
     }
 
@@ -93,6 +94,7 @@ export class CDGMagic_BMPLoader extends CDGMagic_BMPObject {
       throw new Error(BMPLoaderError.OPEN_FAIL);
     }
 
+    // Parse BMP data (may throw BMPLoaderError for invalid format)
     this.parse_bmp_data(data);
   }
 
@@ -149,7 +151,9 @@ export class CDGMagic_BMPLoader extends CDGMagic_BMPObject {
 
     // Get image height (signed little-endian)
     const bmp_height = this.read_int32_le(data, 0x16);
-    if (Math.abs(bmp_height) > 200) {
+    // CD+G screen is 216 pixels tall, so allow heights up to 216
+    // (some BMPs may be slightly larger for compositing/masking)
+    if (Math.abs(bmp_height) > 240) {
       throw new Error(BMPLoaderError.TOO_TALL);
     }
     if (Math.abs(bmp_height) < 1) {
@@ -196,6 +200,12 @@ export class CDGMagic_BMPLoader extends CDGMagic_BMPObject {
   /**
    * Store BMP pixel data in BMPObject
    *
+   * BMP format stores pixels bottom-to-top, so we invert Y coordinates
+   * during loading to match standard image orientation (top-to-bottom).
+   *
+   * Mirrors C++ reference: CDGMagic_BMPLoader.cpp line 208
+   *   bmp_buffer[cur_x + (bmp_height-cur_y-1)*aligned_width]
+   *
    * @param data Full BMP file buffer
    * @param data_offset Offset to pixel data
    * @param width Image width
@@ -203,21 +213,27 @@ export class CDGMagic_BMPLoader extends CDGMagic_BMPObject {
    * @private
    */
   private store_bmp_data(data: Buffer, data_offset: number, width: number, height: number): void {
-    // Create pixel buffer (copy only pixel data)
-    const pixel_size = width * height;
-    const pixels = new Uint8Array(pixel_size);
+    // Create pixel buffer with Y-axis inversion
+    // BMP files store pixels bottom-to-top, so map BMP row (height-y-1) to pixel row y
+    const pixels = new Uint8Array(width * height);
 
-    let pixel_idx = 0;
-    for (let i = 0; i < pixel_size && data_offset + i < data.length; i++) {
-      pixels[pixel_idx++] = data[data_offset + i];
+    for (let y = 0; y < height; y++) {
+      // Map Y coordinate: file row (height-y-1) → output row y
+      const bmp_row = height - y - 1;
+      const src_offset = data_offset + bmp_row * width;
+      const dst_offset = y * width;
+
+      for (let x = 0; x < width && src_offset + x < data.length; x++) {
+        pixels[dst_offset + x] = data[src_offset + x];
+      }
     }
 
     // Store in parent BMPObject
-    // Note: BMPObject expects pixel data in specific format
-    // For now, we store dimensions for reference
-    (this as any).internal_width = width;
-    (this as any).internal_height = height;
-    (this as any).internal_pixel_data = pixels;
+    // Allocate buffer and set dimensions
+    this.alter_buffer_size(width, height);
+
+    // Copy pixel data into allocated buffer using protected setter
+    this.set_pixel_data(pixels);
   }
 
   /**
@@ -297,7 +313,9 @@ export class CDGMagic_BMPLoader extends CDGMagic_BMPObject {
    * @returns Uint8Array of pixel data (width × height bytes)
    */
   get_pixel_data(): Uint8Array {
-    return (this as any).internal_pixel_data || new Uint8Array(0);
+    // Return the actual bitmap data stored in parent class
+    const bitmapData = this.get_bitmap_data();
+    return bitmapData || new Uint8Array(0);
   }
 
   /**

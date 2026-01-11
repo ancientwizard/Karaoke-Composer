@@ -101,9 +101,21 @@ export class PathNormalizationFacade {
       normalized = normalized.replace(/\\/g, '/');
     }
 
-    // Replace Sample_Files with cdg-projects
+    // Handle absolute Windows paths: Extract filename from paths like
+    // C:\Temp\CD+Graphics Magic\cdg-projects\simple_sky_2+14.bmp
+    // Replace with just cdg-projects/simple_sky_2+14.bmp
     if (this.options.replaceSampleFiles) {
-      normalized = normalized.replace(/Sample_Files\//gi, 'cdg-projects/');
+      // Match pattern: ...cdg-projects/filename.ext or ...Sample_Files/filename.ext
+      const cdgMatch = normalized.match(/cdg-projects\/([^/]+)$/i);
+      const sampleMatch = normalized.match(/Sample_Files\/([^/]+)$/i);
+      
+      if (cdgMatch) {
+        // Extract filename and prepend cdg-projects/
+        normalized = 'cdg-projects/' + cdgMatch[1];
+      } else if (sampleMatch) {
+        // Replace Sample_Files with cdg-projects
+        normalized = 'cdg-projects/' + sampleMatch[1];
+      }
     }
 
     return normalized;

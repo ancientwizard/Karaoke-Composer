@@ -466,6 +466,26 @@ export class CDGMagic_BMPObject {
   }
 
   /**
+   * Set pixel data from buffer (protected for subclasses like BMPLoader)
+   * 
+   * Used by BMPLoader to store loaded BMP pixel data into allocated buffer.
+   * Called after alter_buffer_size() has allocated the buffer.
+   * 
+   * @param pixels Pixel data to copy
+   * @protected
+   */
+  protected set_pixel_data(pixels: Uint8Array): void {
+    if (!this.internal_bmp_data || pixels.length === 0) {
+      return;
+    }
+    
+    const copy_size = Math.min(pixels.length, this.internal_bmp_data.length);
+    for (let i = 0; i < copy_size; i++) {
+      this.internal_bmp_data[i] = pixels[i];
+    }
+  }
+
+  /**
    * Clone this bitmap object
    *
    * Creates a new BMPObject with copied pixel data and settings.

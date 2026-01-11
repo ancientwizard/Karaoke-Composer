@@ -1077,18 +1077,11 @@ export class CDGMagic_GraphicsEncoder {
           const bmp_pixel_index = sample_y * bmpData.width + sample_x;
           const pixel_color = bmpData.pixels[bmp_pixel_index] || 0;
 
-          // CRITICAL FIX: Write 256 (TRANSPARENCY) for black pixels
-          // The CompositorBuffer uses 256 as a transparent sentinel:
-          // - Pixels < 256 are opaque and override lower layers
-          // - Pixels === 256 are transparent and let lower layers show through
-          // - This allows text to composite properly over background layers
-          if (pixel_color === 0) {
-            // Black = background, not text. Write 256 (transparent) so background shows
-            fontblock.pixel_value(pixel_x, pixel_y, 256);
-          } else {
-            // Actual text color (1-15), write directly to FontBlock
-            fontblock.pixel_value(pixel_x, pixel_y, pixel_color);
-          }
+          // CRITICAL FIX REVERTED: DO NOT treat black (0) as transparent!
+          // For BMP transitions, black pixels are legitimate image content.
+          // The 256 sentinel is ONLY for out-of-bounds/padding pixels.
+          // Write pixel value directly (0-255 are valid colors, 256 = transparent)
+          fontblock.pixel_value(pixel_x, pixel_y, pixel_color);
         }
       }
 

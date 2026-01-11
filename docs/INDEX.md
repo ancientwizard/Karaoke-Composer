@@ -1,5 +1,47 @@
 # CD+G Magic C++ Source Code Analysis - Complete Documentation Index
 
+## 🚀 RECENT: BMP/Transition Pipeline Fix
+
+### NEW DOCUMENTS (January 2026)
+
+**Status**: ✅ Critical bug fixed - BMPs were rendering as all black
+
+#### 1. **FIX-SUMMARY.md** - Executive Summary
+- What was broken (pixel data returning empty)
+- How it was fixed (added protected setter, fixed get_pixel_data)
+- Test results (700/700 passing)
+- Before/after comparison
+
+#### 2. **BMP-TRANSITION-FIX.md** - Detailed Technical Analysis
+- Root cause analysis of both bugs
+- Data flow diagrams
+- Architecture overview
+- Complete code examples
+- Why transitions appeared black
+
+#### 3. **CPP-TS-BMP-COMPARISON.md** - Implementation Verification
+- Side-by-side C++ vs TypeScript code
+- Algorithm equivalence verification
+- Data access pattern differences
+- Design lessons learned
+
+#### 4. **BMP-TRANSITION-DEBUGGING.md** - Debugging Guide
+- Quick reference checklist
+- 4-step verification procedures
+- Common issues and solutions
+- Test cases for validation
+- Performance notes
+
+#### 5. **New Test Suite**: `cdg-magic-bmp-transition.test.ts`
+- 10 comprehensive tests (all passing)
+- Regression test to prevent future issues
+- Covers full BMP/transition pipeline
+- Tests pixel storage, palette loading, FontBlock generation
+
+**Read these first if you're debugging BMP/transition issues!**
+
+---
+
 ## Overview
 
 This is a comprehensive analysis of the CD+G Magic C++ implementation, extracted from the reference source code in `/reference/cd+g-magic/CDG_Magic/Source/`. The goal is to provide exact implementation details for a faithful TypeScript conversion of the packet encoding algorithm.
