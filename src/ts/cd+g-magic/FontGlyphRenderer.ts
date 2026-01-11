@@ -149,6 +149,73 @@ export class FontGlyphRenderer {
   }
 
   /**
+   * Point-in-path test using simplified ray casting
+   * Cast a ray from the point to the right and count path crossings
+   * Even number of crossings = outside, odd = inside
+   */
+  private pointInPath(path: any, x: number, y: number): boolean {
+    const commands = path.commands;
+    if (!commands || commands.length === 0) return false;
+    
+    let crossings = 0;
+    let x0 = 0, y0 = 0;
+    
+    for (let i = 0; i < commands.length; i++) {
+      const cmd = commands[i];
+      let x1 = x0, y1 = y0;
+      
+      if (cmd.type === 'M' || cmd.type === 'L') {
+        x1 = cmd.x || 0;
+        y1 = cmd.y || 0;
+      } else if (cmd.type === 'C') {
+        // Cubic bezier - we need to check if ray crosses any bezier segment
+        // For simplicity, approximate with multiple line segments
+        x0 = cmd.x || 0;
+        y0 = cmd.y || 0;
+        x1 = x0;
+        y1 = y0;
+        // Don't count crossing for curve start, will be counted in segments
+        // Just update position
+      } else if (cmd.type === 'Q') {
+        // Quadratic bezier
+        x0 = cmd.x || 0;
+        y0 = cmd.y || 0;
+        x1 = x0;
+        y1 = y0;
+      } else if (cmd.type === 'Z') {
+        // Close path - line back to first point
+        x1 = commands[0]?.x || 0;
+        y1 = commands[0]?.y || 0;
+      } else {
+        x0 = x1;
+        y0 = y1;
+        continue;
+      }
+      
+      // Check if horizontal ray from (x, y) to right crosses line segment (x0,y0)-(x1,y1)
+      // Ray only crosses if:
+      // 1. y is between y0 and y1
+      // 2. The crossing point is to the right of x
+      if ((y0 <= y && y < y1) || (y1 <= y && y < y0)) {
+        // Segment straddles the ray
+        // Find x coordinate of intersection
+        if (x0 !== x1) {
+          const xIntersect = x0 + (x1 - x0) * (y - y0) / (y1 - y0);
+          if (x < xIntersect) {
+            crossings++;
+          }
+        }
+      }
+      
+      x0 = x1;
+      y0 = y1;
+    }
+    
+    // Odd number of crossings = inside
+    return (crossings & 1) === 1;
+  }
+
+  /**
    * Create a canvas - works in both Node.js and browser
    */
   private createCanvas(width: number, height: number): HTMLCanvasElement {

@@ -26,6 +26,7 @@ Global defaults
 - Linting/Formatting: follow ESLint + Prettier defaults; respect any repo .eslintrc / .prettierrc.
 - Security: never output secrets or credentials. Reference env vars via process.env and document required vars in README / .env.example.
 - Licensing: include license header if repository uses one; otherwise do not add a third‑party license header.
+- Don't use /, /tmp, ~/; keep to the contents of this project.
 
 Per-language / per-folder overrides
 - If a folder contains its own AGENTS.md or config (tsconfig, eslint, package.json scripts), prefer the folder-local settings.

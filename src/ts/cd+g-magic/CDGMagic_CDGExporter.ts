@@ -526,6 +526,7 @@ class CDGMagic_CDGExporter {
    * @param foregroundColor Color index for text
    * @param outlineColor Color index for outline (use 0 for black outline)
    * @param fontSize Font size (larger fonts get thicker outlines)
+   * @param char Character being drawn (for debugging)
    */
   private drawCharacterWithOutline(
     charData: { width: number; height: number; data: Uint8Array },
@@ -536,22 +537,63 @@ class CDGMagic_CDGExporter {
     bmpPixels: Uint8Array,
     foregroundColor: number,
     outlineColor: number,
-    fontSize: number
+    fontSize: number,
+    char: string = '?',
+    backgroundColor: number = 0,
+    DEBUG: boolean = false
   ): void {
     const charWidth = charData.width;
     const charHeight = charData.height;
     const srcData = charData.data;
     const charTopPixel = topStart - charHeight;  // Align to baseline
-
-    // C++ STYLE: Soft, merged outline (like 70's art style)
-    // The outline should be subtle and blend smoothly, not hard-edged
-    // We use a distance-based approach: pixels near the character edge get outline color
-    // Pixels far from edge get nothing, creating a soft halo effect
     
-    if (outlineColor < 16) {
+    const charDesc = char === ' ' ? 'SPACE' : char === '\t' ? 'TAB' : `'${char}'`;
+    
+    // Debug: analyze actual glyph data to find non-zero extent
+    let actualMinX = charWidth;
+    let actualMaxX = -1;
+    let actualMinY = charHeight;
+    let actualMaxY = -1;
+    let nonZeroPixels = 0;
+    
+    for (let y = 0; y < charHeight; y++) {
+      for (let x = 0; x < charWidth; x++) {
+        const idx = y * charWidth + x;
+        if (srcData[idx] > 0) {
+          nonZeroPixels++;
+          actualMinX = Math.min(actualMinX, x);
+          actualMaxX = Math.max(actualMaxX, x);
+          actualMinY = Math.min(actualMinY, y);
+          actualMaxY = Math.max(actualMaxY, y);
+        }
+      }
+    }
+    
+    const hasContent = nonZeroPixels > 0;
+    const actualWidth = hasContent ? (actualMaxX - actualMinX + 1) : 0;
+    const actualHeight = hasContent ? (actualMaxY - actualMinY + 1) : 0;
+    
+    if (DEBUG) {
+      console.debug(
+        `[drawCharacterWithOutline] Char: ${charDesc} pos=(${charPixelX},${charTopPixel}), ` +
+        `size=(${charWidth}x${charHeight}), baseline=${topStart}, ` +
+        `fg=${foregroundColor}, outline=${outlineColor}`
+      );
+      console.debug(
+        `[drawCharacterWithOutline]   Actual content: ${actualWidth}x${actualHeight} at (${actualMinX},${actualMinY}), ` +
+        `${nonZeroPixels} non-zero pixels out of ${charWidth * charHeight}`
+      );
+    }
+
+    // C++ Approach: Draw layers in order, with outline FIRST and text ON TOP
+    // This prevents outline from overwriting text and respects character width
+    
+    // FIRST PASS: Soft outline (only if outline color is valid)
+    if (outlineColor < 16 && outlineColor !== 0) {
       // Draw soft outline using distance blending
+      // The outline should be subtle and blend smoothly, not hard-edged
       // For each outline pixel, check distance to character content
-      const outlineRadius = fontSize < 16 ? 2 : 3;  // How far the outline extends
+      const outlineRadius = fontSize < 16 ? 1 : 2;  // How far the outline extends (reduced to avoid overlap)
       
       for (let y = -outlineRadius; y <= outlineRadius; y++) {
         for (let x = -outlineRadius; x <= outlineRadius; x++) {
@@ -578,8 +620,9 @@ class CDGMagic_CDGExporter {
                 if (pixelX >= 0 && pixelX < screenWidth && pixelY >= 0 && pixelY < screenHeight) {
                   const pixelIndex = pixelY * screenWidth + pixelX;
                   // Only write outline to empty pixels (don't overwrite text)
-                  // BMP is initialized to 0 (black background), not 256
-                  if (bmpPixels[pixelIndex] === 0) {
+                  // CRITICAL FIX: Check if pixel is still transparent (256), not backgroundColor
+                  // The screen is initialized to 256, not bgColor
+                  if (bmpPixels[pixelIndex] === 256) {
                     // Soft outline: use distance to create fade effect
                     // Close to character = darker outline, far = lighter/transparent
                     const strength = 1 - (dist / outlineRadius);
@@ -597,6 +640,7 @@ class CDGMagic_CDGExporter {
       }
     }
 
+    // SECOND PASS: Draw main character on top (this overwrites outline where they overlap)
     // CRITICAL: Render both solid AND anti-aliased text pixels
     // The font renderer produces:
     // - 255: solid text pixels
@@ -606,38 +650,68 @@ class CDGMagic_CDGExporter {
     // We must render ALL text pixels (gray > 0) to preserve anti-aliasing
     // and prevent character overlap. The text layer sits on top of the outline.
     
-    // Second pass: Draw main character on top (this overwrites outline if they overlap)
+    let pixelsWritten = 0;
+    let pixelsSkipped = 0;
+    let pixelsClippedRight = 0;
+    let pixelsClippedBottom = 0;
+    
+    // Debug: collect glyph statistics
+    let grayDistribution: { [key: number]: number } = {};
+    
     for (let dstY = 0; dstY < charHeight; dstY++) {
       for (let dstX = 0; dstX < charWidth; dstX++) {
         const srcIdx = dstY * charWidth + dstX;
+        const gray = srcData[srcIdx];
+        
+        // Collect statistics
+        if (DEBUG && gray > 0) {
+          grayDistribution[gray] = (grayDistribution[gray] || 0) + 1;
+        }
+        
         const pixelX = charPixelX + dstX;
         const pixelY = charTopPixel + dstY;
 
-        // CRITICAL: Check ALL bounds - left, right, top, bottom
-        if (pixelX < 0 || pixelX >= screenWidth || pixelY < 0 || pixelY >= screenHeight) continue;
+        // Track why pixels are skipped
+        if (gray > 0) {
+          if (pixelX < 0 || pixelX >= screenWidth) {
+            if (pixelX >= screenWidth) pixelsClippedRight++;
+            else pixelsSkipped++;
+            continue;
+          }
+          if (pixelY < 0 || pixelY >= screenHeight) {
+            if (pixelY >= screenHeight) pixelsClippedBottom++;
+            else pixelsSkipped++;
+            continue;
+          }
+        }
 
-        const gray = srcData[srcIdx];
-        
         // Render any text pixel (gray > 0), including anti-aliased edges
         // This ensures smooth character edges without overlap
         if (gray > 0) {
           const pixelIndex = pixelY * screenWidth + pixelX;
           
-          // Write text pixel if it's opaque (gray > 128)
-          // For anti-aliased pixels (gray < 128), blend or blend-adjacent logic would go here
-          // For now, write all non-background pixels
+          // Write pixels with sufficient opacity (gray > 128)
+          // This threshold captures the solid text core while filtering out very faint edges
           if (gray > 128) {
-            // Solid text - always write
             bmpPixels[pixelIndex] = foregroundColor;
-          } else {
-            // Anti-aliased edge or lighter pixel - write to empty areas
-            // Don't overwrite already-drawn content
-            if (bmpPixels[pixelIndex] === 0) {
-              // Background is empty, can write
-              bmpPixels[pixelIndex] = foregroundColor;
-            }
+            pixelsWritten++;
           }
         }
+      }
+    }
+    
+    if (DEBUG) {
+      console.debug(
+        `[drawCharacterWithOutline]   Pixels: ${pixelsWritten} written, ` +
+        `${pixelsClippedRight} clipped-right, ${pixelsClippedBottom} clipped-bottom, ` +
+        `${pixelsSkipped} out-of-bounds, total glyph size=${charWidth * charHeight}`
+      );
+      
+      // Show gray value distribution
+      const grayValues = Object.keys(grayDistribution).map(k => parseInt(k)).sort((a, b) => a - b);
+      if (grayValues.length > 0) {
+        const summary = grayValues.map(v => `${v}:${grayDistribution[v]}`).join(', ');
+        console.debug(`[drawCharacterWithOutline]   Gray values: ${summary}`);
       }
     }
   }
@@ -718,23 +792,24 @@ class CDGMagic_CDGExporter {
     }
 
     // Schedule memory preset (only if enabled)
-    const textMemoryIndex = clip.memory_preset_index();
-    if (textMemoryIndex < 16) {
-      const textClearColor = clip.box_index();
-      this.add_scheduled_packet(clip.start_pack() + 3, this.create_memory_preset_packet(textClearColor));
-
-      // CRITICAL: Fill entire VRAM with preset color to match C++ behavior
-      // This pre-fills edge blocks (X=48-49, Y=16-17) with the color
-      if (this.internal_vram) {
-        this.internal_vram.fill_with_color(textClearColor);
-      }
-
-      // CRITICAL: Update compositor's preset index to match this text clip's memory preset
-      // This ensures edge blocks (which are all transparent) render with the correct color
-      if (this.internal_compositor) {
-        this.internal_compositor.set_preset_index(textClearColor);
-      }
-    }
+    // NOTE: Disabled for text clips - text should layer on top of existing content (BMPs, transitions)
+    // Text clips should NOT clear the screen. If the CMP specifies a background color,
+    // that will be drawn behind individual text glyphs, not as a full-screen clear.
+    // const textMemoryIndex = clip.memory_preset_index();
+    // if (textMemoryIndex < 16) {
+    //   const textClearColor = clip.box_index();
+    //   this.add_scheduled_packet(clip.start_pack() + 3, this.create_memory_preset_packet(textClearColor));
+    //   // CRITICAL: Fill entire VRAM with preset color to match C++ behavior
+    //   // This pre-fills edge blocks (X=48-49, Y=16-17) with the color
+    //   if (this.internal_vram) {
+    //     this.internal_vram.fill_with_color(textClearColor);
+    //   }
+    //   // CRITICAL: Update compositor's preset index to match this text clip's memory preset
+    //   // This ensures edge blocks (which are all transparent) render with the correct color
+    //   if (this.internal_compositor) {
+    //     this.internal_compositor.set_preset_index(textClearColor);
+    //   }
+    // }
 
     // Split text into lines
     const lines = textContent.split('\n');
@@ -863,11 +938,14 @@ class CDGMagic_CDGExporter {
     // C++ PATTERN: Create one full-screen BMP for this event's line
     const screenBmpPixels = new Uint8Array(screenWidth * screenHeight);
     
-    // Initialize to 0 (black) - text clips DON'T use transparency
-    // All pixels will be written: text gets foreground color, background stays 0
-    // This allows the background BMP to show through when text pixels are blended
+    // CRITICAL FIX: Initialize to 256 (transparent sentinel) to allow background BMP to show through
+    // The background_color() setting is for the background BOX in LYRICS mode only, not for the
+    // transparent areas of the text layer. In C++, the background box is drawn to an RGB offscreen
+    // buffer (FLTK), then indexed pixels are extracted. For text-only (TITLES mode), non-text areas
+    // must remain transparent (256) so the background BMP is visible.
+    // See CDGMagic_TextClip.cpp line 128: fl_draw_box() draws to RGB buffer, not indexed pixels.
     for (let i = 0; i < screenBmpPixels.length; i++) {
-      screenBmpPixels[i] = 0;  // Initialize to black background
+      screenBmpPixels[i] = 256;  // Transparent sentinel - allows background BMP to show through
     }
     
     // CRITICAL: Only render the specific line for this event
@@ -880,8 +958,15 @@ class CDGMagic_CDGExporter {
         const blockLeftStart = textXOffset;
         const blockWidth = eventWidth;
         
-        // Center vertically within the event's line area
-        const topStart = Math.floor((lineHeight - fontPixelHeight) / 2) + fontPixelHeight + textYOffset;
+        // C++ Baseline Calculation (TextClip.cpp line 133-134):
+        // top_start = (line_height - fl_height()) / 2;
+        // top_start = top_start + fl_height() - fl_descent();
+        // This places baseline at correct position, with descent below
+        // For our implementation: baseline = center + ascent (height - descent)
+        // Typical ascent ≈ fontPixelHeight * 0.8, descent ≈ fontPixelHeight * 0.2
+        const ascent = Math.round(fontPixelHeight * 0.8);
+        const centerY = Math.floor((lineHeight - fontPixelHeight) / 2);
+        const topStart = centerY + ascent + textYOffset;
 
         if (CDGMagic_CDGExporter.DEBUG) {
           console.debug(
@@ -914,6 +999,27 @@ class CDGMagic_CDGExporter {
           const char = lineText[charIdx]!;
           const charData = getRawCharacterFromFont(char, fontSize, fontIndex);
           
+          if (CDGMagic_CDGExporter.DEBUG && charIdx < 15) {
+            const charCode = char.charCodeAt(0);
+            const charDesc = char === ' ' ? 'SPACE' : char === '\t' ? 'TAB' : `'${char}'`;
+            console.debug(
+              `[schedule_text_clip_event] Char[${charIdx}] ${charDesc} (code ${charCode}): ` +
+              `font returned size=(${charData?.width || 0}x${charData?.height || 0}), ` +
+              `renderX=${charPixelX}, renderY=${topStart - (charData?.height || 0)}`
+            );
+            if (charData) {
+              // Count actual non-zero pixels in glyph data
+              let nonZeroPixels = 0;
+              for (let i = 0; i < charData.data.length; i++) {
+                if (charData.data[i] > 0) nonZeroPixels++;
+              }
+              console.debug(
+                `[schedule_text_clip_event]   Glyph data: ${charData.data.length} pixels, ` +
+                `${nonZeroPixels} non-zero (${Math.round((nonZeroPixels / charData.data.length) * 100)}%)`
+              );
+            }
+          }
+          
           // Always attempt to render - bounds checking in drawCharacterWithOutline will clip naturally
           if (charData) {
             let useOutlineColor = Math.min(15, Math.max(0, outlineColor));
@@ -930,11 +1036,21 @@ class CDGMagic_CDGExporter {
               screenBmpPixels,
               foregroundColor,
               useOutlineColor,
-              fontSize
+              fontSize,
+              char,  // Pass the character for debugging
+              0,  // backgroundColor parameter (no longer used, screen initialized to 256)
+              CDGMagic_CDGExporter.DEBUG  // Enable debug logging
             );
           }
 
-          charPixelX += (charData?.width ?? 0) + 1;
+          const charWidth = charData?.width ?? 0;
+          charPixelX += charWidth + 1;
+          
+          if (CDGMagic_CDGExporter.DEBUG && charIdx < 5) {
+            console.debug(
+              `[schedule_text_clip_event]   Advanced X: ${charWidth} + 1 = next X will be ${charPixelX}`
+            );
+          }
         }
       }
     }

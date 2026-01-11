@@ -10,7 +10,8 @@
  *
  * Font Priority:
  * 1. Real TTF/OTF fonts (via FontManager)
- * 2. Fallback bitmap fonts (high quality)
+ * 2. Improved bitmap fonts (high quality, most characters)
+ * 3. Fallback bitmap fonts (all characters)
  *
  * Usage:
  *   const fonts = new UnifiedFontSystem();
@@ -29,15 +30,26 @@ export type RenderedGlyph = OpenTypeGlyph | BitmapGlyph;
  * Unified font system
  */
 export class UnifiedFontSystem {
+  static DEBUG = false;  // Set to true to enable renderer tracking logs
+  static FORCE_FALLBACK = false;  // Set to true to skip Improved renderer, use only Fallback
+  
   private fontManager: FontManager;
   private renderers: Map<number, FontGlyphRenderer | null> = new Map();
-  private fallback: ImprovedBitmapFontRenderer;
+  private improved: ImprovedBitmapFontRenderer;
+  private fallback: FallbackBitmapFontRenderer;
   private currentSize = 12;
   private currentFontIndex = 0;
+  private rendererUsageStats = {
+    ttf: 0,
+    improved: 0,
+    fallback: 0
+  };
 
   constructor() {
     this.fontManager = new FontManager();
-    this.fallback = new ImprovedBitmapFontRenderer();
+    this.improved = new ImprovedBitmapFontRenderer();
+    this.improved.setFontSize(this.currentSize);
+    this.fallback = new FallbackBitmapFontRenderer();
     this.fallback.setFontSize(this.currentSize);
   }
 
@@ -47,6 +59,12 @@ export class UnifiedFontSystem {
    */
   async initializeFonts(): Promise<void> {
     console.log('[UnifiedFontSystem] Initializing fonts...');
+    
+    // Check environment variable for forced fallback mode
+    if (process.env.FORCE_FALLBACK === '1' || process.env.FORCE_FALLBACK === 'true') {
+      UnifiedFontSystem.FORCE_FALLBACK = true;
+      console.log('[UnifiedFontSystem] FORCE_FALLBACK=1 detected, using only Fallback renderer');
+    }
     
     // Check if canvas is available (required for real font rendering)
     const canvasAvailable = await this.checkCanvasAvailability();
@@ -143,6 +161,7 @@ export class UnifiedFontSystem {
       }
     }
     
+    this.improved.setFontSize(size);
     this.fallback.setFontSize(size);
   }
 
@@ -172,13 +191,58 @@ export class UnifiedFontSystem {
     if (renderer) {
       const glyph = renderer.renderGlyph(char);
       if (glyph) {
+        this.rendererUsageStats.ttf++;
+        if (UnifiedFontSystem.DEBUG) {
+          const bitmapSize = glyph.data ? glyph.data.length : 0;
+          console.log(
+            `[UnifiedFontSystem] TTF renderer: '${char}' (size=${size ?? this.currentSize}, fontIdx=${fontIdx}) ` +
+            `bitmap=${bitmapSize}B, width=${glyph.width}, height=${glyph.height}, advanceWidth=${glyph.advanceWidth}`
+          );
+        }
         return glyph;
       }
-      console.warn(`Real font failed for index ${fontIdx}, falling back to bitmap`);
+      if (UnifiedFontSystem.DEBUG) {
+        console.log(`[UnifiedFontSystem] TTF renderer returned null for '${char}' (fontIdx=${fontIdx})`);
+      }
     }
 
-    // Fall back to standard bitmap font
-    return this.fallback.renderGlyph(char);
+    // Try improved bitmap font (high quality, has uppercase A-Z, numbers, most punctuation)
+    // Skip if FORCE_FALLBACK is enabled
+    if (!UnifiedFontSystem.FORCE_FALLBACK) {
+      const improvedGlyph = this.improved.renderGlyph(char);
+      if (improvedGlyph) {
+        this.rendererUsageStats.improved++;
+        if (UnifiedFontSystem.DEBUG) {
+          const bitmapSize = improvedGlyph.data ? improvedGlyph.data.length : 0;
+          console.log(
+            `[UnifiedFontSystem] Improved bitmap renderer: '${char}' (size=${size ?? this.currentSize}) ` +
+            `bitmap=${bitmapSize}B, width=${improvedGlyph.width}, height=${improvedGlyph.height}, advanceWidth=${improvedGlyph.advanceWidth}`
+          );
+        }
+        return improvedGlyph;
+      }
+      
+      if (UnifiedFontSystem.DEBUG) {
+        console.log(`[UnifiedFontSystem] Improved bitmap renderer returned null for '${char}'`);
+      }
+    }
+
+    // Final fallback to fallback bitmap font (complete character coverage)
+    const fallbackGlyph = this.fallback.renderGlyph(char);
+    if (fallbackGlyph) {
+      this.rendererUsageStats.fallback++;
+      if (UnifiedFontSystem.DEBUG) {
+        const bitmapSize = fallbackGlyph.data ? fallbackGlyph.data.length : 0;
+        console.log(
+          `[UnifiedFontSystem] Fallback bitmap renderer: '${char}' (size=${size ?? this.currentSize}) ` +
+          `bitmap=${bitmapSize}B, width=${fallbackGlyph.width}, height=${fallbackGlyph.height}, advanceWidth=${fallbackGlyph.advanceWidth}`
+        );
+      }
+      return fallbackGlyph;
+    }
+    
+    console.warn(`[UnifiedFontSystem] ALL renderers failed for char '${char}' (code=${char.charCodeAt(0)})`);
+    return null;
   }
 
   /**
@@ -221,7 +285,29 @@ export class UnifiedFontSystem {
     }
     return width;
   }
+
+  /**
+   * Get renderer usage statistics
+   * @returns Object with counts of which renderer was used for each glyph
+   */
+  getRendererStats() {
+    return {
+      ttf: this.rendererUsageStats.ttf,
+      improved: this.rendererUsageStats.improved,
+      fallback: this.rendererUsageStats.fallback,
+      total: this.rendererUsageStats.ttf + this.rendererUsageStats.improved + this.rendererUsageStats.fallback
+    };
+  }
+
+  /**
+   * Reset renderer statistics
+   */
+  resetStats(): void {
+    this.rendererUsageStats.ttf = 0;
+    this.rendererUsageStats.improved = 0;
+    this.rendererUsageStats.fallback = 0;
+  }
 }
 
-// VIM: set ft=typescript :
+// vim: set ft=typescript :
 // END

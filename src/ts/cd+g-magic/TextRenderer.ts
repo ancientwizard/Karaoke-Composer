@@ -120,7 +120,7 @@ export async function initializeTextRenderer(): Promise<void> {
 /**
  * Get or initialize the font system (synchronous wrapper with async init)
  */
-function getFontSystem(): UnifiedFontSystem {
+export function getFontSystem(): UnifiedFontSystem {
   if (!fontSystem) {
     fontSystem = new UnifiedFontSystem();
     // Initialize asynchronously in background

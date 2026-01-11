@@ -24,9 +24,14 @@ import { PathNormalizationFacade  } from '../src/ts/cd+g-magic/PathNormalization
 import { convertToMediaClip       } from '../src/ts/cd+g-magic/ClipConverter';
 import { CDGMagic_CDGExporter     } from '../src/ts/cd+g-magic/CDGMagic_CDGExporter';
 import { CDGMagic_BMPLoader       } from '../src/ts/cd+g-magic/CDGMagic_BMPLoader';
+import { UnifiedFontSystem        } from '../src/ts/cd+g-magic/UnifiedFontSystem';
+import { getFontSystem            } from '../src/ts/cd+g-magic/TextRenderer';
 
-// ALLOW Exporter to announce debug info
-// CDGMagic_CDGExporter.DEBUG = true;
+// Enable debug logging with DEBUG or EXPORTER_DEBUG environment variable
+CDGMagic_CDGExporter.DEBUG = process.env.DEBUG === '1' || process.env.DEBUG === 'true' || 
+                             process.env.EXPORTER_DEBUG === '1' || process.env.EXPORTER_DEBUG === 'true';
+// Enable font system debugging with FONT_DEBUG environment variable
+UnifiedFontSystem.DEBUG = process.env.FONT_DEBUG === '1' || process.env.FONT_DEBUG === 'true';
 
 interface RenderOptions {
   inputCMP: string;
@@ -283,6 +288,15 @@ async function main() {
     }
     fs.writeFileSync(opts.outputCDG, cdgBinary);
     console.log(`[render-cdg] ✓ Wrote ${cdgBinary.length} bytes to ${opts.outputCDG}`);
+
+    // Show renderer statistics
+    const fontSystem = getFontSystem();
+    if (fontSystem && fontSystem.getRendererStats) {
+      const stats = fontSystem.getRendererStats();
+      console.log(
+        `[render-cdg] Renderer usage: TTF=${stats.ttf}, Improved=${stats.improved}, Fallback=${stats.fallback}, Total=${stats.total}`
+      );
+    }
 
     // Compare if reference provided
     if (opts.referenceCDG) {
