@@ -326,6 +326,9 @@ class CDGMagic_CDGExporter {
 
     // Step through each packet and process due FontBlocks
     for (let current_pack = 0; current_pack < max_packet + 300; current_pack++) {
+      // First: Process scheduled packets (like MEMORY_PRESET) to update VRAM state
+      this.process_scheduled_packets(current_pack);
+      
       // Check if any FontBlocks are due at this packet
       this.process_due_fontblocks(current_pack);
 
@@ -335,6 +338,36 @@ class CDGMagic_CDGExporter {
 
     if (CDGMagic_CDGExporter.DEBUG)
       console.debug(`[process_fontblocks_incrementally] Processed ${this.internal_fontblock_queue.length} FontBlocks incrementally`);
+  }
+
+  /**
+   * Process scheduled packets at a given packet time
+   * Handles MEMORY_PRESET packets to update VRAM state
+   *
+   * @param current_pack Current packet number
+   */
+  private process_scheduled_packets(current_pack: number): void {
+    if (!this.internal_packet_schedule.has(current_pack) || !this.internal_vram) {
+      return;
+    }
+
+    const packets = this.internal_packet_schedule.get(current_pack);
+    if (!packets) return;
+
+    for (const packet of packets) {
+      // Handle MEMORY_PRESET packets
+      if (packet.instruction === CDGInstruction.MEMORY_PRESET) {
+        const color_index = packet.payload[0];
+        // Fill VRAM with the preset color
+        this.internal_vram.fill_with_color(color_index);
+        
+        // Update compositor preset
+        if (this.internal_compositor) {
+          this.internal_compositor.set_preset_index(color_index);
+        }
+      }
+      // Could add other packet types here (BORDER_PRESET, etc.)
+    }
   }
 
   /**
@@ -423,10 +456,6 @@ class CDGMagic_CDGExporter {
   private encode_changed_blocks_to_packets(current_pack: number): void {
     if (!this.internal_compositor || !this.internal_vram) return;
 
-    // Now that VRAM is pre-filled with memory preset color for edge blocks,
-    // we can iterate all 50×18 blocks and encode those that differ from VRAM.
-    // Previously we only iterated 48×16, but with VRAM pre-fill, edge blocks
-    // are correctly initialized and will be encoded if changed.
     const SCREEN_TILES_WIDE = 50;
     const SCREEN_TILES_HIGH = 18;
     let packets_added = 0;
@@ -439,28 +468,19 @@ class CDGMagic_CDGExporter {
         // Convert Uint16Array from compositor to Uint8Array for VRAM (values 0-255 only)
         const composited_block_8bit = new Uint8Array(72);
         for (let i = 0; i < 72; i++) {
-          // Transparency (256) becomes 0 for VRAM comparison
           composited_block_8bit[i] = composited_block[i] < 256 ? composited_block[i] : 0;
         }
 
-        // Phase 2: Check if block differs from current VRAM state
+        // Check if block differs from current VRAM state
         if (this.internal_vram.block_matches(block_x, block_y, composited_block_8bit)) {
-          // Block is identical to on-screen, skip writing
           continue;
         }
 
         // Block differs from VRAM, need to write packet(s)
-        // Use MultiColorEncoder for sophisticated encoding
         const encoding = encode_block(composited_block);
 
-        // Generate packets from encoding instructions
         for (const instr of encoding.instructions) {
-          // Create packet based on instruction type
-          const packet = this.create_cdg_packet_from_encoding_instruction(
-            instr,
-            block_x,
-            block_y
-          );
+          const packet = this.create_cdg_packet_from_encoding_instruction(instr, block_x, block_y);
           this.add_scheduled_packet(current_pack, packet);
           packets_added++;
         }
@@ -690,12 +710,14 @@ class CDGMagic_CDGExporter {
         if (gray > 0) {
           const pixelIndex = pixelY * screenWidth + pixelX;
           
-          // Write pixels with sufficient opacity (gray > 128)
-          // This threshold captures the solid text core while filtering out very faint edges
-          if (gray > 128) {
-            bmpPixels[pixelIndex] = foregroundColor;
-            pixelsWritten++;
-          }
+          // CRITICAL: Render ALL non-zero pixels to get proper text visibility
+          // The font renderer produces:
+          // - 255: solid text (100% opacity)
+          // - 1-254: anti-aliased edges (50-99% opacity)  
+          // We need to render at ANY gray level to show the text
+          // Original threshold of 128 was too strict and filtered out significant glyph areas
+          bmpPixels[pixelIndex] = foregroundColor;
+          pixelsWritten++;
         }
       }
     }
@@ -936,7 +958,8 @@ class CDGMagic_CDGExporter {
     }
 
     // C++ PATTERN: Create one full-screen BMP for this event's line
-    const screenBmpPixels = new Uint8Array(screenWidth * screenHeight);
+    // CRITICAL: Use Uint16Array to store 0-256 range (Uint8Array would clamp 256 to 0!)
+    const screenBmpPixels = new Uint16Array(screenWidth * screenHeight);
     
     // CRITICAL FIX: Initialize to 256 (transparent sentinel) to allow background BMP to show through
     // The background_color() setting is for the background BOX in LYRICS mode only, not for the
@@ -947,6 +970,8 @@ class CDGMagic_CDGExporter {
     for (let i = 0; i < screenBmpPixels.length; i++) {
       screenBmpPixels[i] = 256;  // Transparent sentinel - allows background BMP to show through
     }
+    
+    // Debug: Check initial state
     
     // CRITICAL: Only render the specific line for this event
     // clipLineNum tells us which line from the split text to render
@@ -1056,6 +1081,7 @@ class CDGMagic_CDGExporter {
     }
 
     // Create BMP data for the full screen
+    
     const screenBmpData = {
       width: screenWidth,
       height: screenHeight,
@@ -1068,6 +1094,10 @@ class CDGMagic_CDGExporter {
     // CRITICAL: Pass track_options to ensure z_location (layer) is set correctly
     // track_options contains the track number (0-7) which determines which layer this clip renders to
     const trackOptions = clip.track_options();
+    if (CDGMagic_CDGExporter.DEBUG || (schedulePacket >= 680 && schedulePacket <= 750)) {
+      const trackNum = trackOptions ? trackOptions.track() : -1;
+      console.log(`[schedule_text_clip_event] Text clip at pack ${schedulePacket}: track=${trackNum}`);
+    }
     const fontblocks = this.internal_graphics_encoder!.bmp_to_fonts(
       screenBmpData,
       schedulePacket,
@@ -1187,24 +1217,11 @@ class CDGMagic_CDGExporter {
             nextOffset += 16;
           }
 
-          // CRITICAL: Fill entire VRAM with preset color (or default 0) to match C++ behavior
-          // See CDGMagic_GraphicsEncoder.cpp line 469:
-          //   for (unsigned int px = 0; px < VRAM_WIDTH * VRAM_HEIGHT; px++)
-          //     { vram[px] = the_event->memory_preset_index; };
-          // This ensures edge blocks (X=48-49, Y=16-17) are pre-filled with the color
-          // They will then be overwritten by transition blocks if needed,
-          // or remain as this color if not covered by the transition.
-          // NOTE: We fill ALWAYS, not just when memory_preset is enabled,
-          // because the transition only covers 48×16 leaving 100 edge blocks empty.
-          if (this.internal_vram) {
-            this.internal_vram.fill_with_color(fillColor);
-          }
-
-          // CRITICAL: Update compositor's preset index to match this BMP clip's memory preset
-          // This ensures edge blocks (which are all transparent) render with the correct color
-          if (this.internal_compositor) {
-            this.internal_compositor.set_preset_index(fillColor);
-          }
+          // CRITICAL: DO NOT pre-fill VRAM here
+          // VRAM state should only change when packets are executed by the renderer
+          // MEMORY_PRESET packets above will fill VRAM when rendered
+          // Pre-filling here destroys the state from previous clips
+          // This was the source of text clip overlap issues
 
           // Load transition file if available, otherwise use default (sequential) ordering
           let transitionData: TransitionData | undefined;
@@ -1974,6 +1991,10 @@ class CDGMagic_CDGExporter {
       const block_x = fontblock.x_location();
       const block_y = fontblock.y_location();
       const z_layer = fontblock.z_location();
+      
+      if (current_pack >= 680 && current_pack <= 750) {
+        console.log(`[process_due_fontblocks] Pack ${current_pack} block(${block_x},${block_y}): fontblock.z_location()=${z_layer}`);
+      }
 
       // CRITICAL: Match C++ bounds checking in write_fontblock()
       // Don't write blocks past the confines of the screen (0-49 for X, 0-17 for Y)
@@ -1993,6 +2014,23 @@ class CDGMagic_CDGExporter {
         }
       }
 
+      // Debug: Show sample of text block pixels
+      if (z_layer === 1 && current_pack === 683 && (block_x === 0 || block_x === 25 || block_x === 49)) {
+        let opaque_count = 0;
+        let zero_count = 0;
+        let nonzero_count = 0;
+        let min_val = 256;
+        let max_val = 0;
+        for (let i = 0; i < 72; i++) {
+          if (pixel_data[i] < 256) opaque_count++;
+          if (pixel_data[i] === 0) zero_count++;
+          else nonzero_count++;
+          min_val = Math.min(min_val, pixel_data[i]);
+          max_val = Math.max(max_val, pixel_data[i]);
+        }
+        process.stderr.write(`[DEBUG-pixels] Pack ${current_pack} block(${block_x},${block_y}) z_layer=${z_layer}: opaque=${opaque_count}, zero=${zero_count}, nonzero=${nonzero_count}, range=[${min_val},${max_val}]\n`);
+      }
+
       // Write block to compositor at its z-layer
       this.internal_compositor.write_block(block_x, block_y, z_layer, pixel_data);
       
@@ -2001,8 +2039,8 @@ class CDGMagic_CDGExporter {
       
       entry.written = true;
 
-      if (CDGMagic_CDGExporter.DEBUG)
-        console.debug(`[process_due_fontblocks] Wrote block(${block_x},${block_y}) at pack ${current_pack}`);
+      if (CDGMagic_CDGExporter.DEBUG || (current_pack >= 680 && current_pack <= 750))
+        console.log(`[process_due_fontblocks] Pack ${current_pack} block(${block_x},${block_y}) z_layer=${z_layer}`);
     }
   }
 

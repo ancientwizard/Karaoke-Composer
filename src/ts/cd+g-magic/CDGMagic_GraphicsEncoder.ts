@@ -1049,6 +1049,13 @@ export class CDGMagic_GraphicsEncoder {
       if (track_options) {
         fontblock.z_location(track_options.track());
         fontblock.channel(track_options.channel());
+        if (start_pack >= 680 && start_pack <= 750) {
+          console.log(`[bmp_to_fonts] FontBlock(${block_x},${block_y}): z_location=${fontblock.z_location()}`);
+        }
+      } else {
+        if (start_pack >= 680 && start_pack <= 750) {
+          console.log(`[bmp_to_fonts] FontBlock(${block_x},${block_y}): NO track_options, z_location=${fontblock.z_location()}`);
+        }
       }
 
       // Extract 6×12 pixels from BMP at this block position
