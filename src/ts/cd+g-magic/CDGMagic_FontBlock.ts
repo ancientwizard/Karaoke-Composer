@@ -18,7 +18,7 @@ interface Palette_Entry {
  *
  * Each font block represents a single character or graphical element in CD+G.
  * - Dimensions: 12 pixels wide × 6 pixels high = 72 pixels total
- * - Color mode: 8-bit indexed color (0-255)
+ * - Color mode: 8-bit indexed color (0-255) OR transparent sentinel (256)
  * - Features: Transparency, z-ordering, XOR mode, channel masking
  *
  * Used primarily for:
@@ -36,7 +36,7 @@ export class CDGMagic_FontBlock {
   private internal_channel: number;           // Channel assignment (typically 0)
   private internal_transparent_index: number; // Color index treated as transparent (-1 = none)
   private internal_overlay_index: number;     // Color index used for overlay (-1 = none)
-  private internal_bmp_data: Uint8Array;      // Bitmap data (72 bytes = 12×6 pixels)
+  private internal_bmp_data: Uint16Array;     // Bitmap data (72 shorts = 12×6 pixels, supports 0-256)
   private numcolors_is_dirty: number;         // Flag: color count needs recalculation
   private number_of_colors: number;           // Cached count of unique colors
   private prom_colors_is_dirty: number;       // Flag: prominent colors need recalculation
@@ -64,8 +64,11 @@ export class CDGMagic_FontBlock {
     this.numcolors_is_dirty = 1;            // Need to recalculate colors
     this.prom_colors_is_dirty = 1;          // Need to calculate prominence
 
-    // Allocate storage for block data (72 bytes for 12×6 indexed color pixels)
-    this.internal_bmp_data = new Uint8Array(6 * 12);
+    // CRITICAL: Use Uint16Array (not Uint8Array) to support 0-256 value range
+    // - Values 0-255: palette indices (opaque colors)
+    // - Value 256: transparent sentinel (no pixel data / out of bounds)
+    // Uint8Array would clamp 256 to 0, making transparency impossible!
+    this.internal_bmp_data = new Uint16Array(6 * 12);
 
     // Prominence array allocated only if needed (saves memory)
     this.prominence_of_colors = null;
