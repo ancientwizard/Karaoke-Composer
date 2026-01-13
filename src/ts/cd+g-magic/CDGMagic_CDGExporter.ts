@@ -2014,23 +2014,6 @@ class CDGMagic_CDGExporter {
         }
       }
 
-      // Debug: Show sample of text block pixels
-      if (z_layer === 1 && current_pack === 683 && (block_x === 0 || block_x === 25 || block_x === 49)) {
-        let opaque_count = 0;
-        let zero_count = 0;
-        let nonzero_count = 0;
-        let min_val = 256;
-        let max_val = 0;
-        for (let i = 0; i < 72; i++) {
-          if (pixel_data[i] < 256) opaque_count++;
-          if (pixel_data[i] === 0) zero_count++;
-          else nonzero_count++;
-          min_val = Math.min(min_val, pixel_data[i]);
-          max_val = Math.max(max_val, pixel_data[i]);
-        }
-        process.stderr.write(`[DEBUG-pixels] Pack ${current_pack} block(${block_x},${block_y}) z_layer=${z_layer}: opaque=${opaque_count}, zero=${zero_count}, nonzero=${nonzero_count}, range=[${min_val},${max_val}]\n`);
-      }
-
       // Write block to compositor at its z-layer
       this.internal_compositor.write_block(block_x, block_y, z_layer, pixel_data);
       
