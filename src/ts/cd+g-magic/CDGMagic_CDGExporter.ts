@@ -110,11 +110,20 @@ class CDGMagic_CDGExporter {
     fontblock: any;
     start_pack: number;
     written: boolean;
+    clip_end_pack?: number;  // When this clip expires
+    z_layer?: number;
+    clip_id?: string;
   }> = [];
 
   // Track which blocks have been explicitly rendered via FontBlocks
   // Used to detect and output pre-filled edge blocks that weren't rendered
   private internal_rendered_blocks: Set<string> = new Set();
+
+  // Track clip lifetimes for expiration (simple: just mark when clips expire)
+  private internal_clip_lifetimes: Map<string, { start_pack: number; end_pack: number; z_layer: number }> = new Map();
+
+  // Track ownership of compositor blocks for per-clip expiration clearing
+  private internal_block_owners: Map<string, { clip_id: string; end_pack: number; z_layer: number }> = new Map();
 
   /**
    * Constructor: Create exporter
@@ -244,6 +253,9 @@ class CDGMagic_CDGExporter {
     // Clear existing schedule
     this.internal_packet_schedule.clear();
     this.internal_fontblock_queue = [];  // Reset FontBlock queue
+    this.internal_block_owners.clear();
+    this.internal_clip_lifetimes.clear();
+    this.internal_rendered_blocks.clear();
 
     // Initialize multi-layer compositor (Phase 1.3)
     // This will receive all clip data and composite layers before generating packets
@@ -329,6 +341,9 @@ class CDGMagic_CDGExporter {
       // First: Process scheduled packets (like MEMORY_PRESET) to update VRAM state
       this.process_scheduled_packets(current_pack);
       
+      // Clear expired clip blocks per layer before drawing new content
+      this.process_clip_expirations(current_pack);
+      
       // Check if any FontBlocks are due at this packet
       this.process_due_fontblocks(current_pack);
 
@@ -361,12 +376,68 @@ class CDGMagic_CDGExporter {
         // Fill VRAM with the preset color
         this.internal_vram.fill_with_color(color_index);
         
-        // Update compositor preset
+        // Update compositor preset and clear layers (scene reset)
         if (this.internal_compositor) {
           this.internal_compositor.set_preset_index(color_index);
+          this.internal_compositor.clear();
         }
+
+        // Reset ownership tracking on preset clears
+        this.internal_block_owners.clear();
       }
       // Could add other packet types here (BORDER_PRESET, etc.)
+    }
+  }
+
+  /**
+   * Process clip expirations and clear owned blocks
+   * 
+   * Clears only the compositor blocks owned by clips whose duration has ended,
+   * allowing lower layers to show through without full-screen wipes.
+   * 
+   * @param current_pack Current packet position
+   */
+  private process_clip_expirations(current_pack: number): void {
+    if (!this.internal_compositor || this.internal_block_owners.size === 0) {
+      return;
+    }
+
+    const expired_blocks: Array<{ key: string; block_x: number; block_y: number; z_layer: number }> = [];
+
+    for (const [block_key, owner] of this.internal_block_owners.entries()) {
+      if (owner.clip_id?.startsWith('text_')) {
+        // Text blocks persist until scene reset; do not expire here
+        continue;
+      }
+
+      // Clear when the timeline reaches or passes the owner's end pack
+      if (current_pack < owner.end_pack) {
+        continue;
+      }
+
+      const [xStr, yStr, zStr] = block_key.split(',');
+      const block_x = Number(xStr);
+      const block_y = Number(yStr);
+      const z_layer = Number(zStr);
+
+      if (!Number.isFinite(block_x) || !Number.isFinite(block_y) || !Number.isFinite(z_layer)) {
+        continue;
+      }
+
+      expired_blocks.push({ key: block_key, block_x, block_y, z_layer });
+    }
+
+    if (expired_blocks.length === 0) {
+      return;
+    }
+
+    for (const block of expired_blocks) {
+      this.internal_compositor.clear_block(block.block_x, block.block_y, block.z_layer);
+      this.internal_block_owners.delete(block.key);
+    }
+
+    if (CDGMagic_CDGExporter.DEBUG) {
+      console.debug(`[process_clip_expirations] Pack ${current_pack}: cleared ${expired_blocks.length} expired blocks`);
     }
   }
 
@@ -755,6 +826,16 @@ class CDGMagic_CDGExporter {
     if (CDGMagic_CDGExporter.DEBUG)
       console.debug('[schedule_text_clip] Starting TextClip at packet', clip.start_pack(), 'duration:', clip.duration());
 
+    // Track clip lifetime for expiration detection
+    const clip_id = `text_${clip.start_pack()}_${clip.duration()}`;
+    const clip_start = clip.start_pack();
+    const clip_end = clip_start + clip.duration();
+    const trackOptions = clip.track_options();
+    const z_layer = trackOptions && typeof trackOptions.track === 'function'
+      ? trackOptions.track()
+      : 0;
+    this.internal_clip_lifetimes.set(clip_id, { start_pack: clip_start, end_pack: clip_end, z_layer });
+
     // Get text properties
     const textContent = clip.text_content();
     let foregroundColor = clip.foreground_color();
@@ -865,7 +946,8 @@ class CDGMagic_CDGExporter {
         foregroundColor,
         outlineColor,
         clip.start_pack() + 3,  // All text at clip start + 3
-        events[0] || null
+        events[0] || null,
+        clip_id
       );
     } else {
       // KARAOKE mode: schedule each event at its individual timing
@@ -890,6 +972,11 @@ class CDGMagic_CDGExporter {
           );
         }
 
+        // CRITICAL FIX: Each event in a multi-event clip needs its own clip_id
+        // Otherwise, later events overwrite earlier events' end_pack metadata
+        // This caused text clip 3 part 1 to be cleared when part 2 starts
+        const event_clip_id = `${clip_id}_event${eventIdx}`;
+
         // Schedule this event's text at its specific timing
         this.schedule_text_clip_event(
           clip,
@@ -901,7 +988,8 @@ class CDGMagic_CDGExporter {
           foregroundColor,
           outlineColor,
           eventPacket,
-          event
+          event,
+          event_clip_id
         );
       }
     }
@@ -934,7 +1022,8 @@ class CDGMagic_CDGExporter {
     foregroundColor: number,
     outlineColor: number,
     schedulePacket: number,
-    event: any
+    event: any,
+    clip_id?: string
   ): void {
     // Screen dimensions are standard CD+G
     const screenWidth = 300;  // CD+G standard width
@@ -958,8 +1047,9 @@ class CDGMagic_CDGExporter {
     }
 
     // C++ PATTERN: Create one full-screen BMP for this event's line
-    // CRITICAL: Use Uint16Array to store 0-256 range (Uint8Array would clamp 256 to 0!)
-    const screenBmpPixels = new Uint16Array(screenWidth * screenHeight);
+    // CRITICAL: Need to store 0-256 range (palette indices 0-15, plus 256 for transparency)
+    // For compatibility with BMPData interface, use Uint8Array wrapper (cast values 256→255 internally)
+    const screenBmpPixels_internal = new Uint16Array(screenWidth * screenHeight);
     
     // CRITICAL FIX: Initialize to 256 (transparent sentinel) to allow background BMP to show through
     // The background_color() setting is for the background BOX in LYRICS mode only, not for the
@@ -967,9 +1057,12 @@ class CDGMagic_CDGExporter {
     // buffer (FLTK), then indexed pixels are extracted. For text-only (TITLES mode), non-text areas
     // must remain transparent (256) so the background BMP is visible.
     // See CDGMagic_TextClip.cpp line 128: fl_draw_box() draws to RGB buffer, not indexed pixels.
-    for (let i = 0; i < screenBmpPixels.length; i++) {
-      screenBmpPixels[i] = 256;  // Transparent sentinel - allows background BMP to show through
+    for (let i = 0; i < screenBmpPixels_internal.length; i++) {
+      screenBmpPixels_internal[i] = 256;  // Transparent sentinel - allows background BMP to show through
     }
+    
+    // For the drawing operations, we'll use the Uint16Array directly in a type-cast
+    const screenBmpPixels = screenBmpPixels_internal as unknown as Uint8Array;
     
     // Debug: Check initial state
     
@@ -1058,7 +1151,7 @@ class CDGMagic_CDGExporter {
               topStart,
               screenWidth,
               screenHeight,
-              screenBmpPixels,
+              screenBmpPixels_internal as unknown as Uint8Array,
               foregroundColor,
               useOutlineColor,
               fontSize,
@@ -1081,22 +1174,24 @@ class CDGMagic_CDGExporter {
     }
 
     // Create BMP data for the full screen
-    
+    // Cast Uint16Array to Uint8Array for BMPData interface (values 0-256 stored as-is)
     const screenBmpData = {
       width: screenWidth,
       height: screenHeight,
       bitsPerPixel: 8,
       palette: this.internal_palette.slice(0, 16),
-      pixels: screenBmpPixels
+      pixels: screenBmpPixels_internal as unknown as Uint8Array
     };
 
     // Convert to FontBlocks
     // CRITICAL: Pass track_options to ensure z_location (layer) is set correctly
     // track_options contains the track number (0-7) which determines which layer this clip renders to
     const trackOptions = clip.track_options();
+    const z_layer = trackOptions && typeof trackOptions.track === 'function'
+      ? trackOptions.track()
+      : 0;
     if (CDGMagic_CDGExporter.DEBUG || (schedulePacket >= 680 && schedulePacket <= 750)) {
-      const trackNum = trackOptions ? trackOptions.track() : -1;
-      console.log(`[schedule_text_clip_event] Text clip at pack ${schedulePacket}: track=${trackNum}`);
+      console.log(`[schedule_text_clip_event] Text clip at pack ${schedulePacket}: track=${z_layer}`);
     }
     const fontblocks = this.internal_graphics_encoder!.bmp_to_fonts(
       screenBmpData,
@@ -1118,7 +1213,41 @@ class CDGMagic_CDGExporter {
     // NOTE: Do NOT set replacement_transparent_color on text clip FontBlocks.
     // Transparency should be handled at BMP level (non-text pixels as black background).
     // FontBlocks should render all pixels as-is without transparency logic.
-    this.queue_fontblocks_for_progressive_writing(fontblocks);
+    
+    // CRITICAL FIX: For individual events (especially multi-part/multi-line text clips),
+    // determine when THIS event should expire. If there are multiple events with the same
+    // clip lifetime, each event should persist until EITHER:
+    //   (a) The next event in the clip starts (so new content replaces old)
+    //   (b) The entire clip ends (if this is the last event)
+    // This prevents early clearing of part 1 before part 2 displays.
+    //
+    // Calculate event-specific end_pack:
+    let event_end_pack = clip.start_pack() + clip.duration();  // Default: clip end
+    if (event) {
+      const eventOffset = Number(event.clipTimeOffset) || 0;
+      const eventDuration = Number(event.clipTimeDuration) || 0;
+      
+      if (eventDuration > 0) {
+        // Event has explicit duration - use it
+        event_end_pack = clip.start_pack() + eventOffset + eventDuration;
+      } else {
+        // Event has no explicit duration - find when next event starts (or clip ends)
+        const events = (clip as any)._events || [];
+        const currentEventIdx = events.indexOf(event);
+        
+        if (currentEventIdx >= 0 && currentEventIdx < events.length - 1) {
+          // There's a next event - this event lasts until next event starts
+          const nextEvent = events[currentEventIdx + 1];
+          const nextEventOffset = Number(nextEvent.clipTimeOffset) || 0;
+          event_end_pack = clip.start_pack() + nextEventOffset;
+        } else {
+          // This is the last event or not found - persist until clip end
+          event_end_pack = clip.start_pack() + clip.duration();
+        }
+      }
+    }
+    
+    this.queue_fontblocks_for_progressive_writing(fontblocks, event_end_pack, z_layer, clip_id);
   }
 
   /**
@@ -1264,7 +1393,10 @@ class CDGMagic_CDGExporter {
           // CRITICAL: Queue FontBlocks for time-based progressive writing instead of writing immediately
           // This ensures transitions work by spreading blocks across packets based on their start_pack() values
           // Matches C++ reference implementation: blocks written only when their scheduled time arrives
-          this.queue_fontblocks_for_progressive_writing(fontblocks);
+          const trackLayer = trackOptions && typeof trackOptions.track === 'function'
+            ? trackOptions.track()
+            : undefined;
+          this.queue_fontblocks_for_progressive_writing(fontblocks, undefined, trackLayer);
 
         }
 
@@ -1953,13 +2085,25 @@ class CDGMagic_CDGExporter {
    *
    * @param fontblocks Array of FontBlock instances to queue
    */
-  private queue_fontblocks_for_progressive_writing(fontblocks: any[]): void {
+  private queue_fontblocks_for_progressive_writing(
+    fontblocks: any[],
+    clip_end_pack?: number,
+    z_layer?: number,
+    clip_id?: string
+  ): void {
     for (const fontblock of fontblocks) {
       const start_pack = fontblock.start_pack();
+      const fontblock_layer = typeof fontblock.z_location === 'function'
+        ? fontblock.z_location()
+        : 0;
+      const owner_layer = z_layer !== undefined ? z_layer : fontblock_layer;
       this.internal_fontblock_queue.push({
         fontblock,
         start_pack,
         written: false,
+        clip_end_pack,
+        z_layer: owner_layer,
+        clip_id
       });
     }
 
@@ -1967,7 +2111,32 @@ class CDGMagic_CDGExporter {
     this.internal_fontblock_queue.sort((a, b) => a.start_pack - b.start_pack);
 
     if (CDGMagic_CDGExporter.DEBUG)
-      console.debug(`[queue_fontblocks] Queued ${fontblocks.length} FontBlocks for progressive writing`);
+      console.debug(
+        `[queue_fontblocks] Queued ${fontblocks.length} FontBlocks for progressive writing (end=${clip_end_pack}, clip=${clip_id || 'n/a'}, z=${z_layer ?? 'auto'})`
+      );
+  }
+
+  private register_block_owner(
+    block_x: number,
+    block_y: number,
+    z_layer: number,
+    clip_id?: string,
+    clip_end_pack?: number
+  ): void {
+    if (!clip_id || clip_end_pack === undefined) {
+      return;
+    }
+
+    const block_key = this.build_block_owner_key(block_x, block_y, z_layer);
+    this.internal_block_owners.set(block_key, {
+      clip_id,
+      end_pack: clip_end_pack,
+      z_layer
+    });
+  }
+
+  private build_block_owner_key(block_x: number, block_y: number, z_layer: number): string {
+    return `${block_x},${block_y},${z_layer}`;
   }
 
   /**
@@ -1992,8 +2161,8 @@ class CDGMagic_CDGExporter {
       const block_y = fontblock.y_location();
       const z_layer = fontblock.z_location();
       
-      if (current_pack >= 680 && current_pack <= 750) {
-        console.log(`[process_due_fontblocks] Pack ${current_pack} block(${block_x},${block_y}): fontblock.z_location()=${z_layer}`);
+      if (CDGMagic_CDGExporter.DEBUG && current_pack >= 680 && current_pack <= 750) {
+        console.debug(`[process_due_fontblocks] Pack ${current_pack} block(${block_x},${block_y}): fontblock.z_location()=${z_layer}`);
       }
 
       // CRITICAL: Match C++ bounds checking in write_fontblock()
@@ -2016,14 +2185,19 @@ class CDGMagic_CDGExporter {
 
       // Write block to compositor at its z-layer
       this.internal_compositor.write_block(block_x, block_y, z_layer, pixel_data);
+
+      // Record ownership for expiration-based clearing
+      const owner_layer = entry.z_layer !== undefined ? entry.z_layer : z_layer;
+      this.register_block_owner(block_x, block_y, owner_layer, entry.clip_id, entry.clip_end_pack);
       
       // Track that this block was explicitly rendered
       this.internal_rendered_blocks.add(`${block_x},${block_y}`);
       
       entry.written = true;
 
-      if (CDGMagic_CDGExporter.DEBUG || (current_pack >= 680 && current_pack <= 750))
-        console.log(`[process_due_fontblocks] Pack ${current_pack} block(${block_x},${block_y}) z_layer=${z_layer}`);
+      if (CDGMagic_CDGExporter.DEBUG && current_pack >= 680 && current_pack <= 750) {
+        console.debug(`[process_due_fontblocks] Pack ${current_pack} block(${block_x},${block_y}) z_layer=${z_layer}`);
+      }
     }
   }
 

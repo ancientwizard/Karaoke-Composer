@@ -205,6 +205,15 @@ class CompositorBuffer {
   }
 
   /**
+   * Clear a block on a specific layer to transparency
+   */
+  public clear_block(block_x: number, block_y: number, z: number): void {
+    const transparent_block = new Uint16Array(72);
+    transparent_block.fill(CompositorBuffer.TRANSPARENCY);
+    this.write_block(block_x, block_y, z, transparent_block);
+  }
+
+  /**
    * Get width in pixels
    */
   public get_width(): number {

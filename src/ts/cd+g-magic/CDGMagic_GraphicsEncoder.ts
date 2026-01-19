@@ -1049,12 +1049,12 @@ export class CDGMagic_GraphicsEncoder {
       if (track_options) {
         fontblock.z_location(track_options.track());
         fontblock.channel(track_options.channel());
-        if (start_pack >= 680 && start_pack <= 750) {
-          console.log(`[bmp_to_fonts] FontBlock(${block_x},${block_y}): z_location=${fontblock.z_location()}`);
+        if (DEBUG && start_pack >= 680 && start_pack <= 750) {
+          console.debug(`[bmp_to_fonts] FontBlock(${block_x},${block_y}): z_location=${fontblock.z_location()}`);
         }
       } else {
-        if (start_pack >= 680 && start_pack <= 750) {
-          console.log(`[bmp_to_fonts] FontBlock(${block_x},${block_y}): NO track_options, z_location=${fontblock.z_location()}`);
+        if (DEBUG && start_pack >= 680 && start_pack <= 750) {
+          console.debug(`[bmp_to_fonts] FontBlock(${block_x},${block_y}): NO track_options, z_location=${fontblock.z_location()}`);
         }
       }
 
@@ -1092,8 +1092,22 @@ export class CDGMagic_GraphicsEncoder {
         }
       }
 
-      // Add to output
-      fontblocks.push(fontblock);
+      // CRITICAL FIX: Skip FontBlocks that are entirely transparent
+      // This prevents Event 2 from overwriting Event 1's pixels with transparent values
+      // Example: Text clip 3 part 1 at Y=108-119 should not be overwritten by part 2's
+      // transparent pixels at those rows
+      let has_opaque_pixels = false;
+      for (let i = 0; i < 72; i++) {
+        if (fontblock.pixel_value(i % 6, Math.floor(i / 6)) < 256) {
+          has_opaque_pixels = true;
+          break;
+        }
+      }
+
+      // Only add blocks with actual content; skip fully transparent blocks
+      if (has_opaque_pixels) {
+        fontblocks.push(fontblock);
+      }
     }
 
     if (DEBUG)

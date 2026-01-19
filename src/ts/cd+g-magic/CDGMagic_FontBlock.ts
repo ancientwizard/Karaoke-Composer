@@ -336,7 +336,7 @@ export class CDGMagic_FontBlock {
    * @returns Uint8Array of 72 bytes (12×6 indexed pixels)
    */
   get_bitmap_data(): Uint8Array {
-    return this.internal_bmp_data;
+    return this.internal_bmp_data as unknown as Uint8Array;
   }
 
   /**

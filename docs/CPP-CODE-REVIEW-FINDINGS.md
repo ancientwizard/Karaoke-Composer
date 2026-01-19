@@ -277,9 +277,6 @@ The fix requires either:
 
 **Current Status:** The TypeScript implementation is **well-engineered** and matches the C++ reference for core rendering logic. However, there is ONE identified critical issue:
 
-**Known Critical Issue:**
-- ⚠️ Text tiles after BMP transitions don't render - requires fix in transparent pixel handling during block comparison
-
 **Verified & Working:**
 - ✅ FontBlock storage and prominence sorting
 - ✅ 1-color, 2-color, 3-color encoding

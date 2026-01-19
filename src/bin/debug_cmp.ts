@@ -9,14 +9,15 @@ const project = parser.parse();
 for (const clip of project.clips) {
   if (clip.type === 'TextClip') {
     console.log(`\n===== TextClip at packet ${clip.start}, duration ${clip.duration} =====`);
-    console.log(`Font: ${clip.data.fontFace}`);
-    console.log(`Size: ${clip.data.fontSize}pt`);
-    console.log(`Karaoke mode: ${clip.data.karaokeMode}`);
-    console.log(`Text: "${clip.data.textContent}"`);
-    console.log(`Events: ${clip.data.events.length}`);
+    const data = clip.data as any;
+    console.log(`Font: ${data.fontFace}`);
+    console.log(`Size: ${data.fontSize}pt`);
+    console.log(`Karaoke mode: ${data.karaokeMode}`);
+    console.log(`Text: "${data.textContent}"`);
+    console.log(`Events: ${data.events.length}`);
     
-    for (let i = 0; i < Math.min(3, clip.data.events.length); i++) {
-      const event = clip.data.events[i];
+    for (let i = 0; i < Math.min(3, data.events.length); i++) {
+      const event = data.events[i];
       console.log(`  Event ${i}:`);
       console.log(`    Time offset: ${event.clipTimeOffset} packets`);
       console.log(`    Duration: ${event.clipTimeDuration} packets`);

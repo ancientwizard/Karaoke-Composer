@@ -14,11 +14,11 @@ Global defaults
    everytime you forget to use them your work suffers and I have to redirect you. It wastes time
    due to all the rework.
 - Module format: ESM (import/export). Target runtime: Node 18+.
-- AI will not 'git commit' until asked to do!
+- AI will not perform 'git commit' until asked it to do!
 - Package manager: npm.
 - Line endings: LF. Encoding: UTF-8.
 - Bracing style: place opening brace on the next line (Allman-style) is prefered for all new code but
-  use whatever is is theer already if it causing you syntax issues. you should be smarter than the brace
+  use whatever is there already; if its causing you syntax issues. you should be smarter than the brace!
 - Indentation: 2 spaces.
 - Maximum line length: 130 characters; wrap instead of truncating.
 - Typing: prefer strict types; use explicit return types on exported functions.
@@ -75,14 +75,14 @@ Guidelines
 - Seeing files the agent may not have access to directly; ask to run the command
 
 Where to find things
- - reference/ contains code and other files as reference material
+ - reference/cd+g-magic/CDG_Magic/Source/ contains code as reference material
       E.G. like how to create .cdg files
  - bin/ things I'll run, unless I ask you wont make change here;
       Though I think two of these should be moved my me to the diag/ (TBD)
  - diag/ lots of tools etc to support/aide development; thinks I can delete on a whim
  - dist/ obvious
  - docs/ subject matter .md files; put ALL new .md's here
- - projects/  I'll explain later once Agent mode starts working again
+ - cdg-projects/  resources as input for creating .cdg's
  - src/ where our project's well manacured code lives.
 
 <!-- End of AGENTS.md -->

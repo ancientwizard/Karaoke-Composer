@@ -11,7 +11,7 @@
 
 import { CDGMagic_BMPLoader } from "@/ts/cd+g-magic/CDGMagic_BMPLoader";
 import { CDGMagic_BMPObject } from "@/ts/cd+g-magic/CDGMagic_BMPObject";
-import { CDGMagic_GraphicsEncoder, BMPData } from "@/ts/cd+g-magic/CDGMagic_GraphicsEncoder";
+import { CDGMagic_GraphicsEncoder, type BMPData } from "@/ts/cd+g-magic/CDGMagic_GraphicsEncoder";
 import { CDGMagic_FontBlock } from "@/ts/cd+g-magic/CDGMagic_FontBlock";
 import { CDGMagic_TrackOptions } from "@/ts/cd+g-magic/CDGMagic_TrackOptions_Core";
 import { type TransitionData } from "@/ts/cd+g-magic/TransitionFileReader";
@@ -414,7 +414,7 @@ describe("BMP to FontBlock Conversion Pipeline", () => {
         // fileY=0 is bottom of image, fileY=height-1 is top of image
         // Visual row (from top): visualY = height - fileY - 1
         const visualY = height - fileY - 1;
-        const color = visualY >= height / 2 ? 20 : 10; // Top half gets color 20, bottom half gets color 10
+        const color = visualY < height / 2 ? 20 : 10; // Top half (visualY 0-4) gets color 20, bottom half (visualY 5-9) gets color 10
         
         for (let x = 0; x < width; x++) {
           const filePos = pixelOffset + fileY * width + x;
