@@ -6,12 +6,12 @@
  */
 
 import fs from 'fs';
-import { CDGMagic_MediaClip     } from "@/ts/cd+g-magic/CDGMagic_MediaClip";
-import { CDGMagic_TextClip      } from "@/ts/cd+g-magic/CDGMagic_TextClip";
-import { CDGMagic_ScrollClip    } from "@/ts/cd+g-magic/CDGMagic_ScrollClip";
-import { CDGMagic_PALGlobalClip } from "@/ts/cd+g-magic/CDGMagic_PALGlobalClip";
-import { CDGMagic_BMPClip       } from "@/ts/cd+g-magic/CDGMagic_BMPClip";
-import { CDGMagic_BMPLoader     } from "@/ts/cd+g-magic/CDGMagic_BMPLoader";
+import { CDGMagic_MediaClip       } from "@/ts/cd+g-magic/CDGMagic_MediaClip";
+import { CDGMagic_TextClip        } from "@/ts/cd+g-magic/CDGMagic_TextClip";
+import { CDGMagic_ScrollClip      } from "@/ts/cd+g-magic/CDGMagic_ScrollClip";
+import { CDGMagic_PALGlobalClip   } from "@/ts/cd+g-magic/CDGMagic_PALGlobalClip";
+import { CDGMagic_BMPClip         } from "@/ts/cd+g-magic/CDGMagic_BMPClip";
+import { CDGMagic_BMPLoader       } from "@/ts/cd+g-magic/CDGMagic_BMPLoader";
 import { CDGMagic_GraphicsEncoder } from "@/ts/cd+g-magic/CDGMagic_GraphicsEncoder";
 import { loadTransitionFile, getDefaultTransition, getNoTransition } from "@/ts/cd+g-magic/TransitionFileReader";
 import {
@@ -21,10 +21,10 @@ import {
   getFontIndexFromCMPFace,
   wrapTextToWidth
 } from "@/ts/cd+g-magic/TextRenderer";
-import { CompositorBuffer       } from "@/ts/cd+g-magic/CompositorBuffer";
-import { VRAMBuffer             } from "@/ts/cd+g-magic/VRAMBuffer";
-import { encode_block           } from "@/ts/cd+g-magic/MultiColorEncoder";
-import type { TransitionData    } from "@/ts/cd+g-magic/TransitionFileReader";
+import { CompositorBuffer         } from "@/ts/cd+g-magic/CompositorBuffer";
+import { VRAMBuffer               } from "@/ts/cd+g-magic/VRAMBuffer";
+import { encode_block             } from "@/ts/cd+g-magic/MultiColorEncoder";
+import type { TransitionData      } from "@/ts/cd+g-magic/TransitionFileReader";
 
 /**
  * CD+G Instruction Codes (byte 1 of packet) for TV Graphics mode (0x09)
@@ -37,8 +37,8 @@ enum CDGInstruction {
   XOR_FONT          = 0x26,  // XOR font block
   SCROLL_PRESET     = 0x14,  // Scroll setup
   SCROLL_COPY       = 0x18,  // Scroll execute
-  TRANSPARENT_COLOR = 0x1C, // Set transparent color index
-  LOAD_LOW          = 0x1E,  // Load palette entries 0-7 (LOAD_CLUT_LO)
+  TRANSPARENT_COLOR = 0x1C,  // Set transparent color index
+  LOAD_LOW          = 0x1E,  // Load palette entries  0-7 (LOAD_CLUT_LO)
   LOAD_HIGH         = 0x1F,  // Load palette entries 8-15 (LOAD_CLUT_HI)
 }
 
@@ -144,18 +144,227 @@ class CDGMagic_CDGExporter {
   }
 
   /**
+   * Get all preset palettes used by CD+Graphics Magic
+   * These are the 9 embedded palettes defined in CDGMagic_TextClip.h
+   * Each palette has 16 colors with RGB values (8-bit per channel)
+   *
+   * @returns Array of 9 palettes, each with 16 [R,G,B] color tuples
+   */
+  private get_all_preset_palettes(): Array<Array<[number, number, number]>> {
+    // All 9 preset palettes from CDGMagic_TextClip.h embedded_palettes
+    // Format in C++: 0xRRGGBB00 (little-endian RGB with alpha=00)
+    const presets: Array<Array<[number, number, number]>> = [
+      // Preset 0: Standard CD+G colors
+      [
+        [0, 0, 0],           // 0: Black
+        [255, 255, 255],     // 1: White
+        [255, 0, 0],         // 2: Red
+        [0, 255, 0],         // 3: Green
+        [0, 0, 255],         // 4: Blue
+        [255, 255, 0],       // 5: Yellow
+        [255, 0, 255],       // 6: Magenta
+        [0, 255, 255],       // 7: Cyan
+        [68, 68, 68],        // 8: Dark Gray (0x44444400 = 44,44,44)
+        [136, 136, 136],     // 9: Medium Gray (0x88888800 = 88,88,88)
+        [136, 0, 0],         // 10: Dark Red (0x88000000)
+        [0, 136, 0],         // 11: Dark Green (0x00880000)
+        [0, 0, 136],         // 12: Dark Blue (0x00008800)
+        [136, 136, 0],       // 13: Dark Yellow (0x88880000)
+        [136, 0, 136],       // 14: Dark Magenta (0x88008800)
+        [0, 136, 136],       // 15: Dark Cyan (0x00888800)
+      ],
+      // Preset 1: Karaoke-friendly (warm tones)
+      [
+        [119, 119, 0],       // 0: Olive/Brown (0x00777700 = 77,77,00)
+        [0, 0, 0],           // 1: Black (0x00000000)
+        [255, 255, 255],     // 2: White (0xFFFFFF00)
+        [51, 51, 51],        // 3: Dark Gray (0x33333300)
+        [119, 119, 0],       // 4: Olive/Brown (same as 0)
+        [170, 85, 0],        // 5: Orange-Brown (0xAA550000 = AA,55,00)
+        [0, 255, 0],         // 6: Green (0x00FF0000)
+        [17, 85, 17],        // 7: Dark Green (0x11551100)
+        [119, 119, 0],       // 8: Olive/Brown (same as 0)
+        [85, 85, 85],        // 9: Medium Gray (0x55555500)
+        [255, 119, 0],       // 10: Orange (0xFF770000)
+        [85, 34, 0],         // 11: Dark Orange (0x55220000)
+        [119, 119, 0],       // 12: Olive/Brown (same as 0)
+        [51, 51, 136],       // 13: Blue-Purple (0x33338800 = 33,33,88) - KARAOKE BG
+        [255, 0, 0],         // 14: Red (0xFF000000)
+        [85, 0, 0],          // 15: Dark Red (0x55000000)
+      ],
+      // Preset 2: Cool tones
+      [
+        [68, 68, 102],       // 0: Dark Blue-Gray (0x44446600)
+        [0, 0, 0],           // 1: Black (0x00000000)
+        [255, 255, 255],     // 2: White (0xFFFFFF00)
+        [68, 68, 68],        // 3: Dark Gray (0x44444400)
+        [68, 68, 102],       // 4: Dark Blue-Gray (same as 0)
+        [119, 119, 119],     // 5: Gray (0x77777700)
+        [0, 255, 0],         // 6: Green (0x00FF0000)
+        [34, 136, 34],       // 7: Dark Green (0x22882200)
+        [0, 0, 0],           // 8: Black (0x00000000)
+        [34, 34, 34],        // 9: Very Dark Gray (0x22222200)
+        [68, 68, 68],        // 10: Dark Gray (0x44444400)
+        [102, 102, 102],     // 11: Medium Gray (0x66666600)
+        [136, 136, 136],     // 12: Gray (0x88888800)
+        [170, 170, 170],     // 13: Light Gray (0xAAAAAA00)
+        [204, 204, 204],     // 14: Lighter Gray (0xCCCCCC00)
+        [238, 238, 238],     // 15: Very Light Gray (0xEEEEEE00)
+      ],
+      // Preset 3: Bright cool tones
+      [
+        [68, 68, 102],       // 0: Dark Blue-Gray (0x44446600)
+        [0, 0, 0],           // 1: Black (0x00000000)
+        [238, 238, 238],     // 2: Very Light Gray (0xEEEEEE00)
+        [68, 68, 68],        // 3: Dark Gray (0x44444400)
+        [68, 68, 102],       // 4: Dark Blue-Gray (same as 0)
+        [119, 119, 119],     // 5: Gray (0x77777700)
+        [255, 255, 0],       // 6: Yellow (0xFFFF0000)
+        [85, 85, 17],        // 7: Dark Olive (0x55551100)
+        [0, 0, 0],           // 8: Black (0x00000000)
+        [34, 34, 34],        // 9: Very Dark Gray (0x22222200)
+        [68, 68, 68],        // 10: Dark Gray (0x44444400)
+        [102, 102, 102],     // 11: Medium Gray (0x66666600)
+        [136, 136, 136],     // 12: Gray (0x88888800)
+        [170, 170, 170],     // 13: Light Gray (0xAAAAAA00)
+        [204, 204, 204],     // 14: Lighter Gray (0xCCCCCC00)
+        [238, 238, 238],     // 15: Very Light Gray (0xEEEEEE00)
+      ],
+      // Preset 4: Green tones
+      [
+        [68, 68, 102],       // 0: Dark Blue-Gray (0x44446600)
+        [0, 0, 0],           // 1: Black (0x00000000)
+        [255, 255, 255],     // 2: White (0xFFFFFF00)
+        [68, 68, 68],        // 3: Dark Gray (0x44444400)
+        [68, 68, 102],       // 4: Dark Blue-Gray (same as 0)
+        [136, 255, 0],       // 5: Lime Green (0x88FF0000)
+        [0, 0, 0],           // 6: Black (0x00000000)
+        [85, 85, 85],        // 7: Gray (0x55555500)
+        [0, 0, 0],           // 8: Black (0x00000000)
+        [34, 34, 34],        // 9: Very Dark Gray (0x22222200)
+        [68, 68, 68],        // 10: Dark Gray (0x44444400)
+        [102, 102, 102],     // 11: Medium Gray (0x66666600)
+        [136, 136, 136],     // 12: Gray (0x88888800)
+        [170, 170, 170],     // 13: Light Gray (0xAAAAAA00)
+        [204, 204, 204],     // 14: Lighter Gray (0xCCCCCC00)
+        [238, 238, 238],     // 15: Very Light Gray (0xEEEEEE00)
+      ],
+      // Preset 5: Purple/Blue tones
+      [
+        [34, 34, 204],       // 0: Blue-Purple (0x2222CC00)
+        [0, 0, 0],           // 1: Black (0x00000000)
+        [255, 255, 255],     // 2: White (0xFFFFFF00)
+        [68, 68, 68],        // 3: Dark Gray (0x44444400)
+        [34, 34, 204],       // 4: Blue-Purple (same as 0)
+        [187, 85, 0],        // 5: Orange-Brown (0xBB550000)
+        [238, 221, 0],       // 6: Gold (0xEEDD0000)
+        [136, 119, 68],      // 7: Dark Brown (0x88774400)
+        [0, 0, 0],           // 8: Black (0x00000000)
+        [34, 34, 34],        // 9: Very Dark Gray (0x22222200)
+        [68, 68, 68],        // 10: Dark Gray (0x44444400)
+        [102, 102, 102],     // 11: Medium Gray (0x66666600)
+        [136, 136, 136],     // 12: Gray (0x88888800)
+        [170, 170, 170],     // 13: Light Gray (0xAAAAAA00)
+        [204, 204, 204],     // 14: Lighter Gray (0xCCCCCC00)
+        [238, 238, 238],     // 15: Very Light Gray (0xEEEEEE00)
+      ],
+      // Preset 6: Forest green
+      [
+        [0, 0, 119],         // 0: Forest Green (0x00007700)
+        [0, 0, 0],           // 1: Black (0x00000000)
+        [255, 255, 255],     // 2: White (0xFFFFFF00)
+        [68, 68, 68],        // 3: Dark Gray (0x44444400)
+        [0, 0, 119],         // 4: Forest Green (same as 0)
+        [221, 0, 0],         // 5: Red (0xDD000000)
+        [0, 221, 0],         // 6: Green (0x00DD0000)
+        [17, 51, 17],        // 7: Dark Green (0x11331100)
+        [0, 0, 0],           // 8: Black (0x00000000)
+        [34, 34, 34],        // 9: Very Dark Gray (0x22222200)
+        [68, 68, 68],        // 10: Dark Gray (0x44444400)
+        [102, 102, 102],     // 11: Medium Gray (0x66666600)
+        [136, 136, 136],     // 12: Gray (0x88888800)
+        [170, 170, 170],     // 13: Light Gray (0xAAAAAA00)
+        [204, 204, 204],     // 14: Lighter Gray (0xCCCCCC00)
+        [238, 238, 238],     // 15: Very Light Gray (0xEEEEEE00)
+      ],
+      // Preset 7: Black with bright accents
+      [
+        [0, 0, 0],           // 0: Black (0x00000000)
+        [68, 68, 68],        // 1: Dark Gray (0x44444400)
+        [255, 255, 255],     // 2: White (0xFFFFFF00)
+        [68, 68, 68],        // 3: Dark Gray (0x44444400)
+        [0, 0, 0],           // 4: Black (same as 0)
+        [170, 85, 0],        // 5: Orange-Brown (0xAA550000)
+        [0, 255, 0],         // 6: Green (0x00FF0000)
+        [17, 85, 17],        // 7: Dark Green (0x11551100)
+        [0, 0, 0],           // 8: Black (0x00000000)
+        [34, 34, 119],       // 9: Dark Blue (0x22227700)
+        [255, 255, 0],       // 10: Yellow (0xFFFF0000)
+        [85, 85, 17],        // 11: Dark Olive (0x55551100)
+        [0, 0, 0],           // 12: Black (0x00000000)
+        [34, 119, 119],      // 13: Dark Cyan (0x22777700)
+        [255, 0, 255],       // 14: Magenta (0xFF00FF00)
+        [85, 17, 85],        // 15: Dark Purple (0x55115500)
+      ],
+      // Preset 8: Rainbow bright
+      [
+        [0, 0, 0],           // 0: Black (0x00000000)
+        [17, 17, 136],       // 1: Dark Blue (0x11118800)
+        [255, 255, 255],     // 2: White (0xFFFFFF00)
+        [51, 51, 51],        // 3: Dark Gray (0x33333300)
+        [255, 238, 0],       // 4: Gold (0xFFEE0000)
+        [51, 34, 0],         // 5: Dark Brown (0x33220000)
+        [0, 170, 255],       // 6: Cyan-Blue (0x00AAFF00)
+        [0, 17, 51],         // 7: Very Dark Blue (0x00113300)
+        [0, 136, 0],         // 8: Green (0x00880000)
+        [0, 34, 0],          // 9: Dark Green (0x00220000)
+        [255, 68, 68],       // 10: Light Red (0xFF444400)
+        [51, 17, 17],        // 11: Dark Red (0x33111100)
+        [255, 34, 187],      // 12: Pink (0xFF22BB00)
+        [51, 0, 17],         // 13: Dark Purple (0x33001100)
+        [255, 170, 0],       // 14: Orange (0xFFAA0000)
+        [51, 17, 0],         // 15: Dark Orange (0x33110000)
+      ],
+    ];
+    return presets;
+  }
+
+  /**
+   * Get palette by index (0-8 for presets, falls back to standard if out of range)
+   *
+   * @param paletteIndex Palette index (0-8 for presets, -1 or invalid for standard palette)
+   * @returns Palette as array of [R,G,B] tuples
+   */
+  private get_palette_by_index(paletteIndex: number): Array<[number, number, number]> {
+    const allPresets = this.get_all_preset_palettes();
+    
+    // If palette index is explicitly in range 0-8, use that preset
+    if (paletteIndex >= 0 && paletteIndex < allPresets.length) {
+      return allPresets[paletteIndex];
+    }
+    
+    // For any other value (-1, -2, or out of range), use the STANDARD palette
+    // NOT Preset 0, which is different from the standard
+    return this.init_default_palette();
+  }
+
+  /**
    * Initialize default 16-color palette (CD+G standard)
+   * 
+   * This is the TRUE standard CD+G palette used when no clip-specific palette is requested.
+   * Used for Scene 1, BMPs, and any other content that doesn't explicitly specify a palette.
    *
    * @returns Array of [R, G, B] tuples for colors 0-15
    */
   private init_default_palette(): Array<[number, number, number]> {
     // CD+G standard palette: 16 colors, 8-bit RGB per channel (0-255)
+    // This is the ORIGINAL standard palette, NOT Preset 0 from CD+Graphics Magic
     // Divided by 17 to get 4-bit values during packet encoding
     const palette: Array<[number, number, number]> = [
       [0, 0, 0],           // 0: Black
-      [0, 0, 255],         // 1: Blue
+      [0, 0, 255],         // 1: Blue (STANDARD - NOT CHANGED)
       [255, 0, 0],         // 2: Red
-      [255, 0, 255],       // 3: Magenta
+      [255, 0, 255],       // 3: Magenta (STANDARD - NOT CHANGED)
       [0, 255, 0],         // 4: Green
       [0, 255, 255],       // 5: Cyan
       [255, 255, 0],       // 6: Yellow
@@ -275,8 +484,45 @@ class CDGMagic_CDGExporter {
     // Reference: CDGMagic_PALGlobalClip::CDGMagic_PALGlobalClip() with start_offset=250
     this.inject_scroll_reset_packets();
 
+    // Track which tracks have clips (for detecting successor clips)
+    const trackClips: Map<number, Array<{ clip: CDGMagic_MediaClip; startPack: number }>> = new Map();
+    
+    // First pass: organize clips by track
+    for (const clip of this.internal_clips) {
+      const trackOptions = typeof (clip as any).track_options === 'function' ? (clip as any).track_options() : null;
+      const track = trackOptions && typeof trackOptions.track === 'function' ? trackOptions.track() : 0;
+      
+      if (!trackClips.has(track)) {
+        trackClips.set(track, []);
+      }
+      trackClips.get(track)!.push({ clip, startPack: clip.start_pack() });
+    }
+    
+    // Sort clips by start pack within each track
+    for (const track of trackClips.values()) {
+      track.sort((a, b) => a.startPack - b.startPack);
+    }
+
     // Process each clip - queues FontBlocks instead of writing immediately
     for (const clip of this.internal_clips) {
+      // Check if this clip is a successor (not the first on its track)
+      const trackOptions = typeof (clip as any).track_options === 'function' ? (clip as any).track_options() : null;
+      const track = trackOptions && typeof trackOptions.track === 'function' ? trackOptions.track() : 0;
+      const clipsOnTrack = trackClips.get(track) || [];
+      const isSuccessorClip = clipsOnTrack.length > 0 && clipsOnTrack[0].clip !== clip;
+      
+      // If this is a successor clip, emit MEMORY_PRESET to clear previous content
+      if (isSuccessorClip && clip.start_pack() > 0) {
+        // Use background color as the clear color
+        const clearColor = (clip instanceof CDGMagic_TextClip && typeof (clip as any).box_index === 'function') 
+          ? (clip as any).box_index() 
+          : 0;
+        this.add_scheduled_packet(clip.start_pack(), this.create_memory_preset_packet(clearColor));
+        if (CDGMagic_CDGExporter.DEBUG) {
+          console.log(`[export_cdg] Emitting MEMORY_PRESET at packet ${clip.start_pack()} for successor clip on track ${track} (color ${clearColor})`);
+        }
+      }
+      
       if (clip instanceof CDGMagic_TextClip) {
         this.schedule_text_clip(clip);
       } else if (clip instanceof CDGMagic_ScrollClip) {
@@ -883,15 +1129,48 @@ class CDGMagic_CDGExporter {
         `outline=${outlineColor}, aa=${antialiasMode}, karaoke=${karaokeMode}`
       );
 
-    // Load palette
-    this.add_scheduled_packet(clip.start_pack(), this.create_load_low_packet(0, 1, 2, 3, 4, 5, 6, 7));
-    this.add_scheduled_packet(clip.start_pack() + 1, this.create_load_high_packet(8, 9, 10, 11, 12, 13, 14, 15));
+    // CRITICAL: Only update palette if TextClip explicitly specifies one
+    // Get palette number from the clip (TextClip stores this as defaultPaletteNumber in CMP)
+    // Cast to any to access extended properties
+    const clipData = (clip as any)._data || {};
+    let paletteIndex = clipData.defaultPaletteNumber !== undefined ? clipData.defaultPaletteNumber : -1;
+    
+    // Handle special values: 0xFFFFFFFF (unsigned) or -1 means "palette=none" (don't change)
+    // Clamp to signed 32-bit for comparison
+    if (paletteIndex === 4294967295 || paletteIndex < 0) {
+      paletteIndex = -1;  // -1 signals: do NOT update palette (use current/existing)
+    }
+    
+    // ONLY update palette and emit packets if paletteIndex >= 0
+    if (paletteIndex >= 0) {
+      // TextClip explicitly specifies a palette - load and use it
+      const selectedPalette = this.get_palette_by_index(paletteIndex);
+      this.internal_palette = selectedPalette;
+      
+      if (CDGMagic_CDGExporter.DEBUG) {
+        console.debug(
+          `[schedule_text_clip] Palette: index=${paletteIndex}, color 13=RGB(${selectedPalette[13][0]},${selectedPalette[13][1]},${selectedPalette[13][2]})`
+        );
+      }
+
+      // Emit palette packets to switch to this palette
+      // NOTE: If MEMORY_PRESET was emitted at start_pack in export_cdg(), 
+      // these palettes will follow after it automatically (packet scheduling sorts by time)
+      this.add_scheduled_packet(clip.start_pack() + 1, this.create_load_low_packet(0, 1, 2, 3, 4, 5, 6, 7));
+      this.add_scheduled_packet(clip.start_pack() + 2, this.create_load_high_packet(8, 9, 10, 11, 12, 13, 14, 15));
+    } else {
+      // paletteIndex < 0: palette=none - do NOT change the palette
+      // Text will render using the currently active palette (from BMP or previous palette change)
+      if (CDGMagic_CDGExporter.DEBUG) {
+        console.debug(`[schedule_text_clip] Palette: none (using current palette, no change)`);
+      }
+    }
 
     // Schedule border preset (only if enabled)
     const textBorderIndex = clip.border_index();
     if (textBorderIndex < 16) {
       const textBorderColor = clip.frame_index();
-      this.add_scheduled_packet(clip.start_pack() + 2, this.create_border_preset_packet(textBorderColor));
+      this.add_scheduled_packet(clip.start_pack() + 3, this.create_border_preset_packet(textBorderColor));
     }
 
     // Schedule memory preset (only if enabled)
@@ -972,25 +1251,54 @@ class CDGMagic_CDGExporter {
           );
         }
 
-        // CRITICAL FIX: Each event in a multi-event clip needs its own clip_id
-        // Otherwise, later events overwrite earlier events' end_pack metadata
-        // This caused text clip 3 part 1 to be cleared when part 2 starts
-        const event_clip_id = `${clip_id}_event${eventIdx}`;
+        // CRITICAL: Detect clearing events (Word=0xFFFFFFFF in C++ = 4294967295 in JS unsigned)
+        // These are KARAOKE_ERASE events that should clear the line by rendering background color
+        const isClearingEvent = clipWordNum === 4294967295;
+        
+        if (isClearingEvent) {
+          // CLEARING EVENT: Render background color to clear the line
+          // This is equivalent to C++ KARAOKE_ERASE events
+          if (CDGMagic_CDGExporter.DEBUG) {
+            console.debug(
+              `[schedule_text_clip] Clearing event ${eventIdx}: will erase line ${clipLineNum} at packet ${eventPacket}`
+            );
+          }
+          
+          // Schedule a clear line event (render background/fill color to the line area)
+          this.schedule_text_clip_clear_event(
+            clip,
+            lines,
+            fontIndex,
+            fontSize,
+            fontPixelHeight,
+            lineHeight,
+            backgroundColor,  // Use background color to clear
+            eventPacket,
+            event,
+            `${clip_id}_event${eventIdx}_clear`
+          );
+        } else {
+          // NORMAL EVENT: Render text or highlight
+          // CRITICAL FIX: Each event in a multi-event clip needs its own clip_id
+          // Otherwise, later events overwrite earlier events' end_pack metadata
+          // This caused text clip 3 part 1 to be cleared when part 2 starts
+          const event_clip_id = `${clip_id}_event${eventIdx}`;
 
-        // Schedule this event's text at its specific timing
-        this.schedule_text_clip_event(
-          clip,
-          lines,
-          fontIndex,
-          fontSize,
-          fontPixelHeight,
-          lineHeight,
-          foregroundColor,
-          outlineColor,
-          eventPacket,
-          event,
-          event_clip_id
-        );
+          // Schedule this event's text at its specific timing
+          this.schedule_text_clip_event(
+            clip,
+            lines,
+            fontIndex,
+            fontSize,
+            fontPixelHeight,
+            lineHeight,
+            foregroundColor,
+            outlineColor,
+            eventPacket,
+            event,
+            event_clip_id
+          );
+        }
       }
     }
   }
@@ -1251,6 +1559,112 @@ class CDGMagic_CDGExporter {
   }
 
   /**
+   * Schedule a line clearing event (KARAOKE_ERASE in C++ terms)
+   * Renders background color to clear a line area, replacing previous text
+   *
+   * @param clip TextClip being processed
+   * @param lines Text lines array
+   * @param fontIndex Font index
+   * @param fontSize Font size in pixels
+   * @param fontPixelHeight Pixel height of font
+   * @param lineHeight Height of each line
+   * @param backgroundColor Color index to render (typically background color)
+   * @param schedulePacket When to schedule this clear (packet time)
+   * @param event Event data with positioning
+   * @param clip_id Unique clip ID for tracking
+   */
+  private schedule_text_clip_clear_event(
+    clip: CDGMagic_TextClip,
+    lines: string[],
+    fontIndex: number,
+    fontSize: number,
+    fontPixelHeight: number,
+    lineHeight: number,
+    backgroundColor: number,
+    schedulePacket: number,
+    event: any,
+    clip_id: string
+  ): void {
+    // Screen dimensions are standard CD+G
+    const screenWidth = 300;  // CD+G standard width
+    const screenHeight = 216;  // Full CD+G height
+
+    const textXOffset = Number(event?.xOffset) || 6;
+    const textYOffset = Number(event?.yOffset) || 12;
+    const eventWidth = Number(event?.width) || screenWidth;
+    const eventHeight = Number(event?.height) || lineHeight;
+
+    if (CDGMagic_CDGExporter.DEBUG) {
+      console.debug(
+        `[schedule_text_clip_clear_event] Clearing line at packet ${schedulePacket}: ` +
+        `pos=(${textXOffset},${textYOffset}), size=(${eventWidth}x${eventHeight}), bgColor=${backgroundColor}`
+      );
+    }
+
+    // Create a full-screen BMP where we'll fill the line area with background color
+    const screenBmpPixels_internal = new Uint16Array(screenWidth * screenHeight);
+    
+    // CRITICAL: Initialize to 256 (transparent) everywhere
+    // We only want to render the background color in the specific line area
+    for (let i = 0; i < screenBmpPixels_internal.length; i++) {
+      screenBmpPixels_internal[i] = 256;  // Transparent sentinel
+    }
+
+    // CRITICAL: Fill the line rectangle with the background color
+    // This simulates the C++ KARAOKE_ERASE behavior: render background color to line area
+    const clearStartY = textYOffset;
+    const clearEndY = textYOffset + eventHeight;
+    const clearStartX = textXOffset;
+    const clearEndX = textXOffset + eventWidth;
+
+    for (let py = clearStartY; py < clearEndY && py < screenHeight; py++) {
+      for (let px = clearStartX; px < clearEndX && px < screenWidth; px++) {
+        const pixelIndex = py * screenWidth + px;
+        if (pixelIndex >= 0 && pixelIndex < screenBmpPixels_internal.length) {
+          // Use the background color (clamped to palette range 0-15)
+          screenBmpPixels_internal[pixelIndex] = Math.min(15, Math.max(0, backgroundColor));
+        }
+      }
+    }
+
+    // Create BMP data for the full screen
+    const screenBmpData = {
+      width: screenWidth,
+      height: screenHeight,
+      bitsPerPixel: 8,
+      palette: this.internal_palette.slice(0, 16),
+      pixels: screenBmpPixels_internal as unknown as Uint8Array
+    };
+
+    // Convert to FontBlocks
+    const trackOptions = clip.track_options();
+    const z_layer = trackOptions && typeof trackOptions.track === 'function'
+      ? trackOptions.track()
+      : 0;
+
+    const fontblocks = this.internal_graphics_encoder!.bmp_to_fonts(
+      screenBmpData,
+      schedulePacket,
+      getNoTransition(),
+      trackOptions,
+      0,
+      0,
+      CDGMagic_CDGExporter.DEBUG
+    );
+
+    if (CDGMagic_CDGExporter.DEBUG) {
+      console.debug(
+        `[schedule_text_clip_clear_event] Created ${fontblocks.length} FontBlocks for line clear at packet ${schedulePacket}`
+      );
+    }
+
+    // Queue FontBlocks for brief duration (just one frame/packet)
+    // Clear events typically only last one packet since they're just restoring the background
+    const event_end_pack = schedulePacket + 1;
+    this.queue_fontblocks_for_progressive_writing(fontblocks, event_end_pack, z_layer, clip_id);
+  }
+
+  /**
    * Schedule packets for ScrollClip
    *
    * @param clip ScrollClip to schedule
@@ -1311,16 +1725,29 @@ class CDGMagic_CDGExporter {
             pixels: bmpLoader.get_pixel_data(),
           };
 
-          // Use the BMP's actual palette colors (not standard palette!)
-          // The BMP palette contains the real colors to display
-          this.internal_palette = bmpData.palette.slice(0, 16);
-          if (CDGMagic_CDGExporter.DEBUG)
-            console.debug(`[schedule_bmp_clip] Loaded BMP: ${bmpPath} (${bmpData.width}x${bmpData.height}), palette entries 0-15: [${this.internal_palette.map(([r,g,b]) => `(${r},${g},${b})`).join(', ')}]`);
+          // CRITICAL: Check should_palette flag before updating palette
+          // When should_palette=1, the BMP's embedded palette is used for display
+          // When should_palette=0, the palette is NOT updated from BMP (use existing palette)
+          // Reference: CDGMagic_BMPClip.cpp: tmp_event->PALObject = (clip_should_palette == 1) ? tmp_event->BMPObject->PALObject() : NULL;
+          const shouldPalette = bmpEvent.should_palette ?? 0;
+          
+          if (shouldPalette === 1) {
+            // Use the BMP's actual palette colors (not standard palette!)
+            // The BMP palette contains the real colors to display
+            this.internal_palette = bmpData.palette.slice(0, 16);
+            if (CDGMagic_CDGExporter.DEBUG)
+              console.debug(`[schedule_bmp_clip] Loaded BMP: ${bmpPath} (${bmpData.width}x${bmpData.height}), should_palette=1, palette entries 0-15: [${this.internal_palette.map(([r,g,b]) => `(${r},${g},${b})`).join(', ')}]`);
 
-          // Schedule palette packets with the BMP's actual colors
-          // This maps BMP pixel indices to the display colors defined in the BMP file
-          this.add_scheduled_packet(clip.start_pack(), this.create_load_low_packet(0, 1, 2, 3, 4, 5, 6, 7));
-          this.add_scheduled_packet(clip.start_pack() + 1, this.create_load_high_packet(8, 9, 10, 11, 12, 13, 14, 15));
+            // Schedule palette packets with the BMP's actual colors
+            // This maps BMP pixel indices to the display colors defined in the BMP file
+            this.add_scheduled_packet(clip.start_pack(), this.create_load_low_packet(0, 1, 2, 3, 4, 5, 6, 7));
+            this.add_scheduled_packet(clip.start_pack() + 1, this.create_load_high_packet(8, 9, 10, 11, 12, 13, 14, 15));
+          } else {
+            // should_palette=0: Do NOT update palette from BMP
+            // The BMP pixel data will still be rendered, but it will use the currently active palette
+            if (CDGMagic_CDGExporter.DEBUG)
+              console.debug(`[schedule_bmp_clip] Loaded BMP: ${bmpPath} (${bmpData.width}x${bmpData.height}), should_palette=0 (palette unchanged)`);
+          }
 
           // Schedule screen initialization packets (following C++ reference order)
           // First: set border color (only if enabled)
@@ -1851,7 +2278,9 @@ class CDGMagic_CDGExporter {
       const color_index = colors[i] || 0;
       const [r_8bit, g_8bit, b_8bit] = this.internal_palette[color_index];
 
-      // Convert 8-bit RGB to 4-bit using division by 17 (matching C++ reference)
+      // Convert 8-bit RGB to 4-bit using division by 17
+      // Matching C++ reference EXACTLY: CDGMagic_GraphicsEncoder.cpp lines 404-408
+      // All channels (R, G, B) treated as 4-bit
       const r_4bit = Math.floor(r_8bit / 17) & 0x0f;
       const g_4bit = Math.floor(g_8bit / 17) & 0x0f;
       const b_4bit = Math.floor(b_8bit / 17) & 0x0f;
@@ -1859,8 +2288,8 @@ class CDGMagic_CDGExporter {
       // Encode byte 0: Red (bits 5-2) + Green upper 2 bits (bits 1-0)
       payload[i * 2] = (r_4bit << 2) | ((g_4bit >> 2) & 0x03);
 
-      // Encode byte 1: Blue (bits 3-0) + Green lower 2 bits (bits 5-4)
-      payload[i * 2 + 1] = (b_4bit & 0x0f) | ((g_4bit & 0x03) << 4);
+      // Encode byte 1: Green lower 2 bits (bits 7-4) + Blue (bits 3-0)
+      payload[i * 2 + 1] = ((g_4bit & 0x03) << 4) | (b_4bit & 0x0f);
     }
 
     return {
@@ -1875,8 +2304,8 @@ class CDGMagic_CDGExporter {
   /**
    * Create LOAD_HIGH packet (palette entries 8-15)
    *
-   * Following C++ reference exactly: same format as LOAD_LOW
-   * - 6-bit palette values converted to 4-bit Red/Blue, 6-bit Green
+   * Same format as LOAD_LOW: all channels divided by 17 to get 4-bit values.
+   * Matches C++ reference: CDGMagic_GraphicsEncoder.cpp lines 404-408
    *
    * @returns CDGPacket
    */
@@ -1887,7 +2316,8 @@ class CDGMagic_CDGExporter {
       const palette_index = 8 + color_index;
       const [r_8bit, g_8bit, b_8bit] = this.internal_palette[palette_index];
 
-      // Convert 8-bit RGB to 4-bit using division by 17 (matching C++ reference)
+      // Convert 8-bit RGB to 4-bit using division by 17
+      // Matching C++ reference EXACTLY
       const r_4bit = Math.floor(r_8bit / 17) & 0x0f;
       const g_4bit = Math.floor(g_8bit / 17) & 0x0f;
       const b_4bit = Math.floor(b_8bit / 17) & 0x0f;
@@ -1895,8 +2325,8 @@ class CDGMagic_CDGExporter {
       // Encode byte 0: Red (bits 5-2) + Green upper 2 bits (bits 1-0)
       payload[i * 2] = (r_4bit << 2) | ((g_4bit >> 2) & 0x03);
 
-      // Encode byte 1: Blue (bits 3-0) + Green lower 2 bits (bits 5-4)
-      payload[i * 2 + 1] = (b_4bit & 0x0f) | ((g_4bit & 0x03) << 4);
+      // Encode byte 1: Green lower 2 bits (bits 7-4) + Blue (bits 3-0)
+      payload[i * 2 + 1] = ((g_4bit & 0x03) << 4) | (b_4bit & 0x0f);
     }
 
     return {

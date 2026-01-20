@@ -6,7 +6,7 @@
  * with the CDGExporter graphics rendering pipeline.
  */
 
-import type { CMPClip } from '@/ts/cd+g-magic/CMPParser';
+import type { CMPClip           } from '@/ts/cd+g-magic/CMPParser';
 import { CDGMagic_TextClip      } from '@/ts/cd+g-magic/CDGMagic_TextClip';
 import { CDGMagic_BMPClip       } from '@/ts/cd+g-magic/CDGMagic_BMPClip';
 import { CDGMagic_ScrollClip    } from '@/ts/cd+g-magic/CDGMagic_ScrollClip';
@@ -122,6 +122,12 @@ function convertTextClip(cmpClip: CMPClip): CDGMagic_TextClip | null {
   // Store events for the exporter to process
   if (Array.isArray(data.events)) {
     (textClip as any)._events = data.events;
+  }
+
+  // CRITICAL: Store the palette index so the exporter uses the correct palette
+  // defaultPaletteNumber comes from the CMP file and tells which preset palette to use (0-8)
+  if (data.defaultPaletteNumber !== undefined) {
+    (textClip as any)._data = data;
   }
 
   // Set z-layer from CMP track data

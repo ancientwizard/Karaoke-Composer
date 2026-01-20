@@ -49,18 +49,110 @@
     *ISSUE* once displayed its persistent basically forever.
   - *OBSERVERD* these fonts should be bolded. (I dont think we added support for that)
 
-
-### Phase 2: Clear screen and play karaoke like text with highlighting
+### Scene 2: Clear screen(perhaps) and play karaoke like text with highlighting
 - **Duration:** 26.6 seconds (15 lines over ~2 seconds per line)
 - **Clip Location:** Packet 2700 (approximately)
 - **Content:** Text appears progressively with specific timing
 - **Color:** Uses color 13 (dark color in project palette)
-- **Issues to Watch:**
-  - Text transparency after BMP transitions (known issue)
-  - Text layering and z-order
-  - Timing accuracy for line-by-line display
 
-### Phase 3: [Additional Phases]
+Over time plays out the following text in a karaoke like fashion
+"Create real subcode graphics
+playable on any standard
+compliant karaoke machine
+with nearly video-like
+line fading effects.
+Conceals the slow drawing
+of a very bandwidth limited
+medium by splitting lines
+into separately addressable
+color indices - automatically.
+"
+
+I believe the clip settings for Palette and palette selections are importent.
+
+- **Observations & Educated assumptions:**
+  - text clips from sceen 1 still being displayed   (FIXED)
+  - some of the scene 1 background lingers only those parts updated with lines
+    of text get replaced.  (FIXED)
+  - the lyrics always play on top top of each other.. I know for certian that
+    the clip/code explains when and where each line is is displayed;
+    when each line is highlighted
+    when each line(s) is/are cleared making room for another line
+  - I don't see any text outlines
+  - Later I'll explain the snow flake; ingnore it for the moment.
+
+**Scene 2 Clip Settings from .cmp (Packet 2700, duration 7984):**
+- Font: BArial, Size: 20pt
+- Karaoke mode: 12 (type: "Karaoke (5/Bottom/Line-Fade)")
+- Default Palette: Preset 1 ✅ **FIXED - Now using CD+G Preset 1 palette**
+- Color Assignments:
+  - Foreground (text): Color 2 (White)
+  - Background: Color 13 (Blue-Purple: RGB(51,51,136))
+  - Outline: Color 1 (Black)
+  - Frame: Color 8 (Olive)
+  - Box: Color 13
+  - Fill: Color 16 (transparent)
+  - Composite: Color 16 (transparent)
+- Has 67 events (line rendering + highlighting + clearing events)
+
+**Findings on Scene Transitions:**
+- **Key Discovery:** Each successive clip on a track SHOULD start with a MEMORY_PRESET command
+- This MEMORY_PRESET clears the screen/compositor, eliminating previous clips and setting a clean slate
+- ✅ **FIXED** - MEMORY_PRESET now emitted for all successor clips
+
+---
+
+## Known Issues & Solutions
+
+### ✅ COMPLETED FIXES
+
+1. **Scene 1 clips persisting into Scene 2** - FIXED
+   - Root cause: No clearing between successive clips on same track
+   - Solution: Emit MEMORY_PRESET at start of successor clips
+   - Result: Scene transitions now work correctly
+
+2. **Scene 2 lines stacking instead of clearing** - FIXED
+   - Root cause: KARAOKE_ERASE events (Word=0xFFFFFFFF) not being processed
+   - Solution: Detect clearing events and render background color to line area
+   - Result: 30 line clearing events now processed correctly
+   - Debug output confirms: "Clearing event N: will erase line M at packet X"
+
+3. **Wrong palette color (puke green instead of blue)** - FIXED
+   - Root cause: Using default CD+G palette instead of Preset 1
+   - Solution: Implemented CD+G Preset 1 palette from CDGMagic_TextClip.h
+   - Result: Background color now correct blue-purple (RGB 51,51,136)
+
+### ⚠️ REMAINING ISSUES
+
+These issues are separate from the core rendering and require additional work:
+
+1. **Text Outline Not Visible**
+   - **Status:** Needs investigation
+   - **Root Cause:** `drawCharacterWithOutline()` exists but outlines not rendering
+   - **Current Code:** Lines 669-856 in CDGMagic_CDGExporter.ts
+   - **Issue:** Outline logic is complex and may have edge cases
+   - **Note:** This is cosmetic - text is rendering correctly without outlines
+
+2. **Text Highlighting (KARAOKE_WIPE) Not Visible**
+   - **Status:** Needs implementation
+   - **Root Cause:** Events with `word=1,2,3...` are being treated as normal display events
+   - **Analysis:** C++ code creates separate XOR highlight overlays for each word
+   - **Current Limitation:** TypeScript implementation doesn't parse text into words or create highlight overlays
+   - **Complexity:** Requires word boundary detection, XOR color calculation, and overlay BMP creation
+   - **Note:** This is a significant feature - fundamental to karaoke highlighting
+
+3. **Text Scrolling Left-to-Right on Wide Lines**
+   - **Status:** Needs investigation
+   - **Root Cause:** Lines wider than screen (288px) appear to scroll instead of center
+   - **Expected:** Lines should center and clip at screen edges (300px)
+   - **Current Code:** Centering logic in `schedule_text_clip_event()` lines 1188-1201
+   - **Possible Issue:** Width calculation may be off, or font metrics may be wrong
+   - **Note:** Font rendering is currently using fallback renderer which may not match CD+G dimensions exactly
+- Currently, Scene 2's text clip (packet 2700) is NOT emitting a MEMORY_PRESET at its start
+- **Assignment (Line 84):** Implement clip arrival detection - when a new clip arrives on track 0, emit MEMORY_PRESET at `clip.start_pack()` to clear scene 1 before rendering scene 2
+
+
+### Scene 3: [Additional Phases]
 - **Duration:** [TBD]
 - **Content:** [Describe transitions, new elements, color changes]
 
