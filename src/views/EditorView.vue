@@ -249,6 +249,7 @@ const totalTime = ref(10000);
 const progressPercent = ref(0);
 const fileReferences = ref<Map<string, 'audio' | 'bmp' | 'transition' | 'cdg'>>(new Map());
 const audioFile = ref<string>('');
+const projectPath = ref<string>('');
 const showAddClipDialog = ref(false);
 const newClipType = ref<'BMPClip' | 'TextClip' | 'ScrollClip' | 'PALGlobalClip'>('TextClip');
 
@@ -278,6 +279,9 @@ onMounted(() => {
   if (projectData) {
     try {
       const project = JSON.parse(projectData) as LoadedProject;
+
+      // Store project path for BMP resolution
+      projectPath.value = project.projectPath || '';
 
       // Project data already has normalized paths (one-time fix-up during load)
       // UI sees paths as-is, no need for dual-path system
@@ -311,13 +315,21 @@ onMounted(() => {
 
 const initializeGraphicsEngine = () => {
   try {
-    // Create exporter to handle clip registration and scheduling
-    graphicsExporter.value = new CDGMagic_CDGExporter();
+    // Get the directory path from the CMP file path
+    let cmpDir = '';
+    if (projectPath.value) {
+      // Extract directory from file path (remove filename)
+      const lastSlash = Math.max(projectPath.value.lastIndexOf('/'), projectPath.value.lastIndexOf('\\'));
+      cmpDir = lastSlash >= 0 ? projectPath.value.substring(0, lastSlash) : '';
+    }
+
+    // Create exporter with CMP directory for resolving BMP paths
+    graphicsExporter.value = new CDGMagic_CDGExporter(0, cmpDir);
 
     // Create decoder with initial palette
     graphicsDecoder.value = new CDGMagic_GraphicsDecoder();
 
-    console.debug('[initializeGraphicsEngine] Starting with', clips.value?.length ?? 0, 'clips');
+    console.debug('[initializeGraphicsEngine] Starting with', clips.value?.length ?? 0, 'clips', 'cmpDir:', cmpDir);
 
     // Register all clips with the exporter
     if (clips.value && graphicsExporter.value) {

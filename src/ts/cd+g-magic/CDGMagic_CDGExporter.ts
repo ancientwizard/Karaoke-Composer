@@ -6,6 +6,7 @@
  */
 
 import fs from 'fs';
+import path from 'path';
 import { CDGMagic_MediaClip       } from "@/ts/cd+g-magic/CDGMagic_MediaClip";
 import { CDGMagic_TextClip        } from "@/ts/cd+g-magic/CDGMagic_TextClip";
 import { CDGMagic_ScrollClip      } from "@/ts/cd+g-magic/CDGMagic_ScrollClip";
@@ -125,18 +126,23 @@ class CDGMagic_CDGExporter {
   // Track ownership of compositor blocks for per-clip expiration clearing
   private internal_block_owners: Map<string, { clip_id: string; end_pack: number; z_layer: number }> = new Map();
 
+  // CMP project directory path - used for resolving relative BMP paths
+  private internal_cmp_directory: string = '';
+
   /**
    * Constructor: Create exporter
    *
    * @param duration_packets Target duration in packets (0 = auto-detect)
+   * @param cmp_directory Optional path to CMP directory for resolving BMP paths
    */
-  constructor(duration_packets: number = 0) {
+  constructor(duration_packets: number = 0, cmp_directory: string = '') {
     this.internal_packet_schedule = new Map();
     this.internal_palette = this.init_default_palette();
     this.internal_clips = [];
     this.internal_total_packets = 0;
     this.internal_duration_packets = duration_packets;
     this.internal_use_reference_prelude = false;
+    this.internal_cmp_directory = cmp_directory;
     this.internal_compositor = null;
     this.internal_vram = null;
     this.internal_graphics_encoder = new CDGMagic_GraphicsEncoder();
@@ -497,7 +503,7 @@ class CDGMagic_CDGExporter {
       }
       trackClips.get(track)!.push({ clip, startPack: clip.start_pack() });
     }
-    
+
     // Sort clips by start pack within each track
     for (const track of trackClips.values()) {
       track.sort((a, b) => a.startPack - b.startPack);
@@ -631,7 +637,56 @@ class CDGMagic_CDGExporter {
         // Reset ownership tracking on preset clears
         this.internal_block_owners.clear();
       }
-      // Could add other packet types here (BORDER_PRESET, etc.)
+
+      // Handle LOAD_LOW packets (palette entries 0-7)
+      if (packet.instruction === CDGInstruction.LOAD_LOW) {
+        // Update internal_palette from the packet data
+        // LOAD_LOW updates palette indices 0-7
+        for (let i = 0; i < 8; i++) {
+          const byte0 = packet.payload[i * 2];
+          const byte1 = packet.payload[i * 2 + 1];
+
+          // Decode 4-bit RGB values (reverse of create_load_low_packet)
+          const r_4bit = (byte0 >> 2) & 0x0f;
+          const g_4bit = (((byte0 & 0x03) << 2) | ((byte1 >> 4) & 0x03)) & 0x0f;
+          const b_4bit = byte1 & 0x0f;
+
+          // Convert back to 8-bit (multiply by 17)
+          const r_8bit = r_4bit * 17;
+          const g_8bit = g_4bit * 17;
+          const b_8bit = b_4bit * 17;
+
+          this.internal_palette[i] = [r_8bit, g_8bit, b_8bit];
+        }
+
+        if (CDGMagic_CDGExporter.DEBUG)
+          console.debug(`[process_scheduled_packets] Packet ${current_pack}: LOAD_LOW applied, palette[0]=${this.internal_palette[0]}`);
+      }
+
+      // Handle LOAD_HIGH packets (palette entries 8-15)
+      if (packet.instruction === CDGInstruction.LOAD_HIGH) {
+        // Update internal_palette from the packet data
+        // LOAD_HIGH updates palette indices 8-15
+        for (let i = 0; i < 8; i++) {
+          const byte0 = packet.payload[i * 2];
+          const byte1 = packet.payload[i * 2 + 1];
+
+          // Decode 4-bit RGB values (reverse of create_load_high_packet)
+          const r_4bit = (byte0 >> 2) & 0x0f;
+          const g_4bit = (((byte0 & 0x03) << 2) | ((byte1 >> 4) & 0x03)) & 0x0f;
+          const b_4bit = byte1 & 0x0f;
+
+          // Convert back to 8-bit (multiply by 17)
+          const r_8bit = r_4bit * 17;
+          const g_8bit = g_4bit * 17;
+          const b_8bit = b_4bit * 17;
+
+          this.internal_palette[8 + i] = [r_8bit, g_8bit, b_8bit];
+        }
+
+        if (CDGMagic_CDGExporter.DEBUG)
+          console.debug(`[process_scheduled_packets] Packet ${current_pack}: LOAD_HIGH applied, palette[12]=${this.internal_palette[12]}`);
+      }
     }
   }
 
@@ -993,8 +1048,8 @@ class CDGMagic_CDGExporter {
     let pixelsClippedBottom = 0;
     
     // Debug: collect glyph statistics
-    let grayDistribution: { [key: number]: number } = {};
-    
+    const grayDistribution: { [key: number]: number } = {};
+
     for (let dstY = 0; dstY < charHeight; dstY++) {
       for (let dstX = 0; dstX < charWidth; dstX++) {
         const srcIdx = dstY * charWidth + dstX;
@@ -1045,7 +1100,7 @@ class CDGMagic_CDGExporter {
         `${pixelsClippedRight} clipped-right, ${pixelsClippedBottom} clipped-bottom, ` +
         `${pixelsSkipped} out-of-bounds, total glyph size=${charWidth * charHeight}`
       );
-      
+
       // Show gray value distribution
       const grayValues = Object.keys(grayDistribution).map(k => parseInt(k)).sort((a, b) => a - b);
       if (grayValues.length > 0) {
@@ -1095,7 +1150,7 @@ class CDGMagic_CDGExporter {
     // The CMP file contains the actual font name (e.g., "BArial", "Courier", "Times")
     // getFontIndexFromCMPFace() converts these names to standard font indices
     const cmpFontFace = clip.font_face();
-    let fontIndex = getFontIndexFromCMPFace(cmpFontFace);
+    const fontIndex = getFontIndexFromCMPFace(cmpFontFace);
     if (CDGMagic_CDGExporter.DEBUG)
       console.debug(`[schedule_text_clip] Font face from CMP: "${cmpFontFace}" → index ${fontIndex}`);
 
@@ -1104,7 +1159,7 @@ class CDGMagic_CDGExporter {
     // The event data (yOffset, height) is specifically sized to accommodate this font
     // Do NOT clamp font sizes - let the CMP data drive the rendering
     // The TextClip's xOffset, yOffset, width, and height are designed for this specific font size
-    
+
     // Ensure minimum readable size but don't enforce arbitrary maximum
     if (fontSize < 6) {
       fontSize = 6;  // Absolute minimum for readability
@@ -1134,30 +1189,37 @@ class CDGMagic_CDGExporter {
     // Cast to any to access extended properties
     const clipData = (clip as any)._data || {};
     let paletteIndex = clipData.defaultPaletteNumber !== undefined ? clipData.defaultPaletteNumber : -1;
-    
+
+    // ALWAYS log palette index for debugging
+    console.warn(
+      `[schedule_text_clip] TextClip at packet ${clip.start_pack()}: palette_index_raw=${paletteIndex}, ` +
+      `clipData=${JSON.stringify(clipData).substring(0, 100)}`
+    );
+
     // Handle special values: 0xFFFFFFFF (unsigned) or -1 means "palette=none" (don't change)
     // Clamp to signed 32-bit for comparison
     if (paletteIndex === 4294967295 || paletteIndex < 0) {
       paletteIndex = -1;  // -1 signals: do NOT update palette (use current/existing)
     }
-    
+
     // ONLY update palette and emit packets if paletteIndex >= 0
     if (paletteIndex >= 0) {
       // TextClip explicitly specifies a palette - load and use it
       const selectedPalette = this.get_palette_by_index(paletteIndex);
       this.internal_palette = selectedPalette;
-      
+
+      console.warn(`[schedule_text_clip] PALETTE MATCH: scheduling palette packets at ${clip.start_pack()}, ${clip.start_pack() + 1}`);
+
       if (CDGMagic_CDGExporter.DEBUG) {
         console.debug(
           `[schedule_text_clip] Palette: index=${paletteIndex}, color 13=RGB(${selectedPalette[13][0]},${selectedPalette[13][1]},${selectedPalette[13][2]})`
         );
       }
 
-      // Emit palette packets to switch to this palette
-      // NOTE: If MEMORY_PRESET was emitted at start_pack in export_cdg(), 
-      // these palettes will follow after it automatically (packet scheduling sorts by time)
-      this.add_scheduled_packet(clip.start_pack() + 1, this.create_load_low_packet(0, 1, 2, 3, 4, 5, 6, 7));
-      this.add_scheduled_packet(clip.start_pack() + 2, this.create_load_high_packet(8, 9, 10, 11, 12, 13, 14, 15));
+      // Emit palette packets to switch to this palette BEFORE text rendering
+      // Must be at start_pack to ensure palette is loaded before fontblocks are rendered
+      this.add_scheduled_packet(clip.start_pack(), this.create_load_low_packet(0, 1, 2, 3, 4, 5, 6, 7));
+      this.add_scheduled_packet(clip.start_pack() + 1, this.create_load_high_packet(8, 9, 10, 11, 12, 13, 14, 15));
     } else {
       // paletteIndex < 0: palette=none - do NOT change the palette
       // Text will render using the currently active palette (from BMP or previous palette change)
@@ -1175,6 +1237,7 @@ class CDGMagic_CDGExporter {
 
     // Schedule memory preset (only if enabled)
     // NOTE: Disabled for text clips - text should layer on top of existing content (BMPs, transitions)
+    //    A MISTAKE: while most text clips may not have the this option checked; it could be valid for some
     // Text clips should NOT clear the screen. If the CMP specifies a background color,
     // that will be drawn behind individual text glyphs, not as a full-screen clear.
     // const textMemoryIndex = clip.memory_preset_index();
@@ -1224,7 +1287,7 @@ class CDGMagic_CDGExporter {
         lineHeight,
         foregroundColor,
         outlineColor,
-        clip.start_pack() + 3,  // All text at clip start + 3
+        clip.start_pack() + 2,  // After palette packets at +0, +1
         events[0] || null,
         clip_id
       );
@@ -1704,19 +1767,51 @@ class CDGMagic_CDGExporter {
   private schedule_bmp_clip(clip: CDGMagic_BMPClip): void {
     if (CDGMagic_CDGExporter.DEBUG)
       console.debug('[schedule_bmp_clip] Starting BMPClip at packet', clip.start_pack(), 'duration:', clip.duration());
-    
+
     // Load BMP to extract spatial layout (pixel indices) AND palette colors
     // The BMP file contains the actual RGB colors for each palette entry
     // CD+G palette packets (LOAD_LOW/LOAD_HIGH) load these into display slots
     if ((clip as any)._bmp_events && (clip as any)._bmp_events.length > 0) {
       const bmpEvent = (clip as any)._bmp_events[0];
-      const bmpPath = bmpEvent.bmp_path || bmpEvent.bmpPath || bmpEvent.path;
-      const transitionPath = bmpEvent.transition_file || bmpEvent.transitionFile || '';
-      
-      if (bmpPath && fs.existsSync(bmpPath)) {
+      let bmpPath = bmpEvent.bmp_path || bmpEvent.bmpPath || bmpEvent.path;
+      let transitionPath = bmpEvent.transition_file || bmpEvent.transitionFile || '';
+
+      // Normalize Windows-style paths to Unix-style
+      if (bmpPath) {
+        bmpPath = bmpPath.replace(/\\\\/g, '/');
+      }
+      if (transitionPath) {
+        transitionPath = transitionPath.replace(/\\\\/g, '/');
+      }
+
+      // Resolve relative BMP path
+      // Try multiple locations: current dir, CMP dir, and reference Sample_Files
+      let resolvedBmpPath: string | null = null;
+      if (bmpPath) {
+        const candidates = [
+          bmpPath, // As-is (already checked by first condition)
+          this.internal_cmp_directory ? path.join(this.internal_cmp_directory, bmpPath) : null,
+          this.internal_cmp_directory ? path.join(this.internal_cmp_directory, path.basename(bmpPath)) : null,
+          path.join('cdg-projects', bmpPath),
+          path.join('cdg-projects', path.basename(bmpPath)),
+        ];
+
+        for (const candidate of candidates) {
+          if (candidate && fs.existsSync(candidate)) {
+            resolvedBmpPath = candidate;
+            break;
+          }
+        }
+
+        if (CDGMagic_CDGExporter.DEBUG && !resolvedBmpPath) {
+          console.debug(`[schedule_bmp_clip] BMP path not found: ${bmpPath}`);
+        }
+      }
+
+      if (resolvedBmpPath) {
         try {
           // Load BMP file for pixel data AND palette colors
-          const bmpLoader = new CDGMagic_BMPLoader(bmpPath);
+          const bmpLoader = new CDGMagic_BMPLoader(resolvedBmpPath);
           const bmpData = {
             width: bmpLoader.width(),
             height: bmpLoader.height(),
@@ -1730,13 +1825,13 @@ class CDGMagic_CDGExporter {
           // When should_palette=0, the palette is NOT updated from BMP (use existing palette)
           // Reference: CDGMagic_BMPClip.cpp: tmp_event->PALObject = (clip_should_palette == 1) ? tmp_event->BMPObject->PALObject() : NULL;
           const shouldPalette = bmpEvent.should_palette ?? 0;
-          
+
           if (shouldPalette === 1) {
             // Use the BMP's actual palette colors (not standard palette!)
             // The BMP palette contains the real colors to display
             this.internal_palette = bmpData.palette.slice(0, 16);
             if (CDGMagic_CDGExporter.DEBUG)
-              console.debug(`[schedule_bmp_clip] Loaded BMP: ${bmpPath} (${bmpData.width}x${bmpData.height}), should_palette=1, palette entries 0-15: [${this.internal_palette.map(([r,g,b]) => `(${r},${g},${b})`).join(', ')}]`);
+              console.debug(`[schedule_bmp_clip] Loaded BMP: ${resolvedBmpPath} (${bmpData.width}x${bmpData.height}), should_palette=1, palette entries 0-15: [${this.internal_palette.map(([r,g,b]) => `(${r},${g},${b})`).join(', ')}]`);
 
             // Schedule palette packets with the BMP's actual colors
             // This maps BMP pixel indices to the display colors defined in the BMP file
@@ -1746,7 +1841,7 @@ class CDGMagic_CDGExporter {
             // should_palette=0: Do NOT update palette from BMP
             // The BMP pixel data will still be rendered, but it will use the currently active palette
             if (CDGMagic_CDGExporter.DEBUG)
-              console.debug(`[schedule_bmp_clip] Loaded BMP: ${bmpPath} (${bmpData.width}x${bmpData.height}), should_palette=0 (palette unchanged)`);
+              console.debug(`[schedule_bmp_clip] Loaded BMP: ${resolvedBmpPath} (${bmpData.width}x${bmpData.height}), should_palette=0 (palette unchanged)`);
           }
 
           // Schedule screen initialization packets (following C++ reference order)
@@ -2258,7 +2353,17 @@ class CDGMagic_CDGExporter {
     if (!this.internal_packet_schedule.has(packet_index)) {
       this.internal_packet_schedule.set(packet_index, []);
     }
-    this.internal_packet_schedule.get(packet_index)!.push(packet);
+    
+    // CRITICAL: Palette packets (LOAD_LOW, LOAD_HIGH) must come BEFORE any fontblocks
+    // at the same packet index to ensure palette is loaded before text is rendered
+    const arr = this.internal_packet_schedule.get(packet_index)!;
+    if (packet.instruction === CDGInstruction.LOAD_LOW || packet.instruction === CDGInstruction.LOAD_HIGH) {
+      // Insert palette packet at the front
+      arr.unshift(packet);
+    } else {
+      // Regular packets go at the end
+      arr.push(packet);
+    }
   }
 
   /**
