@@ -197,9 +197,9 @@ const glyphPalette = computed(() =>
     return (cdg.r4 << 8) | (cdg.g4 << 4) | cdg.b4
   }
   return [
-    toHex(DefaultPalette.black),
+    toHex(DefaultPalette.darkBlue),
     toHex(DefaultPalette.yellow),
-    toHex(DefaultPalette.lightGray),
+    toHex(DefaultPalette.white),
     toHex(DefaultPalette.white),
     0x0048, 0x048F, 0x08FF, 0x0FFF,
     0x0888, 0x0F88, 0x088F, 0x0F8F,
@@ -377,6 +377,7 @@ function createCharGlyph(char: string): GlyphData
   }
 }
 
+
 function updateCanvasFromVRAM(): void
 {
   if (!vram)
@@ -485,8 +486,8 @@ function onFrame(now: number): void
     }
   }
 
-  const COLOR_UNHIGHLIGHTED = 15  // White (default text color)
-  const COLOR_HIGHLIGHTED = 2     // Bright color for highlighted text (different from white for visibility)
+  const COLOR_UNHIGHLIGHTED = 2  // White (default text color)
+  const COLOR_HIGHLIGHTED = 1    // Yellow highlight (matches export defaults)
 
   // LIFECYCLE STEP 2: Render only VISIBLE (non-expired) lines
   // These write into VRAM, modifying its state

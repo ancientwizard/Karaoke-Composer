@@ -11,6 +11,11 @@ export interface CDGCoreConfig {
   transitionColor?: number
   fontFamily?: string
   fontSize?: number
+  paletteOverrides?: {
+    background?: { r: number; g: number; b: number }
+    active?: { r: number; g: number; b: number }
+    transition?: { r: number; g: number; b: number }
+  }
 }
 
 interface TrackedText {
@@ -52,6 +57,7 @@ export class CDGCore
     }
 
     this.palette = new CDGPalette()
+    this.applyPaletteOverrides(config.paletteOverrides)
     this.textRenderer = new CDGTextRenderer(new CDGFont())
     this.packets = []
     this.displayedTexts = new Map()
@@ -454,15 +460,11 @@ export class CDGCore
 
       // Track which tiles are affected
       // Glyphs can span multiple tile rows (tiles are 12px, glyphs are ~16px)
-      const startTileCol = Math.floor(screenX / CDG_SCREEN.TILE_WIDTH)
-      const endTileCol = Math.floor((screenX + glyph.width) / CDG_SCREEN.TILE_WIDTH)
-      const glyphHeight = glyph.height || glyph.rows.length
-      const startTileRow = Math.floor(screenY / CDG_SCREEN.TILE_HEIGHT)
-      const endTileRow = Math.floor((screenY + glyphHeight - 1) / CDG_SCREEN.TILE_HEIGHT)
+      const tileBounds = this.getGlyphTileBounds(screenX, screenY, glyph)
 
-      for (let tr = startTileRow; tr <= endTileRow; tr++)
+      for (let tr = tileBounds.startTileRow; tr <= tileBounds.endTileRow; tr++)
       {
-        for (let tc = startTileCol; tc <= endTileCol; tc++)
+        for (let tc = tileBounds.startTileCol; tc <= tileBounds.endTileCol; tc++)
           affectedTiles.add(tr * CDG_SCREEN.COLS + tc)
       }
 
@@ -555,14 +557,10 @@ export class CDGCore
       renderGlyphToVRAM(this.vram, screenX, screenY, glyph, colorIndex)
 
       // Track affected tiles (glyphs can span multiple tile rows)
-      const startTileCol = Math.floor(screenX / CDG_SCREEN.TILE_WIDTH)
-      const endTileCol = Math.floor((screenX + glyph.width) / CDG_SCREEN.TILE_WIDTH)
-      const glyphHeight = glyph.height || glyph.rows.length
-      const startTileRow = Math.floor(screenY / CDG_SCREEN.TILE_HEIGHT)
-      const endTileRow = Math.floor((screenY + glyphHeight - 1) / CDG_SCREEN.TILE_HEIGHT)
+      const tileBounds = this.getGlyphTileBounds(screenX, screenY, glyph)
 
-      for (let tr = startTileRow; tr <= endTileRow; tr++)
-        for (let tc = startTileCol; tc <= endTileCol; tc++)
+      for (let tr = tileBounds.startTileRow; tr <= tileBounds.endTileRow; tr++)
+        for (let tc = tileBounds.startTileCol; tc <= tileBounds.endTileCol; tc++)
           affectedTiles.add(tr * CDG_SCREEN.COLS + tc)
     }
 
@@ -679,6 +677,73 @@ export class CDGCore
     }
 
     return pixelData
+  }
+
+
+  private applyPaletteOverrides(
+    overrides?: {
+      background?: { r: number; g: number; b: number }
+      active?: { r: number; g: number; b: number }
+      transition?: { r: number; g: number; b: number }
+    }
+  ): void
+  {
+    if (!overrides) return
+
+    if (overrides.background)
+    {
+      this.palette.setColor(
+        this.cdgConfig.backgroundColor,
+        overrides.background.r,
+        overrides.background.g,
+        overrides.background.b
+      )
+    }
+
+    if (overrides.active)
+    {
+      this.palette.setColor(
+        this.cdgConfig.activeColor,
+        overrides.active.r,
+        overrides.active.g,
+        overrides.active.b
+      )
+    }
+
+    if (overrides.transition)
+    {
+      this.palette.setColor(
+        this.cdgConfig.transitionColor,
+        overrides.transition.r,
+        overrides.transition.g,
+        overrides.transition.b
+      )
+    }
+  }
+
+  private getGlyphTileBounds(
+    screenX: number,
+    screenY: number,
+    glyph: { width: number; height?: number; rows: number[]; yOffset?: number }
+  ): { startTileCol: number; endTileCol: number; startTileRow: number; endTileRow: number }
+  {
+    const glyphHeight = glyph.height || glyph.rows.length
+    const glyphWidth = glyph.width
+    const yOffset = glyph.yOffset || 0
+    const glyphTop = screenY + yOffset
+    const glyphBottom = glyphTop + glyphHeight - 1
+
+    const rawStartCol = Math.floor(screenX / CDG_SCREEN.TILE_WIDTH)
+    const rawEndCol = Math.floor((screenX + glyphWidth - 1) / CDG_SCREEN.TILE_WIDTH)
+    const rawStartRow = Math.floor(glyphTop / CDG_SCREEN.TILE_HEIGHT)
+    const rawEndRow = Math.floor(glyphBottom / CDG_SCREEN.TILE_HEIGHT)
+
+    return {
+      startTileCol: Math.max(0, Math.min(CDG_SCREEN.COLS - 1, rawStartCol)),
+      endTileCol: Math.max(0, Math.min(CDG_SCREEN.COLS - 1, rawEndCol)),
+      startTileRow: Math.max(0, Math.min(CDG_SCREEN.ROWS - 1, rawStartRow)),
+      endTileRow: Math.max(0, Math.min(CDG_SCREEN.ROWS - 1, rawEndRow))
+    }
   }
 }
 

@@ -14,6 +14,11 @@ export interface CDGBrowserRendererConfig extends RendererConfig {
   transitionColor?: number
   fontFamily?: string
   fontSize?: number
+  paletteOverrides?: {
+    background?: { r: number; g: number; b: number }
+    active?: { r: number; g: number; b: number }
+    transition?: { r: number; g: number; b: number }
+  }
 }
 
 // TrackedText handled inside CDGCore
@@ -28,7 +33,8 @@ export class CDGBrowserRenderer extends BaseRenderer {
       activeColor: config.activeColor,
       transitionColor: config.transitionColor,
       fontFamily: config.fontFamily,
-      fontSize: config.fontSize
+      fontSize: config.fontSize,
+      paletteOverrides: config.paletteOverrides
     })
   }
 

@@ -119,10 +119,17 @@ export class TimingConverter {
       )
 
       // Create syllable highlighting commands
-      if (placeable.charToSyllableMap && placeable.words) {
+      if (placeable.charToSyllableMap && placeable.words)
+      {
+        const offset = placeable.charOffsetInSource ?? 0
+        const lineMap = this.sliceCharToSyllableMap(
+          placeable.charToSyllableMap,
+          offset,
+          placeable.text.length
+        )
         const highlightCommands = this.createSyllableHighlightsFromMap(
           placeable.id,
-          placeable.charToSyllableMap
+          lineMap
         )
         commands.push(...highlightCommands)
       }
@@ -133,7 +140,57 @@ export class TimingConverter {
       )
     }
 
-    return commands
+    return this.sortCommands(commands)
+  }
+
+  private sliceCharToSyllableMap(
+    map: Map<number, any>,
+    offset: number,
+    length: number
+  ): Map<number, any>
+  {
+    const sliced = new Map<number, any>()
+    const end = offset + length
+
+    for (const [charIdx, info] of map)
+    {
+      if (charIdx >= offset && charIdx < end)
+      {
+        sliced.set(charIdx - offset, info)
+      }
+    }
+
+    return sliced
+  }
+
+  private sortCommands(commands: AnyPresentationCommand[]): AnyPresentationCommand[]
+  {
+    const priority: Record<string, number> = {
+      clear_screen: 0,
+      show_metadata: 1,
+      show_text: 2,
+      change_color: 3,
+      transition: 4,
+      remove_text: 5
+    }
+
+    return [...commands].sort((a, b) =>
+    {
+      if (a.timestamp !== b.timestamp)
+      {
+        return a.timestamp - b.timestamp
+      }
+
+      const aPriority = priority[a.type] ?? 99
+      const bPriority = priority[b.type] ?? 99
+
+      if (aPriority !== bPriority)
+      {
+        return aPriority - bPriority
+      }
+
+      return 0
+    })
   }
 
   /**

@@ -93,7 +93,7 @@
         <p class="mb-1"><strong>Format:</strong> CD+G Binary</p>
         <p class="mb-1"><strong>Estimated size:</strong> {{ estimatedCDGSize }} KB</p>
         <p class="mb-1"><strong>Resolution:</strong> 288×192 pixels (6-bit color)</p>
-  <p class="mb-0"><strong>Packet rate:</strong> 300 packets/second (project baseline)</p>
+        <p class="mb-0"><strong>Packet rate:</strong> 300 packets/second (project baseline)</p>
       </div>
     </div>
 
@@ -175,7 +175,8 @@ const proceedDespiteWarnings = ref(false)
 
 // Re-validate whenever the project prop changes
 const engine = new KaraokePresentationEngine()
-function runValidation() {
+function runValidation()
+{
   const result = engine.validateProject(props.project, { allowMissingAudio: true })
   validation.value = result
   // reset override if warnings resolved
@@ -226,6 +227,19 @@ const displayPercent = computed(() => Math.min(100, Math.max(0, Math.round(progr
 const debugMessages = ref<string[]>([])
 const debugCounter = ref(0)
 const debugPre = ref<HTMLElement | null>(null)
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const normalized = hex.replace('#', '').trim()
+  const full = normalized.length === 3
+    ? normalized.split('').map((c) => `${c}${c}`).join('')
+    : normalized
+  const value = parseInt(full, 16)
+  return {
+    r: (value >> 16) & 0xff,
+    g: (value >> 8) & 0xff,
+    b: value & 0xff
+  }
+}
 
 async function pushDebug(msg: string) {
   if ( !showLogs.value ) return
@@ -282,7 +296,12 @@ async function exportCDG() {
       activeColor: 1,
       transitionColor: 2,
       fontFamily: cdgSettings.value.fontFamily,
-      fontSize: cdgSettings.value.fontSize
+      fontSize: cdgSettings.value.fontSize,
+      paletteOverrides: {
+        background: hexToRgb(cdgSettings.value.backgroundColor),
+        active: hexToRgb(cdgSettings.value.highlightColor),
+        transition: hexToRgb(cdgSettings.value.textColor)
+      }
     })
 
     await renderer.initialize()
@@ -290,15 +309,15 @@ async function exportCDG() {
     progress.value = {
       commandsProcessed: 0,
       totalCommands: script.commands.length,
-  packets: 0,
-  totalPackets: Math.max(1, Math.floor((script.durationMs / 1000) * CDG_PPS))
-    }
+      packets: 0,
+      totalPackets: Math.max(1, Math.floor((script.durationMs / 1000) * CDG_PPS))
+    };
+
     progressPercent.value = 0
 
     // clear debug messages and counter for a fresh run
     debugMessages.value = []
     debugCounter.value = 0
-
 
     const blob = await renderer.render(script, {
       onProgress: (p) => {
@@ -308,7 +327,7 @@ async function exportCDG() {
         // totalPackets when it agrees with our duration-based estimate; if it's an
         // outlier (very different), fall back to the duration estimate so the UI
         // isn't held back by anomalous totals.
-  const estTotal = Math.max(1, Math.floor((script.durationMs / 1000) * CDG_PPS))
+        const estTotal = Math.max(1, Math.floor((script.durationMs / 1000) * CDG_PPS))
         let denom = estTotal
         if (p.totalPackets && p.totalPackets > 0) {
           const diff = Math.abs(p.totalPackets - estTotal) / estTotal
