@@ -4,7 +4,8 @@ import fs from 'fs'
 import path from 'path'
 import { CDG_PACKET_SIZE } from '@/cdg/constants'
 
-function readPackets(filePath: string) {
+function readPackets(filePath: string)
+{
   const buf = fs.readFileSync(filePath)
   const packets = Math.floor(buf.length / CDG_PACKET_SIZE)
   const arr: Buffer[] = []
@@ -12,12 +13,14 @@ function readPackets(filePath: string) {
   return arr
 }
 
-function writePackets(filePath: string, arr: Buffer[]) {
+function writePackets(filePath: string, arr: Buffer[])
+{
   const out = Buffer.concat(arr)
   fs.writeFileSync(filePath, out)
 }
 
-function countCmds(pkts: Buffer[]) {
+function countCmds(pkts: Buffer[])
+{
   const counts = new Map<number, number>()
   for (const p of pkts) {
     const cmd = p[1] & 0x3F
@@ -26,7 +29,8 @@ function countCmds(pkts: Buffer[]) {
   return counts
 }
 
-if (process.argv.length < 4) {
+if (process.argv.length < 4)
+{
   console.error('Usage: npx tsx src/debug/boost-cdg-density.ts <input-cdg> <reference-cdg>')
   process.exit(2)
 }
@@ -54,8 +58,10 @@ for (const p of pkts) {
   if (cmd === 6) copySamples.push(p)
   if (cmd === 38) xorSamples.push(p)
 }
+
 if (copySamples.length === 0) { console.error('No COPY samples found in input'); process.exit(2) }
-if (xorSamples.length === 0) {
+if (xorSamples.length === 0)
+{
   // synthesize XOR from COPY by flipping instruction
   for (const p of copySamples) {
     const c = Buffer.from(p)
@@ -70,7 +76,8 @@ let currXor = currCounts.get(38) || 0
 let copyIdx = 0
 let xorIdx = 0
 
-for (let i = 0; i < pkts.length && (currCopy < targetCopy || currXor < targetXor); i++) {
+for (let i = 0; i < pkts.length && (currCopy < targetCopy || currXor < targetXor); i++)
+{
   if (!pkts[i].every((b)=>b===0)) continue
   // choose whether to place copy or xor to balance towards targets
   const needCopy = currCopy < targetCopy
@@ -79,7 +86,11 @@ for (let i = 0; i < pkts.length && (currCopy < targetCopy || currXor < targetXor
     pkts[i] = copySamples[copyIdx % copySamples.length]
     copyIdx++
     currCopy++
-  } else if (needXor) {
+    continue
+  }
+
+  if (needXor)
+  {
     pkts[i] = xorSamples[xorIdx % xorSamples.length]
     xorIdx++
     currXor++
@@ -90,4 +101,7 @@ console.log('After fill COPY/XOR:', currCopy, '/', currXor)
 writePackets(outPath, pkts)
 console.log('Wrote', outPath)
 
-try { const cp = await import('child_process'); (cp as any).spawnSync('npx', ['tsx','src/debug/render-cdg-to-ppm.ts', outPath], { stdio: 'inherit' }) } catch (e) {}
+try { const cp = await import('child_process'); (cp as any).spawnSync('npx', ['tsx','src/debug/render-cdg-to-ppm.ts', outPath], { stdio: 'inherit' }) } catch (e) { console.warn('render-cdg-to-ppm failed:', e) }
+
+// VIM: filetype=typescript
+// END

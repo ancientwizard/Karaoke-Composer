@@ -204,7 +204,7 @@
                     </div>
                   </button>
                   <button class="btn btn-success export-btn" @click.stop="exportProject(project)"
-                    title="Export project for terminal demo">
+                    title="Export project ...">
                     <i class="bi bi-download"></i>
                   </button>
                   <button class="btn btn-warning delete-btn" @click.stop="deleteProject(project)"

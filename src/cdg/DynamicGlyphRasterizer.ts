@@ -55,9 +55,7 @@ export class DynamicGlyphRasterizer
   {
     // Validate inputs
     if (!char || char.length === 0)
-    {
-      return this.createEmptyGlyph(char)
-    }
+      return this.createEmptyGlyph()
 
     // For space and other whitespace, return minimal glyph
     if (/^\s$/.test(char))
@@ -113,11 +111,8 @@ export class DynamicGlyphRasterizer
    * @returns Width in pixels
    */
   measureText(
-    text: string,
-    fontFamily: string = 'Arial',
-    fontSize: number = 16,
-    spacing: number = 0
-  ): number
+    text: string, fontFamily: string = 'Arial', fontSize: number = 16,
+    spacing: number = 0 ): number
   {
     if (!text) return 0
 
@@ -140,7 +135,7 @@ export class DynamicGlyphRasterizer
     return `${char}:${fontFamily}:${fontSize}`
   }
 
-  private createEmptyGlyph(char: string): GlyphData
+  private createEmptyGlyph(): GlyphData
   {
     return {
       width: 1,
@@ -154,10 +149,7 @@ export class DynamicGlyphRasterizer
    * Returns GlyphData with actual detected dimensions and baseline offset
    */
   private rasterizeGlyph(
-    char: string,
-    fontFamily: string,
-    fontSize: number
-  ): GlyphData
+    char: string, fontFamily: string, fontSize: number ): GlyphData
   {
     // Render at 3x the requested size for precision, then scale to target
     // This gives better quality and slightly larger glyphs at small sizes
@@ -212,9 +204,7 @@ export class DynamicGlyphRasterizer
 
     // If no pixels found, return empty glyph
     if (!hasPixels)
-    {
-      return this.createEmptyGlyph(char)
-    }
+      return this.createEmptyGlyph()
 
     // Crop to actual bounds with minimal padding
     const cropLeft = Math.max(0, minX - 1)

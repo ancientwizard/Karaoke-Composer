@@ -17,7 +17,8 @@ export function msToPacks(ms: number, pps = 300): number {
  *  - timesInMs=true, timesInPacks=false: value is in milliseconds, convert to packs
  *  - timesInMs=false, timesInPacks=true: value is already in pack units, explicit flag (same as default)
  */
-export function timeToPacks(value: number | undefined, pps = 300, timesInMs = false, timesInPacks = false): number {
+export function timeToPacks(value: number | undefined, pps = 300, timesInMs = false): number
+{
   if (value == null) return 0
   if (timesInMs) return msToPacks(value, pps)
   // Default: value is already in packet units, return as-is
@@ -32,7 +33,8 @@ export function timeToPacks(value: number | undefined, pps = 300, timesInMs = fa
  *  - Else if maxEndPacksEstimate > 0, convert to seconds via pps and add 1s padding
  *  - Else return fallbackSeconds
  */
-export function computeDurationSecondsFromParsedJson(parsedJson: any, maxEndPacksEstimate: number, ppsVal: number, fallbackSeconds = 20): number {
+export function computeDurationSecondsFromParsedJson(parsedJson: any, maxEndPacksEstimate: number, ppsVal: number, fallbackSeconds = 20): number
+{
   if (parsedJson.duration_seconds && Number.isFinite(parsedJson.duration_seconds) && parsedJson.duration_seconds > 0) {
     return Math.ceil(parsedJson.duration_seconds)
   }

@@ -64,7 +64,9 @@ for (const clip of parsed.clips || []) {
           }
           pixels.push(rowArr)
         }
-        events.push({ blockX: t.col, blockY: t.row, pixels, startPack, durationPacks })
+        events.push({
+ blockX: t.col, blockY: t.row, pixels, startPack, durationPacks 
+})
       }
     }
   }

@@ -22,7 +22,7 @@ import {
   DEFAULT_LAYOUT_CONFIG,
   type LayoutConfig
 } from './TextLayoutEngine'
-import { TextRenderComposer, type ComposerOptions } from './TextRenderComposer'
+import { TextRenderComposer } from './TextRenderComposer'
 
 /**
  * Configuration for timing conversion
@@ -97,7 +97,7 @@ export class TimingConverter {
     for (let i = 0; i < placeableLines.length; i++)
     {
       const placeable = placeableLines[i]
-      const nextPlaceable = placeableLines[i + 1]
+      // nextPlaceable intentionally not used here; reserved for future logic
 
       // Get the Y position from the composed placeable line
       // Convert from abstract 0-1000 space to Position

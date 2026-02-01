@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach } from '@jest/globals'
-import { CDGPaletteManager, LeaseStatus } from '@/cdg/palette-manager'
+import { CDGPaletteManager } from '@/cdg/palette-manager'
 
 describe('CDGPaletteManager', () => {
   let manager: CDGPaletteManager
@@ -22,9 +22,13 @@ describe('CDGPaletteManager', () => {
 
     it('should have default palette set', () => {
       // Black at index 0
-      expect(manager.getColor(0)).toEqual({ r: 0, g: 0, b: 0 })
+      expect(manager.getColor(0)).toEqual({
+ r: 0, g: 0, b: 0 
+})
       // Yellow at index 1
-      expect(manager.getColor(1)).toEqual({ r: 255, g: 255, b: 0 })
+      expect(manager.getColor(1)).toEqual({
+ r: 255, g: 255, b: 0 
+})
     })
 
     it('should track current packet position', () => {
@@ -36,16 +40,24 @@ describe('CDGPaletteManager', () => {
 
   describe('Lease Management - Unlimited Colors', () => {
     it('should allocate unlimited colors to lower half (0-7)', () => {
-      const red = { r: 255, g: 0, b: 0 }
+      const red = {
+ r: 255, g: 0, b: 0 
+}
       const index1 = manager.leaseColor(red, Infinity, 'text-active')
       expect(index1).toBeLessThan(8)
       expect(manager.getColor(index1)).toEqual(red)
     })
 
     it('should allocate multiple unlimited colors to different lower indices', () => {
-      const red = { r: 255, g: 0, b: 0 }
-      const green = { r: 0, g: 255, b: 0 }
-      const blue = { r: 0, g: 0, b: 255 }
+      const red = {
+ r: 255, g: 0, b: 0 
+}
+      const green = {
+ r: 0, g: 255, b: 0 
+}
+      const blue = {
+ r: 0, g: 0, b: 255 
+}
 
       const idx1 = manager.leaseColor(red, Infinity, 'text-1')
       const idx2 = manager.leaseColor(green, Infinity, 'text-2')
@@ -57,7 +69,9 @@ describe('CDGPaletteManager', () => {
     })
 
     it('should mark unlimited colors as static', () => {
-      manager.leaseColor({ r: 255, g: 0, b: 0 }, Infinity)
+      manager.leaseColor({
+ r: 255, g: 0, b: 0 
+}, Infinity)
       const stats = manager.getStats()
       expect(stats.staticIndices.length).toBeGreaterThan(0)
     })
@@ -66,7 +80,9 @@ describe('CDGPaletteManager', () => {
   describe('Lease Management - Time-Limited Colors', () => {
     it('should allocate dynamic colors to upper half (8-15)', () => {
       manager.updatePacket(100)
-      const cyan = { r: 0, g: 255, b: 255 }
+      const cyan = {
+ r: 0, g: 255, b: 255 
+}
       const index = manager.leaseColor(cyan, 500, 'transition-bg')
       expect(index).toBeGreaterThanOrEqual(8)
       expect(index).toBeLessThan(16)
@@ -75,7 +91,9 @@ describe('CDGPaletteManager', () => {
 
     it('should create lease with correct duration', () => {
       manager.updatePacket(100)
-      const index = manager.leaseColor({ r: 0, g: 255, b: 255 }, 500, 'temp')
+      const index = manager.leaseColor({
+ r: 0, g: 255, b: 255 
+}, 500, 'temp')
       const chain = manager.getLeaseChain(index)
       expect(chain).toHaveLength(1)
       expect(chain[0].startPacket).toBe(100)
@@ -84,7 +102,9 @@ describe('CDGPaletteManager', () => {
 
     it('should track expired leases', () => {
       manager.updatePacket(100)
-      const index = manager.leaseColor({ r: 0, g: 255, b: 255 }, 500)
+      const index = manager.leaseColor({
+ r: 0, g: 255, b: 255 
+}, 500)
 
       // Before expiration
       expect(manager.isLeaseExpired(manager.getActiveLease(index)!)).toBe(false)
@@ -98,7 +118,9 @@ describe('CDGPaletteManager', () => {
 
     it('should mark dynamic colors as dynamic', () => {
       manager.updatePacket(50)
-      manager.leaseColor({ r: 0, g: 255, b: 255 }, 300)
+      manager.leaseColor({
+ r: 0, g: 255, b: 255 
+}, 300)
       const stats = manager.getStats()
       expect(stats.dynamicIndices.length).toBeGreaterThan(0)
     })
@@ -107,12 +129,16 @@ describe('CDGPaletteManager', () => {
   describe('Lease Chaining', () => {
     it('should chain leases at same index when explicitly preferred', () => {
       manager.updatePacket(100)
-      const idx1 = manager.leaseColor({ r: 255, g: 0, b: 0 }, 200, 'phase-1')
+      const idx1 = manager.leaseColor({
+ r: 255, g: 0, b: 0 
+}, 200, 'phase-1')
 
       // Move past first lease expiration (ends at 300)
       manager.updatePacket(310)
       // Now the slot is free, explicitly request same index
-      const idx2 = manager.leaseColor({ r: 0, g: 255, b: 0 }, 200, 'phase-2', idx1)
+      const idx2 = manager.leaseColor({
+ r: 0, g: 255, b: 0 
+}, 200, 'phase-2', idx1)
 
       expect(idx2).toBe(idx1)
       const chain = manager.getLeaseChain(idx1)
@@ -124,7 +150,9 @@ describe('CDGPaletteManager', () => {
     it('should return correct active lease at different packets', () => {
       const index = 5
       manager.updatePacket(100)
-      manager.leaseColor({ r: 255, g: 0, b: 0 }, 200, 'first', index)
+      manager.leaseColor({
+ r: 255, g: 0, b: 0 
+}, 200, 'first', index)
 
       manager.updatePacket(250)
       const activeLease = manager.getActiveLease(index)
@@ -140,8 +168,12 @@ describe('CDGPaletteManager', () => {
   describe('Active Leases Tracking', () => {
     it('should report active leases at current packet', () => {
       manager.updatePacket(50)
-      manager.leaseColor({ r: 255, g: 0, b: 0 }, 100, 'a')
-      manager.leaseColor({ r: 0, g: 255, b: 0 }, Infinity, 'b')
+      manager.leaseColor({
+ r: 255, g: 0, b: 0 
+}, 100, 'a')
+      manager.leaseColor({
+ r: 0, g: 255, b: 0 
+}, Infinity, 'b')
 
       const active = manager.getActiveLeases()
       expect(active.length).toBe(2)
@@ -150,7 +182,9 @@ describe('CDGPaletteManager', () => {
 
     it('should exclude expired leases from active', () => {
       manager.updatePacket(50)
-      manager.leaseColor({ r: 255, g: 0, b: 0 }, 100) // expires at 150
+      manager.leaseColor({
+ r: 255, g: 0, b: 0 
+}, 100) // expires at 150
 
       manager.updatePacket(200)
       const active = manager.getActiveLeases()
@@ -159,7 +193,9 @@ describe('CDGPaletteManager', () => {
 
     it('should respect lease start time', () => {
       manager.updatePacket(50)
-      const idx = manager.leaseColor({ r: 255, g: 0, b: 0 }, 100) // starts at 50, ends at 150
+      const idx = manager.leaseColor({
+ r: 255, g: 0, b: 0 
+}, 100) // starts at 50, ends at 150
 
       manager.updatePacket(40)
       expect(manager.getActiveLease(idx)).toBeUndefined() // Too early
@@ -171,7 +207,9 @@ describe('CDGPaletteManager', () => {
 
   describe('Palette Change Tracking', () => {
     it('should track changes to lower half', () => {
-      manager.leaseColor({ r: 255, g: 0, b: 0 }, Infinity) // index < 8
+      manager.leaseColor({
+ r: 255, g: 0, b: 0 
+}, Infinity) // index < 8
       const events = manager.getChangeEvents()
       expect(events.length).toBeGreaterThan(0)
       expect(events[0].lowerChanged).toBe(true)
@@ -180,7 +218,9 @@ describe('CDGPaletteManager', () => {
 
     it('should track changes to upper half', () => {
       manager.updatePacket(100)
-      manager.leaseColor({ r: 0, g: 255, b: 255 }, 500) // forces upper allocation
+      manager.leaseColor({
+ r: 0, g: 255, b: 255 
+}, 500) // forces upper allocation
       const events = manager.getChangeEvents()
       expect(events.length).toBeGreaterThan(0)
       const lastEvent = events[events.length - 1]
@@ -189,8 +229,12 @@ describe('CDGPaletteManager', () => {
 
     it('should merge events on same packet', () => {
       manager.updatePacket(50)
-      manager.leaseColor({ r: 255, g: 0, b: 0 }, Infinity) // lower
-      manager.leaseColor({ r: 0, g: 255, b: 0 }, Infinity) // lower
+      manager.leaseColor({
+ r: 255, g: 0, b: 0 
+}, Infinity) // lower
+      manager.leaseColor({
+ r: 0, g: 255, b: 0 
+}, Infinity) // lower
       const events = manager.getChangeEvents()
       // Both should be in same packet, might merge
       const packet50Events = events.filter(e => e.packet === 50)
@@ -198,7 +242,9 @@ describe('CDGPaletteManager', () => {
     })
 
     it('should allow clearing change history', () => {
-      manager.leaseColor({ r: 255, g: 0, b: 0 }, Infinity)
+      manager.leaseColor({
+ r: 255, g: 0, b: 0 
+}, Infinity)
       expect(manager.getChangeEvents().length).toBeGreaterThan(0)
       manager.clearChangeHistory()
       expect(manager.getChangeEvents().length).toBe(0)
@@ -207,13 +253,19 @@ describe('CDGPaletteManager', () => {
 
   describe('Preferred Index Allocation', () => {
     it('should honor preferred index if available', () => {
-      const idx = manager.leaseColor({ r: 255, g: 0, b: 0 }, Infinity, 'test', 5)
+      const idx = manager.leaseColor({
+ r: 255, g: 0, b: 0 
+}, Infinity, 'test', 5)
       expect(idx).toBe(5)
     })
 
     it('should fall back to auto-allocation if preferred is taken', () => {
-      manager.leaseColor({ r: 255, g: 0, b: 0 }, Infinity, 'first', 5)
-      const idx2 = manager.leaseColor({ r: 0, g: 255, b: 0 }, Infinity, 'second', 5)
+      manager.leaseColor({
+ r: 255, g: 0, b: 0 
+}, Infinity, 'first', 5)
+      const idx2 = manager.leaseColor({
+ r: 0, g: 255, b: 0 
+}, Infinity, 'second', 5)
       expect(idx2).not.toBe(5)
     })
   })
@@ -224,20 +276,30 @@ describe('CDGPaletteManager', () => {
       // Fill all 16 slots
       for (let i = 0; i < 16; i++)
       {
-        const idx = manager.leaseColor({ r: i * 15, g: 0, b: 0 }, Infinity)
+        const idx = manager.leaseColor({
+ r: i * 15, g: 0, b: 0 
+}, Infinity)
         expect(idx).toBeGreaterThanOrEqual(0)
       }
       // Next allocation should fail
-      const idx = manager.leaseColor({ r: 255, g: 0, b: 0 }, Infinity)
+      const idx = manager.leaseColor({
+ r: 255, g: 0, b: 0 
+}, Infinity)
       expect(idx).toBe(-1)
     })
   })
 
   describe('Integration Scenario - Karaoke Timeline', () => {
     it('should handle realistic karaoke color progression', () => {
-      const darkBg = { r: 0, g: 0, b: 0 } // black, unlimited
-      const activeText = { r: 255, g: 255, b: 0 } // yellow, unlimited
-      const passiveText = { r: 136, g: 136, b: 136 } // gray, unlimited
+      const darkBg = {
+ r: 0, g: 0, b: 0 
+} // black, unlimited
+      const activeText = {
+ r: 255, g: 255, b: 0 
+} // yellow, unlimited
+      const passiveText = {
+ r: 136, g: 136, b: 136 
+} // gray, unlimited
 
       // Initial setup
       manager.updatePacket(0)
@@ -249,7 +311,9 @@ describe('CDGPaletteManager', () => {
 
       // Transition effect at packet 300
       manager.updatePacket(300)
-      const transitionIdx = manager.leaseColor({ r: 0, g: 255, b: 255 }, 600, 'transition-effect') // 300pps = 2s
+      const transitionIdx = manager.leaseColor({
+ r: 0, g: 255, b: 255 
+}, 600, 'transition-effect') // 300pps = 2s
       expect(transitionIdx).toBeGreaterThanOrEqual(8) // upper half
 
       // Check stats at different points

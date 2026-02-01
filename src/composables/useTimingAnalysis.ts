@@ -1,3 +1,9 @@
+//
+// AI RULES:
+//  - do not remove these comments
+//  - KEEP & FOLLOW the style as you see here
+//
+
 import type { LyricLine, WordTiming } from '@/types/karaoke'
 import { TIMING } from '@/models/TimingConstants'
 
@@ -27,16 +33,19 @@ export interface TimingAnalysisResult {
   hasIssues: boolean
 }
 
-const formatTime = (timeMs: number): string => {
+const formatTime = (timeMs: number): string =>
+{
   const seconds = Math.floor(timeMs / 1000)
   const minutes = Math.floor(seconds / 60)
   const remainingSeconds = seconds % 60
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
 }
 
-export function useTimingAnalysis() {
+export function useTimingAnalysis()
+{
 
-  function analyzeTimingOverlaps(lyrics: LyricLine[]): TimingAnalysisResult {
+  function analyzeTimingOverlaps(lyrics: LyricLine[]): TimingAnalysisResult
+  {
     const overlaps: TimingOverlap[] = []
     const smallGaps: { word1: string; word2: string; gap: number }[] = []
     const sequenceViolations: { word1: string; word2: string; issue: string }[] = []
@@ -45,10 +54,13 @@ export function useTimingAnalysis() {
     const allWords: Array<WordTiming & { lineIndex: number; wordIndex: number }> = []
 
     // Collect all words with their positions
-    lyrics.forEach((line, lineIndex) => {
-      line.words.forEach((word, wordIndex) => {
+    lyrics.forEach((line, lineIndex) =>
+    {
+      line.words.forEach((word, wordIndex) =>
+      {
         totalWords++
-        if (word.startTime !== undefined && word.endTime !== undefined) {
+        if (word.startTime !== undefined && word.endTime !== undefined)
+        {
           timedWords++
           allWords.push({
             ...word,
@@ -59,7 +71,8 @@ export function useTimingAnalysis() {
       })
     })
 
-    if (timedWords === 0) {
+    if (timedWords === 0)
+    {
       return {
         overlaps: [],
         totalWords,
@@ -72,13 +85,16 @@ export function useTimingAnalysis() {
     }
 
     // Check for sequence violations within each line BEFORE sorting
-    lyrics.forEach((line) => {
+    lyrics.forEach((line) =>
+    {
       const lineWords = line.words.filter(w => w.startTime !== undefined && w.endTime !== undefined)
-      for (let i = 0; i < lineWords.length - 1; i++) {
+      for (let i = 0; i < lineWords.length - 1; i++)
+      {
         const word1 = lineWords[i]
         const word2 = lineWords[i + 1]
 
-        if (word1.startTime! > word2.startTime!) {
+        if (word1.startTime! > word2.startTime!)
+        {
           sequenceViolations.push({
             word1: word1.word,
             word2: word2.word,
@@ -92,11 +108,13 @@ export function useTimingAnalysis() {
     allWords.sort((a, b) => (a.startTime || 0) - (b.startTime || 0))
 
     // Check for overlaps
-    for (let i = 0; i < allWords.length - 1; i++) {
+    for (let i = 0; i < allWords.length - 1; i++)
+    {
       const word1 = allWords[i]
       const word2 = allWords[i + 1]
 
-      if (word1.endTime! > word2.startTime!) {
+      if (word1.endTime! > word2.startTime!)
+      {
         const overlapStart = word2.startTime!
         const overlapEnd = Math.min(word1.endTime!, word2.endTime!)
         const overlapDuration = overlapEnd - overlapStart
@@ -112,12 +130,14 @@ export function useTimingAnalysis() {
     }
 
     // Check for small gaps
-    for (let i = 0; i < allWords.length - 1; i++) {
+    for (let i = 0; i < allWords.length - 1; i++)
+    {
       const word1 = allWords[i]
       const word2 = allWords[i + 1]
       const gap = word2.startTime! - word1.endTime!
 
-      if (gap >= 0 && gap < TIMING.word.collisionMargin) {
+      if (gap >= 0 && gap < TIMING.word.collisionMargin)
+      {
         const timeStr = formatTime(word1.startTime!)
 
         console.log(`⚠️ Small gap detected between "${word1.word}" and "${word2.word}": ${gap}ms at time ${timeStr}`)
@@ -133,11 +153,16 @@ export function useTimingAnalysis() {
     const totalIssues = overlaps.length + smallGaps.length + sequenceViolations.length
 
     let summary = ''
-    if (sequenceViolations.length > 0) {
+    if (sequenceViolations.length > 0)
+    {
       summary = `🚨 Critical: ${sequenceViolations.length} words out of sequence! This breaks timing order.`
-    } else if (overlaps.length === 0 && smallGaps.length <= 3) {
+    }
+    else if (overlaps.length === 0 && smallGaps.length <= 3)
+    {
       summary = `✅ Clean timing: ${timedWords} words, good spacing`
-    } else {
+    }
+    else
+    {
       summary = `⚠️ Found ${totalIssues} spacing issues (${overlaps.length} overlaps, ${smallGaps.length} tight gaps) - may affect editing`
     }
 
@@ -152,7 +177,8 @@ export function useTimingAnalysis() {
     }
   }
 
-  function fixTimingOverlaps(lyrics: LyricLine[]): { fixCount: number; details: string[] } {
+  function fixTimingOverlaps(lyrics: LyricLine[]): { fixCount: number; details: string[] }
+  {
     console.log('🔧 Starting timing overlap fix...')
     const details: string[] = []
     let fixCount = 0
@@ -161,9 +187,12 @@ export function useTimingAnalysis() {
     const allWords: Array<{ word: WordTiming; lineIndex: number; wordIndex: number }> = []
 
     // Collect references to actual word objects (not copies)
-    lyrics.forEach((line, lineIndex) => {
-      line.words.forEach((word, wordIndex) => {
-        if (word.startTime !== undefined && word.endTime !== undefined) {
+    lyrics.forEach((line, lineIndex) =>
+    {
+      line.words.forEach((word, wordIndex) =>
+      {
+        if (word.startTime !== undefined && word.endTime !== undefined)
+        {
           allWords.push({
             word, // Reference to actual word object
             lineIndex,
@@ -181,7 +210,8 @@ export function useTimingAnalysis() {
     // Fix overlaps AND words that are too close together
     const minGap = TIMING.word.collisionMargin // Minimum gap (ms) from centralized timing rules
 
-    for (let i = 0; i < allWords.length - 1; i++) {
+    for (let i = 0; i < allWords.length - 1; i++)
+    {
       const wordRef1 = allWords[i]
       const wordRef2 = allWords[i + 1]
       const word1 = wordRef1.word
@@ -190,15 +220,15 @@ export function useTimingAnalysis() {
       const currentGap = word2.startTime! - word1.endTime!
       const needsFix = currentGap < minGap
 
-      if (needsFix) {
+      if (needsFix)
+      { 
         const originalEnd = word1.endTime!
         const newEnd = word2.startTime! - minGap
 
-        if (currentGap < 0) {
+        if (currentGap < 0)
           console.log(`🔧 Fixing overlap: "${word1.word}" (${originalEnd}ms) → "${word2.word}" (${word2.startTime}ms)`)
-        } else {
+        else
           console.log(`🔧 Fixing tight spacing: "${word1.word}" → "${word2.word}" (${currentGap}ms gap → ${minGap}ms gap)`)
-        }
         console.log(`   Adjusting "${word1.word}" end time: ${originalEnd}ms → ${newEnd}ms`)
 
         word1.endTime = newEnd
@@ -209,11 +239,13 @@ export function useTimingAnalysis() {
         fixCount++
 
         // Fix syllable timing if present
-        if (word1.syllables && word1.syllables.length > 0) {
+        if (word1.syllables && word1.syllables.length > 0)
+        {
           const wordDuration = word1.duration
           let currentTime = word1.startTime!
 
-          word1.syllables.forEach((syllable) => {
+          word1.syllables.forEach((syllable) =>
+          {
             const syllableDuration = wordDuration / word1.syllables.length
             syllable.startTime = currentTime
             syllable.endTime = currentTime + syllableDuration
@@ -223,7 +255,10 @@ export function useTimingAnalysis() {
           console.log(`   Updated ${word1.syllables.length} syllables for "${word1.word}"`)
         }
       }
-    } console.log(`✅ Fixed ${fixCount} overlaps`)
+    }
+
+    console.log(`✅ Fixed ${fixCount} overlaps`)
+
     return {
       fixCount,
       details
@@ -235,3 +270,5 @@ export function useTimingAnalysis() {
     fixTimingOverlaps
   }
 }
+
+// END

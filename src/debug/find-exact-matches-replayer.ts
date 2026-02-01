@@ -2,7 +2,7 @@
 
 import fs from 'fs'
 import path from 'path'
-import { writeFontBlock, VRAM } from '../cdg/encoder'
+import { writeFontBlock } from '../cdg/encoder'
 import ReferenceReplayer from '../cdg/referenceReplayer'
 import { CDG_SCREEN } from '../karaoke/renderers/cdg/CDGPacket'
 import { CDG_PPS } from '../cdg/constants'
@@ -67,7 +67,9 @@ for (const clip of parsed.clips || []) {
           }
           pixels.push(rowArr)
         }
-        events.push({ blockX: t.col, blockY: t.row, pixels, startPack, durationPacks })
+        events.push({
+ blockX: t.col, blockY: t.row, pixels, startPack, durationPacks 
+})
       }
     }
   }
@@ -120,9 +122,13 @@ for (let ei = startEvent; ei < end; ei++) {
     }
     if (ok) { foundAt = s; console.log(` Found exact match at ${s} for event ${ei}`); break }
   }
-  outMatches.push({ eventIndex: ei, blockX: ev.blockX, blockY: ev.blockY, startPack: ev.startPack, matchedIndex: foundAt })
+  outMatches.push({
+ eventIndex: ei, blockX: ev.blockX, blockY: ev.blockY, startPack: ev.startPack, matchedIndex: foundAt 
+})
 }
 
 fs.mkdirSync(path.dirname(outputPath), { recursive: true })
-fs.writeFileSync(outputPath, JSON.stringify({ reservedStart, matches: outMatches }, null, 2))
+fs.writeFileSync(outputPath, JSON.stringify({
+ reservedStart, matches: outMatches 
+}, null, 2))
 console.log('Wrote', outputPath)

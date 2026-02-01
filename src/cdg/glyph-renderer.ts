@@ -91,7 +91,9 @@ export function renderGlyphToVRAM(
     }
   }
 
-  return { pixelsSet, pixelsOutOfBounds }
+  return {
+ pixelsSet, pixelsOutOfBounds 
+}
 }
 
 // VIM: set filetype=typescript :

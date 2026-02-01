@@ -49,10 +49,12 @@ export const CDG_SCREEN = {
  * [4-19] = 16-byte payload (instruction-specific data)
  * [20-23] = Parity P (typically 0 in file-based CDG)
  */
-export class CDGPacket {
+export class CDGPacket
+{
   private buffer: Uint8Array
 
-  constructor() {
+  constructor()
+  {
     this.buffer = new Uint8Array(24)
     // Initialize packet structure
     this.buffer[0] = 0x09  // CDG command code (always 0x09 for TV Graphics mode)
@@ -64,7 +66,8 @@ export class CDGPacket {
    * The instruction parameter is the CDG sub-command (COPY_FONT, XOR_FONT, LOAD_LOW, LOAD_HIGH, etc.)
    * Note: In CDG packets, byte [1] contains the instruction, and byte [2-3] are parity Q
    */
-  setCommand(command: CDGCommand, instruction: number = 0): void {
+  setCommand(command: CDGCommand): void
+  {
     this.buffer[1] = command & 0x3F  // Instruction at [1] (mask to 6 bits)
     // buffer[2-3] are parity Q, left as zero
   }
@@ -75,11 +78,11 @@ export class CDGPacket {
    * Note: Palette data bytes are 6-bit, but pixel tile data is 8-bit (2 pixels per byte).
    * We do NOT mask here; instructions should provide properly formatted data.
    */
-  setData(data: number[]): void {
-    for (let i = 0; i < 16; i++) {
+  setData(data: number[]): void
+  {
+    for (let i = 0; i < 16; i++)
       // Ensure each data byte is masked to 8 bits to prevent overflow into adjacent buffer positions
       this.buffer[4 + i] = (i < data.length ? (data[i] & 0xFF) : 0)  // Data at [4..19]
-    }
   }
 
   /**
@@ -87,7 +90,8 @@ export class CDGPacket {
    * Parity Q (buffer[2-3]) and Parity P (buffer[20-23]) are typically left as zeros in file-based CDG.
    * CD+G Magic does the same, and file-based players ignore parity.
    */
-  setParity(): void {
+  setParity(): void
+  {
     // Leave parity bytes as zero (standard practice in .cdg files)
     // buffer[2-3] = parity Q (already zero from constructor)
     // buffer[20-23] = parity P (set to zero)
@@ -102,7 +106,8 @@ export class CDGPacket {
   /**
    * Get the complete packet as Buffer
    */
-  toBuffer(): Buffer {
+  toBuffer(): Buffer
+  {
     this.setParity()
     // Return as Uint8Array-compatible buffer. In Node consumers this can be wrapped with Buffer.from(...)
     return this.buffer as unknown as Buffer
@@ -111,7 +116,8 @@ export class CDGPacket {
   /**
    * Create memory preset packet (clear screen)
    */
-  static memoryPreset(color: number, repeat: number = 0): CDGPacket {
+  static memoryPreset(color: number, repeat: number = 0): CDGPacket
+  {
     const packet = new CDGPacket()
     packet.setCommand(CDGCommand.CDG_MEMORY_PRESET)
     packet.setData([
@@ -124,7 +130,8 @@ export class CDGPacket {
   /**
    * Create border preset packet (set border color)
    */
-  static borderPreset(color: number): CDGPacket {
+  static borderPreset(color: number): CDGPacket
+  {
     const packet = new CDGPacket()
     packet.setCommand(CDGCommand.CDG_BORDER_PRESET)
     packet.setData([color & 0x0F])
@@ -135,13 +142,10 @@ export class CDGPacket {
    * Create tile block packet (draw 6x12 tile)
    */
   static tileBlock(
-    color0: number,
-    color1: number,
-    row: number,
-    col: number,
-    pixels: number[],
-    xor: boolean = false
-  ): CDGPacket {
+    color0: number,   color1: number,
+    row: number,      col: number,
+    pixels: number[], xor: boolean = false ): CDGPacket
+  {
     const packet = new CDGPacket()
     packet.setCommand(
       xor ? CDGCommand.CDG_TILE_BLOCK_XOR : CDGCommand.CDG_TILE_BLOCK
@@ -163,10 +167,8 @@ export class CDGPacket {
   /**
    * Create load color table packet (set palette colors)
    */
-  static loadColorTable(
-    colors: number[],
-    high: boolean = false
-  ): CDGPacket {
+  static loadColorTable( colors: number[], high: boolean = false ): CDGPacket
+  {
     const packet = new CDGPacket()
     packet.setCommand(
       high ? CDGCommand.CDG_LOAD_COLOR_TABLE_HIGH : CDGCommand.CDG_LOAD_COLOR_TABLE_LOW
@@ -177,7 +179,8 @@ export class CDGPacket {
     // data[pal_inc*2+0] = (r4 << 2) | (g4 >> 2)
     // data[pal_inc*2+1] = ((g4 & 0x03) << 4) | b4
     const data: number[] = new Array(16).fill(0)
-    for (let pal_inc = 0; pal_inc < 8; pal_inc++) {
+    for (let pal_inc = 0; pal_inc < 8; pal_inc++)
+    {
       const color = colors[pal_inc] || 0
       const r4 = (color >> 8) & 0x0F
       const g4 = (color >> 4) & 0x0F
@@ -203,7 +206,8 @@ export class CDGPacket {
   /**
    * Create empty packet (used for timing/padding)
    */
-  static empty(): CDGPacket {
+  static empty(): CDGPacket
+  {
     return new CDGPacket()
   }
 }
@@ -214,10 +218,12 @@ export class CDGPacket {
  * Converts RGB colors to CDG 12-bit format
  * CDG uses 4 bits per channel: [R3 R2 R1 R0 G3 G2 G1 G0 B3 B2 B1 B0]
  */
-export class CDGPalette {
+export class CDGPalette
+{
   private colors: number[] = []
 
-  constructor() {
+  constructor()
+  {
     // Initialize with default karaoke palette
     this.setDefaultPalette()
   }
@@ -225,7 +231,8 @@ export class CDGPalette {
   /**
    * Set default karaoke color palette
    */
-  setDefaultPalette(): void {
+  setDefaultPalette(): void
+  {
     this.colors = [
       this.rgbToCDG(0, 0, 0),        // 0: Black (background)
       this.rgbToCDG(255, 255, 0),    // 1: Yellow (active text)
@@ -249,7 +256,8 @@ export class CDGPalette {
   /**
    * Convert RGB (8-bit per channel) to CDG format (4-bit per channel)
    */
-  rgbToCDG(r: number, g: number, b: number): number {
+  rgbToCDG(r: number, g: number, b: number): number
+  {
     // Scale 8-bit (0-255) to 4-bit (0-15).
     // Use the reference implementation mapping: divide by 17 (floor) to map 0..255 -> 0..15.
     const r4 = Math.floor(r / 17) & 0x0F

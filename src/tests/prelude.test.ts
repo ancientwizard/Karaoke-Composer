@@ -10,7 +10,9 @@ describe('synthesizePrelude', () => {
           foreground_color: 1,
           background_color: 0,
           text: 'Hello',
-          events: [ { clip_x_offset: 6, clip_y_offset: 24 } ]
+          events: [ {
+ clip_x_offset: 6, clip_y_offset: 24 
+} ]
         }
       ]
     }

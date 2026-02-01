@@ -436,10 +436,10 @@ echo "Generated: $PACKETS packets = $SECONDS seconds"
 
 ### Packet Inspection
 
-**Tool**: `bin/inspect-cdg.cjs`
+**Tool**: `bin/inspect-cdg.ts`
 
 ```bash
-node bin/inspect-cdg.cjs output.cdg
+node bin/inspect-cdg.ts output.cdg
 # Shows:
 #   - Total packet count
 #   - Command distribution (palette, tile, etc.)
@@ -505,7 +505,7 @@ npx tsx src/debug/find-event-for-block.ts <parsed.json> <packet_index>
 ### "When in doubt"
 
 → **Always consult the reference code** in `reference/cd+g-magic/CDG_Magic/Source/`  
-→ Run `bin/inspect-cdg.cjs` on both generated and reference CDG to compare  
+→ Run `bin/inspect-cdg.ts` on both generated and reference CDG to compare  
 → Use `src/debug/parse-cmp.ts` to re-extract and verify JSON structure
 
 ---

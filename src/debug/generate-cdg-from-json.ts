@@ -1214,5 +1214,5 @@ main().catch((e) => { console.error(e); process.exit(2) })
 
 export default main
 
-## vim: et nu ts=2 sw=2
-## END
+// vim: et nu ts=2 sw=2
+// END

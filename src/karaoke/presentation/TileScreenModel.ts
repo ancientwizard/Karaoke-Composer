@@ -166,7 +166,9 @@ export class TileScreenModel
   {
     for (let y = 0; y < this.tilesTall; y++) {
       for (let x = 0; x < this.tilesWide; x++) {
-        this.grid[y][x] = { char: ' ', color: 0 }
+        this.grid[y][x] = {
+ char: ' ', color: 0 
+}
       }
     }
   }
@@ -176,7 +178,9 @@ export class TileScreenModel
    */
   getDimensions(): { width: number; height: number }
   {
-    return { width: this.tilesWide, height: this.tilesTall }
+    return {
+ width: this.tilesWide, height: this.tilesTall 
+}
   }
 
   /**
@@ -204,7 +208,9 @@ export class TileScreenModel
       for (let x = 0; x < this.tilesWide; x++) {
         const tile = this.grid[y][x]
         if (tile.char !== ' ') {
-          result.push({ x, y, tile })
+          result.push({
+ x, y, tile 
+})
         }
       }
     }

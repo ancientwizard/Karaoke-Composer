@@ -41,24 +41,12 @@ export default {
     },
 
     // Built in messages
-    newAndImproved:   {
- type: Boolean, default: false 
-},
-    limitedTimeOffer: {
- type: Boolean, default: false 
-},
-    exclusiveFeature: {
- type: Boolean, default: false 
-},
-    tryItNow:         {
- type: Boolean, default: false 
-},
-    dontMissOut:      {
- type: Boolean, default: false 
-},
-    comingSoon:       {
- type: Boolean, default: false 
-}
+    newAndImproved:     { type: Boolean, default: false },
+    limitedTimeOffer:   { type: Boolean, default: false },
+    exclusiveFeature:   { type: Boolean, default: false },
+    tryItNow:           { type: Boolean, default: false },
+    dontMissOut:        { type: Boolean, default: false },
+    comingSoon:         { type: Boolean, default: false }
   },
 
   data: () => {

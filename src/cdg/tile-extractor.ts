@@ -51,7 +51,9 @@ export function extractTileFromVRAM(vram: VRAM, tileX: number, tileY: number): E
     pixelData.push(row)
   }
 
-  return { tileX, tileY, pixelData, pixelCount }
+  return {
+ tileX, tileY, pixelData, pixelCount 
+}
 }
 
 /**

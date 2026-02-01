@@ -33,4 +33,4 @@ const outBuf = swapRowCol(inPath)
 fs.writeFileSync(outPath, outBuf)
 console.log('Wrote', outPath)
 
-try { const cp = await import('child_process'); (cp as any).spawnSync('npx', ['tsx', 'src/debug/render-cdg-to-ppm.ts', outPath], { stdio: 'inherit' }) } catch (e) {}
+try { const cp = await import('child_process'); (cp as any).spawnSync('npx', ['tsx', 'src/debug/render-cdg-to-ppm.ts', outPath], { stdio: 'inherit' }) } catch (e) { console.warn('render-cdg-to-ppm failed:', e) }

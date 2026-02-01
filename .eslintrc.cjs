@@ -16,23 +16,13 @@ module.exports = {
   },
   rules: {
     'vue/multi-word-component-names': 'warn',
-    'brace-style': [
-      'error',
-      'allman', // Allman style - opening braces on next line (as per AGENTS.md)
-      { allowSingleLine: true },
-    ],
-    'object-curly-newline': [
-      'error',
-      {
-        ObjectExpression: {
-          multiline: true,
-          minProperties: 2, // More reasonable threshold
-        },
-        ObjectPattern: {
-          multiline: true,
-          minProperties: 3,
-        },
-      },
-    ],
+    // Relax brace-style enforcement so contributors can use either style.
+    'brace-style': 'off',
+    // Allow non-uniform use of braces in small lambdas / single-line blocks.
+    'curly': 'off',
+    // Allow flexible object braces/linebreaks across the codebase; small
+    // single-line objects are common in Vue prop definitions and a strict
+    // enforcement here produces noisy autofixes. Disable this rule.
+    'object-curly-newline': 'off',
   },
 }

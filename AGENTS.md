@@ -9,7 +9,7 @@ How agents should use this file
 - If a rule conflicts with an explicit in-request instruction, follow the request.
 
 Global defaults
-- Primary language: TypeScript. Create .ts files (no .js/cjs)
+- Primary language: TypeScript. Create .ts files (no .js/.cjs/.py)
 - Module format: ESM (import/export). Target runtime: Node 18+.
 - Package manager: npm.
 - Line endings: LF. Encoding: UTF-8.
@@ -20,7 +20,6 @@ Global defaults
 - Tests: use Jest; place tests in src/tests/ as *.test.ts.
 - Linting/Formatting: follow ESLint + Prettier defaults; respect any repo .eslintrc / .prettierrc.
 - Security: never output secrets or credentials. Reference env vars via process.env and document required vars in README / .env.example.
-- Licensing: include license header if repository uses one; otherwise do not add a third‑party license header.
 
 Per-language / per-folder overrides
 - If a folder contains its own AGENTS.md or config (tsconfig, eslint, package.json scripts), prefer the folder-local settings.
@@ -37,6 +36,7 @@ Code generation rules (examples)
 - Side effects: avoid global side effects on import. Export pure functions when possible.
 - Dependencies: add to package.json and update lockfile. Prefer small, well-maintained packages.
 - Tests: include at least one unit test demonstrating main behavior. Use mocks for external I/O.
+- all scripts are to be created as typescript; existing .csj must be converted and renamed
 
 Behavioral rules for the agent
 - When introducing breaking changes, bump major version or document migration in CHANGELOG.
@@ -51,7 +51,7 @@ Guidelines
 - Enforce TypeScript:
   - "All code files must be written as TypeScript in a .ts file. (in as much is possible)"
 - Brace style:
-  - "All code must put starting { on the next line." except onliners and 
+  - "All code must put starting { on the next line." except onliners and special cases
 - Tests:
   - "Provide a Jest test file in src/tests/"
 - Code types
@@ -63,16 +63,17 @@ Guidelines
   - empty line
   - a suitable // VIM: settings for the file type
   - then one of
-   - // END
-   - ## END
+// END
+ ... OR
+## END
      (based on file type)
 - Seeing files the agent may not have access to directly; ask to run the command
 
 Where to find things
  - reference/ contains code and other files as reference material
       E.G. like how to create .cdg files
- - bin/ things I'll run, unless I ask you wont make change here;
-      Though I think two of these should be moved my me to the diag/ (TBD)
+ - tmp/CD+G-Magic-Conversion/src/ts/cd+g-magic/ a different implementaion to use for inspiration
+ - bin/ things I'll run, unless I ask, you wont make change here;
  - diag/ lots of tools etc to support/aide development
  - dist/ obvious
  - docs/ subject matter .md files

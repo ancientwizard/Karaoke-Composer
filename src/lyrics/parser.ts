@@ -150,7 +150,9 @@ export class SongParser {
         currentWordStart = sylStart
       }
 
-      syllables.push({ text: sylText, startTime: sylStart })
+      syllables.push({
+ text: sylText, startTime: sylStart 
+})
 
       // Check if this is end of word (has space)
       if (sylText.includes(' ')) {
@@ -185,7 +187,9 @@ export class SongParser {
       words.push({
         text: wordText,
         startTime: finalStart,
-        syllables: syllables.length > 0 ? syllables : [{ text: wordText, startTime: finalStart }]
+        syllables: syllables.length > 0 ? syllables : [{
+ text: wordText, startTime: finalStart 
+}]
       })
     }
 
@@ -198,7 +202,9 @@ export class SongParser {
     const words = wordTexts.map((w, idx) => ({
       text: w,
       startTime: line.startTime + idx * 200, // Rough estimate
-      syllables: [{ text: w, startTime: line.startTime + idx * 200 }]
+      syllables: [{
+ text: w, startTime: line.startTime + idx * 200 
+}]
     }))
 
     line.words = words

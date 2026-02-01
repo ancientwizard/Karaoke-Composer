@@ -80,7 +80,9 @@ export class PacketDiagnostics {
     this.telemetry.totalPacketsAttempted++
     this.notify({
       type: 'skipped',
-      context: { reason, ...context }
+      context: {
+ reason, ...context 
+}
     })
   }
 
@@ -94,7 +96,9 @@ export class PacketDiagnostics {
       type: 'dropped',
       severity: 'critical',
       message: `Packet dropped: ${reason}`,
-      context: { ...context, expectedData }
+      context: {
+ ...context, expectedData 
+}
     }
     this.telemetry.anomalies.push(anomaly)
     this.notify({
@@ -112,7 +116,9 @@ export class PacketDiagnostics {
       type: 'malformed',
       severity: 'critical',
       message: `Malformed packet: ${reason}`,
-      context: { packetLength: packet.length, ...context }
+      context: {
+ packetLength: packet.length, ...context 
+}
     }
     this.telemetry.anomalies.push(anomaly)
     this.notify({
@@ -130,7 +136,9 @@ export class PacketDiagnostics {
       type: 'incomplete',
       severity: 'critical',
       message: `Incomplete packet: ${reason}`,
-      context: { packetLength: packet.length, expectedLength: 24, ...context }
+      context: {
+ packetLength: packet.length, expectedLength: 24, ...context 
+}
     }
     this.telemetry.anomalies.push(anomaly)
     this.notify({
@@ -148,7 +156,9 @@ export class PacketDiagnostics {
       type: 'validation_failed',
       severity: 'warning',
       message: `Validation failed: ${reason}`,
-      context: { packetLength: packet?.length, ...context }
+      context: {
+ packetLength: packet?.length, ...context 
+}
     }
     this.telemetry.anomalies.push(anomaly)
     this.notify({

@@ -664,9 +664,13 @@ export function scheduleFontEvents(events: FontEvent[], opts: ScheduleOptions, r
       occupancyPercent: occupancy,
       binSize,
       bins,
+      xorPacketsGenerated,
+      copyPacketsGenerated,
       expiredDroppedCount: _expiredDroppedCount,
     };
-    if (diagEnabled && diagWriteStats) {
+
+    if (diagEnabled && diagWriteStats)
+    {
       const outPath = `${diagOutDir.replace(/\/+$/, '')}/scheduler_stats.json`;
       try { fs.mkdirSync(diagOutDir, { recursive: true }); } catch (e) { /* ignore */ }
       fs.writeFileSync(outPath, JSON.stringify(stats, null, 2));
@@ -725,9 +729,9 @@ export function scheduleAndWriteDemo(outPath: string, durationSeconds = 4) {
   // Ensure last slot is non-empty: copy last non-empty packet into final slot if needed
   const lastIndex = packetSlots.length - 1;
   const lastNonEmpty = (() => {
-    for (let i = packetSlots.length - 1; i >= 0; i--) {
+    for (let i = packetSlots.length - 1; i >= 0; i--)
       if (!packetSlots[i].every((b) => b === 0)) return i;
-    }
+
     return -1;
   })();
   // Also ensure a palette packet exists near the end (helps players that re-evaluate palette late)
@@ -735,26 +739,27 @@ export function scheduleAndWriteDemo(outPath: string, durationSeconds = 4) {
   if (palettePkts.length > 0) {
     // find an empty slot near preferredPaletteSlot to place the palette
     let placed = false;
-    for (let i = preferredPaletteSlot; i >= Math.max(0, preferredPaletteSlot - 4); i--) {
+    for (let i = preferredPaletteSlot; i >= Math.max(0, preferredPaletteSlot - 4); i--)
       if (packetSlots[i].every((b) => b === 0)) { packetSlots[i] = palettePkts[palettePkts.length - 1]; placed = true; break; }
-    }
-    if (!placed) {
+
+    if (!placed)
       // try forward from preferred slot
-      for (let i = preferredPaletteSlot; i <= Math.min(lastIndex, preferredPaletteSlot + 4); i++) {
+      for (let i = preferredPaletteSlot; i <= Math.min(lastIndex, preferredPaletteSlot + 4); i++)
         if (packetSlots[i].every((b) => b === 0)) { packetSlots[i] = palettePkts[palettePkts.length - 1]; placed = true; break; }
-      }
-    }
   }
 
-  if (lastNonEmpty === -1) {
+  if (lastNonEmpty === -1)
+  {
     // No non-empty found, place a palette packet at the end
     packetSlots[lastIndex] = palettePkts[palettePkts.length - 1] || makeEmptyPacket();
-  } else if (lastNonEmpty !== lastIndex) {
-    packetSlots[lastIndex] = packetSlots[lastNonEmpty];
   }
+  else
+  if (lastNonEmpty !== lastIndex)
+    packetSlots[lastIndex] = packetSlots[lastNonEmpty];
 
   // write to file
   writePacketsToFile(outPath, packetSlots);
+
   return {
     outPath,
     count: packetSlots.length,

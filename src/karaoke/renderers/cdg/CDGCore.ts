@@ -467,7 +467,9 @@ export class CDGCore
       }
 
       // Store glyph data for this character
-      charToGlyph.set(charIdx, { pixelX: screenX, pixelY: screenY, ...glyph })
+      charToGlyph.set(charIdx, {
+ pixelX: screenX, pixelY: screenY, ...glyph 
+})
 
       cursorX += glyph.width + charSpacing
     }

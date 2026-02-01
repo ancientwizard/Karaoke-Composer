@@ -1,9 +1,7 @@
 #!/usr/bin/env -S npx tsx
 
 import fs from 'fs'
-import path from 'path'
 import { CDGTextRenderer } from '../karaoke/renderers/cdg/CDGFont'
-import { CDGPalette } from '../karaoke/renderers/cdg/CDGPacket'
 import { CDG_SCREEN } from '../karaoke/renderers/cdg/CDGPacket'
 
 function msToPacks(ms: number, pps = 300) {
@@ -15,8 +13,7 @@ function loadAndBuildEvents(inPath: string) {
   const parsed = JSON.parse(buf)
   const pps = 300
   const textRenderer = new CDGTextRenderer()
-  const palette = new CDGPalette()
-  const paletteColors = palette.getColors()
+  // palette/colors intentionally unused for this inspector script
 
   const events: any[] = []
   for (const clip of parsed.clips || []) {
@@ -45,7 +42,9 @@ function loadAndBuildEvents(inPath: string) {
             }
             pixels.push(rowArr)
           }
-          events.push({ blockX: t.col, blockY: t.row, pixels, startPack, durationPacks })
+          events.push({
+ blockX: t.col, blockY: t.row, pixels, startPack, durationPacks 
+})
         }
       }
       continue

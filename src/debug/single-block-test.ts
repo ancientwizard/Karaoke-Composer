@@ -6,7 +6,9 @@ import GeneratorByFunction from './generate-by-function'
 
 async function run() {
   const out = path.join('diag', 'single-block-test.cdg')
-  const g = new (GeneratorByFunction as any)({ pps: 300, autoRenderBlocks: true })
+  const g = new (GeneratorByFunction as any)({
+ pps: 300, autoRenderBlocks: true 
+})
   // ensure palette index 1 is bright
   g.setColor(1, 255, 0, 0)
   g.clearScreen(0)

@@ -66,7 +66,9 @@ for (const clip of parsed.clips || []) {
           }
           pixels.push(rowArr);
         }
-        events.push({ blockX: t.col, blockY: t.row, pixels: pixels, startPack: startPack, durationPacks: durationPacks });
+        events.push({
+ blockX: t.col, blockY: t.row, pixels: pixels, startPack: startPack, durationPacks: durationPacks 
+});
       }
     }
   }
@@ -75,7 +77,9 @@ for (const clip of parsed.clips || []) {
 if (events.length === 0) { console.error('No text events'); process.exit(2) }
 
 // If pktStart/pktEnd provided, compute event index slice covering them
-let eventIndices = events.map((e, i) => ({ i, startPack: e.startPack }));
+let eventIndices = events.map((e, i) => ({
+ i, startPack: e.startPack 
+}));
 if (pktStart != null && pktEnd != null) {
   // include events whose startPack in [pktStart-pps, pktEnd+pps]
   const low = pktStart - PPS;
@@ -111,7 +115,9 @@ function runChunk(i, chunk) {
   const args = ['src/debug/find-exact-matches-replayer.ts', parsedPath, referencePath, String(start), String(count), outFile];
   const env = Object.assign({}, process.env, { REPLAYER_SNAPSHOT_INTERVAL: REPLAYER_SNAPSHOT_INTERVAL });
   console.log('Spawning worker', i, 'start', start, 'count', count);
-  const p = spawn('npx', ['tsx', ...args], { stdio: ['ignore', 'pipe', 'pipe'], env });
+  const p = spawn('npx', ['tsx', ...args], {
+ stdio: ['ignore', 'pipe', 'pipe'], env 
+});
   p.stdout.on('data', d => process.stdout.write(`[w${i}] ${d}`));
   p.stderr.on('data', d => process.stderr.write(`[w${i}][ERR] ${d}`));
   p.on('close', (code) => {
@@ -124,7 +130,9 @@ function runChunk(i, chunk) {
 
 function mergeResults() {
   console.log('Merging', tmpFiles.length, 'worker files');
-  let merged = { reservedStart: null, matches: [] };
+  const merged = {
+ reservedStart: null, matches: [] 
+};
   for (const f of tmpFiles) {
     if (!fs.existsSync(f)) continue;
     const m = JSON.parse(fs.readFileSync(f, 'utf8'));

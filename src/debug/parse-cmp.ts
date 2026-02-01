@@ -86,7 +86,7 @@ function parseTextClip(buf: Buffer, off: number) {
   const startOff = off;
   function rU8(name?: string) { const v = readUInt8(buf, off).value; console.log(`  rU8 ${name||''} @${off} => ${v}`); off += 1; return v; }
   function rI32(name?: string) { console.log(`  rI32(about to read) ${name||''} off=${off}`); const res = readIntBE(buf, off); console.log(`  rI32 ${name||''} @${off} => ${res.value}`); off += res.size; return res.value; }
-  function rI16(name?: string) { const res = readShortBE(buf, off); console.log(`  rI16 ${name||''} @${off} => ${res.value}`); off += res.size; return res.value; }
+  // rI16 helper removed (unused)
   function rStr(name?: string) { const res = readString(buf, off); console.log(`  rStr ${name||''} @${off} => '${res.value}' (${res.size} bytes)`); off += res.size; return res.value; }
 
   const track = rU8('track');
@@ -109,7 +109,7 @@ function parseTextClip(buf: Buffer, off: number) {
   const xor_bandwidth = rI32('xor_bandwidth');
   const antialias_mode = rI32('antialias_mode');
   const default_palette_number = rI32('default_palette_number');
-  const text_length = rI32('text_length');
+  rI32('text_length');
   const text = rStr('text');
 
   console.log(`before total_events: off=${off}, bufLen=${buf.length}`);
