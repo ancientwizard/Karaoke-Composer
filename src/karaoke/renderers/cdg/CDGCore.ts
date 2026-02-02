@@ -97,7 +97,8 @@ export class CDGCore
    */
   render(script: PresentationScript): CDGPacket[]
   {
-    for (const command of script.commands)
+    const sortedCommands = this.sortCommands(script.commands)
+    for (const command of sortedCommands)
     {
       this.renderCommand(command)
     }
@@ -136,12 +137,13 @@ export class CDGCore
     } = {}
   ): Promise<void>
   {
+    const sortedCommands = this.sortCommands(script.commands)
     const commandsPerChunk = options.commandsPerChunk ?? 10
     const packetsPerChunk = options.packetsPerChunk ?? 500
     const onChunk = options.onChunk
     const onDebug = options.onDebug
 
-    const totalCommands = script.commands.length
+    const totalCommands = sortedCommands.length
     // number of packets determined by the duration (does NOT include initial palette/clear/border packets)
     const durationPackets = Math.floor((script.durationMs / 1000) * CDG_SCREEN.PACKETS_PER_SECOND)
     // we'll compute the final totalPackets (including any initial packets) after we know initial packet count
@@ -187,10 +189,16 @@ export class CDGCore
 
     for (let i = 0; i < totalCommands; i++)
     {
-      const cmd = script.commands[i]
+      const cmd = sortedCommands[i]
 
       // Ensure we have produced packets up to the command timestamp
       const targetForCmd = Math.floor((cmd.timestamp / 1000) * CDG_SCREEN.PACKETS_PER_SECOND)
+
+      // Ensure earlier command packets are emitted before we add padding for later timestamps
+      if (pendingPackets.length > 0 && targetForCmd > this.packetCount)
+      {
+        await emitPending()
+      }
 
       if (this.packetCount < targetForCmd)
       {
@@ -365,6 +373,36 @@ export class CDGCore
       totalPackets
     })
     if (onDebug) onDebug(`CDGCore: renderIncremental complete (packets=${this.packetCount})`)
+  }
+
+  private sortCommands(commands: AnyPresentationCommand[]): AnyPresentationCommand[]
+  {
+    const priority: Record<string, number> = {
+      clear_screen: 0,
+      show_metadata: 1,
+      show_text: 2,
+      change_color: 3,
+      transition: 4,
+      remove_text: 5
+    }
+
+    return [...commands].sort((a, b) =>
+    {
+      if (a.timestamp !== b.timestamp)
+      {
+        return a.timestamp - b.timestamp
+      }
+
+      const aPriority = priority[a.type] ?? 99
+      const bPriority = priority[b.type] ?? 99
+
+      if (aPriority !== bPriority)
+      {
+        return aPriority - bPriority
+      }
+
+      return 0
+    })
   }
 
   renderCommand(command: AnyPresentationCommand): void

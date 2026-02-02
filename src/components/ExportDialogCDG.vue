@@ -291,6 +291,26 @@ async function exportCDG() {
     // Generate presentation script and render CDG in-browser
     const script = engine.generateScript(props.project)
 
+    try {
+      const sorted = [...script.commands].sort((a, b) => a.timestamp - b.timestamp)
+      const firstCmd = sorted[0]
+      const firstShowText = sorted.find(cmd => cmd.type === 'show_text') as any
+      if (firstCmd) {
+        const msg = `SCRIPT: first cmd ${firstCmd.type} t=${(firstCmd.timestamp / 1000).toFixed(3)}s`
+        console.log(msg)
+        await pushDebug(msg)
+      }
+      if (firstShowText) {
+        const msg = `SCRIPT: first show_text t=${(firstShowText.timestamp / 1000).toFixed(3)}s text="${firstShowText.text}"`
+        console.log(msg)
+        await pushDebug(msg)
+      }
+    } catch (e: any) {
+      const msg = `SCRIPT: debug failed ${e?.message || e}`
+      console.warn(msg)
+      await pushDebug(msg)
+    }
+
     const renderer = new CDGBrowserRenderer({
       backgroundColor: 0,
       activeColor: 1,

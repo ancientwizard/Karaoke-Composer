@@ -53,6 +53,7 @@ export interface PlaceableLine
   id: string                    // Unique ID for this line
   sourceId: string              // Original item ID
   text: string                  // The text to render
+  type: 'metadata' | 'lyrics' | 'credit'
   startTime: number
   endTime: number
   words: any[]                  // References to word objects for highlighting
@@ -503,6 +504,7 @@ export class TextRenderComposer
           id: `${item.id}:${lineIdx}`,
           sourceId: item.id,
           text: lineText,
+          type: item.type,
           startTime: item.showTime,
           endTime: item.hideTime,
           words: item.words || [],

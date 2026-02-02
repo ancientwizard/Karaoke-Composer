@@ -93,11 +93,45 @@ export class TimingConverter {
       includeCredit: true
     })
 
+    const hasMetadataPlaceables = placeableLines.some(placeable =>
+    {
+      if (placeable.type === 'metadata')
+      {
+        return true
+      }
+
+      const text = placeable.text.trim().toLowerCase()
+      return text.startsWith('title:') || text.startsWith('by:') || text.startsWith('by ')
+    })
+
+    if (this.config.showMetadata && !hasMetadataPlaceables && (song.title || song.artist))
+    {
+      let earliestLyricStart = Infinity
+      for (const placeable of placeableLines)
+      {
+        if (placeable.type === 'lyrics')
+        {
+          earliestLyricStart = Math.min(earliestLyricStart, placeable.startTime)
+        }
+      }
+
+      const safeLyricStart = Number.isFinite(earliestLyricStart) ? earliestLyricStart : this.config.metadataDurationMs
+      const metadataDurationMs = Math.max(500, Math.min(this.config.metadataDurationMs, safeLyricStart - 200))
+      commands.push(...this.createMetadataCommands(song.title || '', song.artist || '', metadataDurationMs))
+    }
+
     // 4. Convert each PlaceableLine to presentation commands
     for (let i = 0; i < placeableLines.length; i++)
     {
       const placeable = placeableLines[i]
       // nextPlaceable intentionally not used here; reserved for future logic
+
+      const isMetadataText = placeable.type === 'metadata'
+        || placeable.text.startsWith('Title:')
+        || placeable.text.toLowerCase().startsWith('by:')
+        || placeable.text.toLowerCase().startsWith('by ')
+      const startTime = isMetadataText ? 0 : placeable.startTime
+      const endTime = placeable.endTime
 
       // Get the Y position from the composed placeable line
       // Convert from abstract 0-1000 space to Position
@@ -109,7 +143,7 @@ export class TimingConverter {
       // Show text at start time
       commands.push(
         PresentationCommands.showText(
-          placeable.startTime,
+          startTime,
           placeable.id,
           placeable.text,
           position,
@@ -136,7 +170,7 @@ export class TimingConverter {
 
       // Remove text at end time
       commands.push(
-        PresentationCommands.removeText(placeable.endTime, placeable.id)
+        PresentationCommands.removeText(endTime, placeable.id)
       )
     }
 

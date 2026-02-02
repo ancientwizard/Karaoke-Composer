@@ -216,7 +216,7 @@ const visibleLyricLines = computed(() =>
 {
   const lines = placeableLines.value.filter((line) =>
   {
-    const lineStart = line.startTime
+    const lineStart = line.type === 'metadata' ? 0 : line.startTime
     const lineEnd = line.endTime
     // Show lines that are currently playing or up to 2 seconds after they end
     const showWindow = 2000
