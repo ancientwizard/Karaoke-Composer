@@ -107,49 +107,88 @@ const canExport = computed(() => {
   return props.project && stats.value.timedSyllables > 0
 })
 
-function exportJSON() {
+type SavePicker = (options?: any) => Promise<any>
+
+async function saveBlobWithPrompt(blob: Blob, fileName: string, mimeType: string, extension: string): Promise<void>
+{
+  const picker = (window as any).showSaveFilePicker as SavePicker | undefined
+
+  if (picker)
+  {
+    const handle = await picker({
+      suggestedName: fileName,
+      types: [
+        {
+          description: `${extension.toUpperCase()} file`,
+          accept: {
+            [mimeType]: [`.${extension}`]
+          }
+        }
+      ],
+      excludeAcceptAllOption: false
+    })
+
+    const writable = await handle.createWritable()
+    await writable.write(blob)
+    await writable.close()
+    return
+  }
+
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
+async function exportJSON() {
   if (!props.project) return
 
   try {
-    exportProjectAsJSON(props.project)
+    await exportProjectAsJSON(props.project)
     showStatus('success', '✅ Project exported successfully!')
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.name === 'AbortError') {
+      showStatus('error', 'JSON export canceled')
+      return
+    }
     showStatus('error', `❌ Export failed: ${error}`)
   }
 }
 
-function exportForTerminal() {
+async function exportForTerminal() {
   if (!props.project) return
 
   try {
-    exportProjectForTerminal(props.project)
+    await exportProjectForTerminal(props.project)
     showStatus('success', '✅ Terminal export created! Copy to src/karaoke/demo/')
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.name === 'AbortError') {
+      showStatus('error', 'Terminal export canceled')
+      return
+    }
     showStatus('error', `❌ Export failed: ${error}`)
   }
 }
 
-function exportLRC() {
+async function exportLRC() {
   if (!props.project) return
 
   try {
+    const safeName = props.project.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'karaoke'
+    const fileName = `${safeName}.lrc`
     const lrcContent = LRCWriter.toLRC(props.project)
-
-    // Download as .lrc file
     const blob = new Blob([lrcContent], { type: 'text/plain' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `${props.project.name.toLowerCase().replace(/\s+/g, '_')}.lrc`
-
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-
-    URL.revokeObjectURL(url)
-
+    await saveBlobWithPrompt(blob, fileName, 'text/plain', 'lrc')
     showStatus('success', '✅ LRC file exported!')
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.name === 'AbortError') {
+      showStatus('error', 'LRC export canceled')
+      return
+    }
     showStatus('error', `❌ LRC export failed: ${error}`)
   }
 }

@@ -4,6 +4,8 @@ import { renderGlyphToVRAM } from '@/cdg/glyph-renderer'
 import { VRAM } from '@/cdg/encoder'
 import { DynamicGlyphRasterizer } from '@/cdg/DynamicGlyphRasterizer'
 import type { AnyPresentationCommand, PresentationScript, LogicalColor } from '../../presentation/Command'
+import type { GlyphSetExport } from '@/cdg/glyph-lab'
+import type { GlyphData } from '@/cdg/glyph-renderer'
 
 export interface CDGCoreConfig {
   backgroundColor?: number
@@ -11,6 +13,7 @@ export interface CDGCoreConfig {
   transitionColor?: number
   fontFamily?: string
   fontSize?: number
+  capturedGlyphSet?: GlyphSetExport
   paletteOverrides?: {
     background?: { r: number; g: number; b: number }
     active?: { r: number; g: number; b: number }
@@ -24,7 +27,7 @@ interface TrackedText {
   pixelY: number  // Actual pixel Y position (not tile-based)
   pixelX: number  // Actual pixel X position (not tile-based)
   color: LogicalColor
-  tiles: Array<{ pixelX: number; pixelY: number; width: number; rows: number[] }>
+  tiles: Array<{ tileIndex: number; pixelX: number; pixelY: number; width: number; rows: number[] }>
   // Map character index to glyph data for color changes
   charToGlyph: Map<number, { pixelX: number; pixelY: number; width: number; height?: number; rows: number[]; yOffset?: number }>
 }
@@ -43,6 +46,7 @@ export class CDGCore
   private cdgConfig: { backgroundColor: number; activeColor: number; transitionColor: number; fontFamily: string; fontSize: number }
   private colorMapping: Map<LogicalColor, number>
   private dynamicRasterizer: DynamicGlyphRasterizer
+  private capturedGlyphMap: Map<string, GlyphData>
   // running count of packets emitted (includes emitted and padding)
   private packetCount: number
 
@@ -65,6 +69,7 @@ export class CDGCore
     this.vram = new VRAM()
     this.vram.clear(this.cdgConfig.backgroundColor)
     this.dynamicRasterizer = new DynamicGlyphRasterizer()
+    this.capturedGlyphMap = this.createCapturedGlyphMap(config.capturedGlyphSet)
 
     this.colorMapping = new Map([
       ['background' as any, this.cdgConfig.backgroundColor],
@@ -468,7 +473,7 @@ export class CDGCore
 
     for (const char of text)
     {
-      const glyph = this.dynamicRasterizer.getGlyph(char, this.cdgConfig.fontFamily, this.cdgConfig.fontSize)
+      const glyph = this.resolveGlyph(char)
       glyphData.push(glyph)
       charWidths.push(glyph.width)
     }
@@ -478,7 +483,8 @@ export class CDGCore
     const widthInPixels = charWidths.reduce((sum, w) => sum + w, 0) + 
                          (charWidths.length - 1) * charSpacing
     const totalPixelWidth = CDG_SCREEN.WIDTH
-    const startPixelX = Math.floor((totalPixelWidth - widthInPixels) / 2)
+    const centeredStartX = Math.floor((totalPixelWidth - widthInPixels) / 2)
+    const startPixelX = Math.max(0, centeredStartX)
 
     // Track character-to-glyph mapping
     const charToGlyph = new Map<number, { pixelX: number; pixelY: number; width: number; rows: number[] }>()
@@ -520,10 +526,10 @@ export class CDGCore
       const tileRow = Math.floor(tileIndex / CDG_SCREEN.COLS)
       const tileCol = tileIndex % CDG_SCREEN.COLS
 
-      const pixelData = this.extractTilePixels(tileRow, tileCol)
+      const { pixelData, dominantColor } = this.extractTilePixelsAndColor(tileRow, tileCol)
       const packet = CDGPacket.tileBlock(
         this.cdgConfig.backgroundColor,
-        colorIndex,
+        dominantColor,
         tileRow,
         tileCol,
         pixelData,
@@ -539,6 +545,7 @@ export class CDGCore
       pixelX: startPixelX,  // Store the calculated start position for color changes
       color,
       tiles: Array.from(affectedTiles).map(tileIndex => ({
+        tileIndex,
         pixelX: (tileIndex % CDG_SCREEN.COLS) * CDG_SCREEN.TILE_WIDTH,
         pixelY: Math.floor(tileIndex / CDG_SCREEN.COLS) * CDG_SCREEN.TILE_HEIGHT,
         width: CDG_SCREEN.TILE_WIDTH,
@@ -608,10 +615,10 @@ export class CDGCore
       const tileRow = Math.floor(tileIndex / CDG_SCREEN.COLS)
       const tileCol = tileIndex % CDG_SCREEN.COLS
 
-      const pixelData = this.extractTilePixels(tileRow, tileCol)
+      const { pixelData, dominantColor } = this.extractTilePixelsAndColor(tileRow, tileCol)
       const packet = CDGPacket.tileBlock(
         this.cdgConfig.backgroundColor,
-        colorIndex,
+        dominantColor,
         tileRow,
         tileCol,
         pixelData,
@@ -628,23 +635,62 @@ export class CDGCore
     const trackedText = this.displayedTexts.get(textId)
     if (!trackedText) return
 
-    const emptyTile = new Array(12).fill(0)
-    for (const glyph of trackedText.tiles)
+    const affectedTiles = new Set<number>()
+
+    for (const tile of trackedText.tiles)
     {
-      const glyphTileRow = Math.floor(glyph.pixelY / CDG_SCREEN.TILE_HEIGHT)
-      const glyphTileCol = Math.floor(glyph.pixelX / CDG_SCREEN.TILE_WIDTH)
+      affectedTiles.add(tile.tileIndex)
+    }
+
+    this.displayedTexts.delete(textId)
+
+    for (const tileIndex of affectedTiles)
+    {
+      const tileRow = Math.floor(tileIndex / CDG_SCREEN.COLS)
+      const tileCol = tileIndex % CDG_SCREEN.COLS
+      const startX = tileCol * CDG_SCREEN.TILE_WIDTH
+      const startY = tileRow * CDG_SCREEN.TILE_HEIGHT
+
+      for (let y = 0; y < CDG_SCREEN.TILE_HEIGHT; y++)
+      {
+        for (let x = 0; x < CDG_SCREEN.TILE_WIDTH; x++)
+        {
+          this.vram.setPixel(startX + x, startY + y, this.cdgConfig.backgroundColor)
+        }
+      }
+    }
+
+    for (const survivor of this.displayedTexts.values())
+    {
+      const intersects = survivor.tiles.some(tile => affectedTiles.has(tile.tileIndex))
+      if (!intersects)
+      {
+        continue
+      }
+
+      const survivorColor = this.colorMapping.get(survivor.color as any) ?? this.cdgConfig.transitionColor
+      for (const glyph of survivor.charToGlyph.values())
+      {
+        renderGlyphToVRAM(this.vram, glyph.pixelX, glyph.pixelY, glyph, survivorColor)
+      }
+    }
+
+    for (const tileIndex of affectedTiles)
+    {
+      const tileRow = Math.floor(tileIndex / CDG_SCREEN.COLS)
+      const tileCol = tileIndex % CDG_SCREEN.COLS
+      const { pixelData, dominantColor } = this.extractTilePixelsAndColor(tileRow, tileCol)
+
       const packet = CDGPacket.tileBlock(
         this.cdgConfig.backgroundColor,
-        this.cdgConfig.backgroundColor,
-        glyphTileRow,
-        glyphTileCol,
-        emptyTile,
+        dominantColor,
+        tileRow,
+        tileCol,
+        pixelData,
         false
       )
       this.packets.push(packet)
     }
-
-    this.displayedTexts.delete(textId)
   }
 
   private padToTime(timestampMs: number): void
@@ -666,12 +712,12 @@ export class CDGCore
       for (let tileCol = 0; tileCol < CDG_SCREEN.COLS; tileCol++)
       {
         // Extract 6x12 pixels for this tile from VRAM
-        const pixelData = this.extractTilePixels(tileRow, tileCol)
+        const { pixelData, dominantColor } = this.extractTilePixelsAndColor(tileRow, tileCol)
 
         // Create packet for this tile
         const packet = CDGPacket.tileBlock(
           this.cdgConfig.backgroundColor,
-          1,  // Color doesn't matter since we're encoding the actual pixel pattern
+          dominantColor,
           tileRow,
           tileCol,
           pixelData,
@@ -686,9 +732,10 @@ export class CDGCore
    * Extract 6x12 pixels for a specific tile from VRAM
    * Returns array of 12 bytes (one per row, 6 pixels per row = 6 bits)
    */
-  private extractTilePixels(tileRow: number, tileCol: number): number[]
+  private extractTilePixelsAndColor(tileRow: number, tileCol: number): { pixelData: number[]; dominantColor: number }
   {
     const pixelData: number[] = []
+    const colorCounts = new Map<number, number>()
     const startPixelX = tileCol * CDG_SCREEN.TILE_WIDTH
     const startPixelY = tileRow * CDG_SCREEN.TILE_HEIGHT
 
@@ -708,13 +755,36 @@ export class CDGCore
 
         // Encode as bit: 0 = background, 1 = foreground (non-zero = foreground)
         if (colorIndex !== this.cdgConfig.backgroundColor)
+        {
           rowByte |= (1 << (5 - x))  // Set bit for this pixel
+          colorCounts.set(colorIndex, (colorCounts.get(colorIndex) || 0) + 1)
+        }
       }
 
       pixelData.push(rowByte)
     }
 
-    return pixelData
+    let dominantColor = this.cdgConfig.transitionColor
+    let dominantCount = -1
+
+    for (const [color, count] of colorCounts.entries())
+    {
+      if (count > dominantCount)
+      {
+        dominantColor = color
+        dominantCount = count
+      }
+    }
+
+    if (colorCounts.size === 0)
+    {
+      dominantColor = this.cdgConfig.backgroundColor
+    }
+
+    return {
+      pixelData,
+      dominantColor
+    }
   }
 
 
@@ -782,6 +852,38 @@ export class CDGCore
       startTileRow: Math.max(0, Math.min(CDG_SCREEN.ROWS - 1, rawStartRow)),
       endTileRow: Math.max(0, Math.min(CDG_SCREEN.ROWS - 1, rawEndRow))
     }
+  }
+
+  private resolveGlyph(char: string): GlyphData
+  {
+    const captured = this.capturedGlyphMap.get(char)
+    if (captured)
+    {
+      return captured
+    }
+
+    return this.dynamicRasterizer.getGlyph(char, this.cdgConfig.fontFamily, this.cdgConfig.fontSize)
+  }
+
+  private createCapturedGlyphMap(capturedGlyphSet?: GlyphSetExport): Map<string, GlyphData>
+  {
+    const map = new Map<string, GlyphData>()
+    if (!capturedGlyphSet)
+    {
+      return map
+    }
+
+    for (const glyph of capturedGlyphSet.glyphs)
+    {
+      map.set(glyph.char, {
+        width: glyph.width,
+        height: glyph.height,
+        rows: glyph.rows,
+        yOffset: -glyph.baselineY
+      })
+    }
+
+    return map
   }
 }
 

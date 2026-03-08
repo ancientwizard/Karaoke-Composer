@@ -49,11 +49,25 @@ export class TextLayoutEngine
   private config: LayoutConfig
   private font: CDGFont
   private charGap = 2 // pixels between characters (adjust here to test different values)
+  private readonly horizontalMargin = 24
+  private legacyVerticalPositions: number[] = [500, 640, 360, 780, 220]
+  private legacyVerticalIndex: number = 0
 
   constructor(config: LayoutConfig)
   {
     this.config = config
     this.font = new CDGFont()
+  }
+
+  getDefaultVerticalPosition(): number
+  {
+    return this.legacyVerticalPositions[0]
+  }
+
+  getNextVerticalPosition(): number
+  {
+    this.legacyVerticalIndex = (this.legacyVerticalIndex + 1) % this.legacyVerticalPositions.length
+    return this.legacyVerticalPositions[this.legacyVerticalIndex]
   }
 
   /**
@@ -91,8 +105,25 @@ export class TextLayoutEngine
    */
   private breakIntoLines(text: string): string[]
   {
+    const initialLines = this.breakIntoLinesByCharacters(text)
+    const maxPixelWidth = 300 - (this.horizontalMargin * 2)
+    const finalLines: string[] = []
+
+    for (const line of initialLines)
+    {
+      const wrappedByPixels = this.wrapLineByPixelWidth(line, maxPixelWidth)
+      finalLines.push(...wrappedByPixels)
+    }
+
+    return finalLines.length > 0 ? finalLines : ['']
+  }
+
+  private breakIntoLinesByCharacters(text: string): string[]
+  {
     if (text.length <= this.config.maxCharsPerLine)
+    {
       return [text]
+    }
 
     const lines: string[] = []
     let remaining = text
@@ -142,22 +173,112 @@ export class TextLayoutEngine
     return lines
   }
 
+  private measureLineWidthPixels(text: string): number
+  {
+    if (!text)
+    {
+      return 0
+    }
+
+    let width = 0
+    for (let i = 0; i < text.length; i++)
+    {
+      const glyph = this.font.getGlyph(text[i])
+      width += glyph.width
+      if (i < text.length - 1)
+      {
+        width += this.charGap
+      }
+    }
+
+    // Safety factor to account for dynamic glyph rasterization/spacing differences
+    // between layout estimation and final renderer metrics.
+    width += Math.ceil(text.length * 0.8)
+
+    return width
+  }
+
+  private splitLongWordByPixels(word: string, maxPixelWidth: number): string[]
+  {
+    const parts: string[] = []
+    let current = ''
+
+    for (const char of word)
+    {
+      const candidate = `${current}${char}`
+      if (current.length > 0 && this.measureLineWidthPixels(candidate) > maxPixelWidth)
+      {
+        parts.push(current)
+        current = char
+      }
+      else
+      {
+        current = candidate
+      }
+    }
+
+    if (current.length > 0)
+    {
+      parts.push(current)
+    }
+
+    return parts
+  }
+
+  private wrapLineByPixelWidth(line: string, maxPixelWidth: number): string[]
+  {
+    if (!line || this.measureLineWidthPixels(line) <= maxPixelWidth)
+    {
+      return [line]
+    }
+
+    const result: string[] = []
+    const words = line.split(/\s+/).filter(Boolean)
+    let currentLine = ''
+
+    for (const word of words)
+    {
+      if (this.measureLineWidthPixels(word) > maxPixelWidth)
+      {
+        if (currentLine.length > 0)
+        {
+          result.push(currentLine)
+          currentLine = ''
+        }
+
+        result.push(...this.splitLongWordByPixels(word, maxPixelWidth))
+        continue
+      }
+
+      const candidate = currentLine.length > 0 ? `${currentLine} ${word}` : word
+      if (this.measureLineWidthPixels(candidate) <= maxPixelWidth)
+      {
+        currentLine = candidate
+      }
+      else
+      {
+        if (currentLine.length > 0)
+        {
+          result.push(currentLine)
+        }
+        currentLine = word
+      }
+    }
+
+    if (currentLine.length > 0)
+    {
+      result.push(currentLine)
+    }
+
+    return result.length > 0 ? result : [line]
+  }
+
   /**
    * Calculate base position for text
    */
   private calculatePosition( lines: string[], align: TextAlign, forceY?: number ): Position
   {
-    // ForceY is always provided by LineLeaseManager (the authoritative source for Y positions)
-    // If somehow it's not provided, we require it now
-    if (forceY === undefined)
-    {
-      throw new Error(
-        'TextLayoutEngine.calculatePosition(): forceY is required. ' +
-        'Y positions must be assigned by LineLeaseManager, not generated here.'
-      )
-    }
-
-    const y = forceY
+    const y = forceY ?? this.getDefaultVerticalPosition()
 
     // X position depends on alignment
     // For center, we return the center point and adjust per line
@@ -299,7 +420,7 @@ export const DEFAULT_LAYOUT_CONFIG: LayoutConfig = {
   screenWidth: 1000,
   screenHeight: 1000,
   // I'll assume these were used with our fixed 5x7 Glyphs buffered for 6x12 rendering
-  maxCharsPerLine: 30,  // Reduced from 40 to make(allow?) text appear larger
+  maxCharsPerLine: 28,  // Balance wrap quality with fewer multi-line fragments for lease stability
                         //  (so lame AI, size is user defined and the number
                         //    is a function of size. We'll need to fix this later
                         //    as we fine tune later now that we use actual fonts and size)

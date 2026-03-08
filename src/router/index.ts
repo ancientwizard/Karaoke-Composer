@@ -41,6 +41,11 @@ const router = createRouter({
       name: 'developer',
       component: () => import('@/views/DeveloperView.vue'),
     },
+    {
+      path: '/glyph-lab',
+      name: 'glyph-lab',
+      component: () => import('@/views/GlyphLabView.vue'),
+    },
   ],
 })
 

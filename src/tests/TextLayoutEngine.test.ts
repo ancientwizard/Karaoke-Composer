@@ -14,6 +14,18 @@ import { TextLayoutEngine, DEFAULT_LAYOUT_CONFIG } from '../karaoke/presentation
 import { TileScreenModel, TILE_CONFIGS } from '../karaoke/presentation/TileScreenModel'
 import { TextAlign } from '../karaoke/presentation/Command'
 
+const ENABLE_TEST_DEBUG_LOGS = process.env.KARAOKE_TEST_DEBUG === '1'
+
+function debugLog(...args: unknown[]): void
+{
+  if (!ENABLE_TEST_DEBUG_LOGS)
+  {
+    return
+  }
+
+  console.log(...args)
+}
+
 describe('TextLayoutEngine', () =>
 {
   let engine: TextLayoutEngine
@@ -401,25 +413,25 @@ describe('TextLayoutEngine', () =>
       const text = 'Hi'
       const result = engine.layoutText(text, TextAlign.Center)
       
-      console.log(`\n=== TEXT LAYOUT DEBUG ===`)
-      console.log(`Input text: "${text}"`)
-      console.log(`Lines: ${JSON.stringify(result.lines)}`)
-      console.log(`Total positions: ${result.charPositions.length}`)
-      console.log(`Character positions:`)
+      debugLog(`\n=== TEXT LAYOUT DEBUG ===`)
+      debugLog(`Input text: "${text}"`)
+      debugLog(`Lines: ${JSON.stringify(result.lines)}`)
+      debugLog(`Total positions: ${result.charPositions.length}`)
+      debugLog(`Character positions:`)
       
       for (let i = 0; i < result.charPositions.length; i++) {
         const pos = result.charPositions[i]
         const char = text[i]
-        console.log(`  [${i}] char='${char}' x=${pos.x.toFixed(1)} y=${pos.y.toFixed(1)}`)
+        debugLog(`  [${i}] char='${char}' x=${pos.x.toFixed(1)} y=${pos.y.toFixed(1)}`)
       }
       
       // Calculate spacing
       if (result.charPositions.length > 1) {
         const spacing = result.charPositions[1].x - result.charPositions[0].x
-        console.log(`X spacing between char 0 and 1: ${spacing.toFixed(1)} pixels`)
+        debugLog(`X spacing between char 0 and 1: ${spacing.toFixed(1)} pixels`)
       }
       
-      console.log(`===========================\n`)
+      debugLog(`===========================\n`)
       
       // Basic assertion that positions are not identical
       expect(result.charPositions.length).toBe(text.length)
@@ -429,18 +441,18 @@ describe('TextLayoutEngine', () =>
       const text = 'hello'
       const result = engine.layoutText(text, TextAlign.Center)
       
-      console.log(`\n=== TEXT LAYOUT DEBUG: "${text}" ===`)
-      console.log(`Lines: ${JSON.stringify(result.lines)}`)
-      console.log(`Character positions:`)
+      debugLog(`\n=== TEXT LAYOUT DEBUG: "${text}" ===`)
+      debugLog(`Lines: ${JSON.stringify(result.lines)}`)
+      debugLog(`Character positions:`)
       
       for (let i = 0; i < result.charPositions.length; i++) {
         const pos = result.charPositions[i]
         const char = text[i]
         const nextPos = i < result.charPositions.length - 1 ? result.charPositions[i + 1].x : null
         const spacing = nextPos !== null ? (nextPos - pos.x).toFixed(1) : 'N/A'
-        console.log(`  [${i}] '${char}' at x=${pos.x.toFixed(1)}, spacing to next=${spacing}`)
+        debugLog(`  [${i}] '${char}' at x=${pos.x.toFixed(1)}, spacing to next=${spacing}`)
       }
-      console.log(`===========================\n`)
+      debugLog(`===========================\n`)
       
       expect(result.charPositions.length).toBe(5)
     })
@@ -454,16 +466,16 @@ describe('TextLayoutEngine', () =>
       const text = 'This is a very long text that will wrap to multiple lines because it exceeds the character limit'
       const result = engine.layoutText(text, TextAlign.Center)
       
-      console.log(`\n=== WRAPPED TEXT BUG DEMO ===`)
-      console.log(`Input text (${text.length} chars): "${text}"`)
-      console.log(`Wrapped into ${result.lines.length} lines:`)
+      debugLog(`\n=== WRAPPED TEXT BUG DEMO ===`)
+      debugLog(`Input text (${text.length} chars): "${text}"`)
+      debugLog(`Wrapped into ${result.lines.length} lines:`)
       result.lines.forEach((line, idx) => {
-        console.log(`  Line ${idx}: "${line}" (${line.length} chars)`)
+        debugLog(`  Line ${idx}: "${line}" (${line.length} chars)`)
       })
-      console.log(`Total positions: ${result.charPositions.length}`)
-      console.log(`MISMATCH: ${text.length} chars in input vs ${result.charPositions.length} positions`)
-      console.log(`Missing ${text.length - result.charPositions.length} characters (these are the line delimiters)`)
-      console.log(`===========================\n`)
+      debugLog(`Total positions: ${result.charPositions.length}`)
+      debugLog(`MISMATCH: ${text.length} chars in input vs ${result.charPositions.length} positions`)
+      debugLog(`Missing ${text.length - result.charPositions.length} characters (these are the line delimiters)`)
+      debugLog(`===========================\n`)
       
       // Expected behavior: positions should match text length
       // Actual behavior: positions < text length when wrapping occurs

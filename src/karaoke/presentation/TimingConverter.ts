@@ -31,6 +31,7 @@ export interface TimingConverterConfig {
   layoutConfig?: LayoutConfig
   transitionDurationMs?: number  // How long to fade between lines
   previewDurationMs?: number     // How long to show line before first syllable
+  eraseDelayMs?: number          // Extra delay before removing rendered lyric text
   displayAlign?: TextAlign       // Text alignment (default: center)
   showMetadata?: boolean         // Show title/artist at start
   metadataDurationMs?: number    // How long to show metadata
@@ -41,6 +42,7 @@ export interface TimingConverterConfig {
 export const DEFAULT_TIMING_CONFIG: TimingConverterConfig = {
   transitionDurationMs: 500,     // 500ms smooth transition
   previewDurationMs: 1000,       // Show line 1 second before singing starts
+  eraseDelayMs: 0,
   displayAlign: TextAlign.Center,
   showMetadata: true,
   metadataDurationMs: 3000,      // Show title/artist for 3 seconds
@@ -55,12 +57,20 @@ export class TimingConverter {
   private layoutEngine: TextLayoutEngine
   private textComposer: TextRenderComposer
   private config: Required<TimingConverterConfig>
+  private debugLeases: boolean
+
+  private readEnv(name: string): string | undefined {
+    const processObj = (globalThis as any)?.process
+    const value = processObj?.env?.[name]
+    return typeof value === 'string' ? value : undefined
+  }
 
   constructor(config: TimingConverterConfig = {}) {
     this.config = {
       layoutConfig: config.layoutConfig || DEFAULT_LAYOUT_CONFIG,
       transitionDurationMs: config.transitionDurationMs ?? DEFAULT_TIMING_CONFIG.transitionDurationMs!,
       previewDurationMs: config.previewDurationMs ?? DEFAULT_TIMING_CONFIG.previewDurationMs!,
+      eraseDelayMs: config.eraseDelayMs ?? DEFAULT_TIMING_CONFIG.eraseDelayMs!,
       displayAlign: config.displayAlign || DEFAULT_TIMING_CONFIG.displayAlign!,
       showMetadata: config.showMetadata ?? DEFAULT_TIMING_CONFIG.showMetadata!,
       metadataDurationMs: config.metadataDurationMs ?? DEFAULT_TIMING_CONFIG.metadataDurationMs!,
@@ -69,6 +79,65 @@ export class TimingConverter {
     }
     this.layoutEngine = new TextLayoutEngine(this.config.layoutConfig)
     this.textComposer = new TextRenderComposer()
+    this.debugLeases = this.readEnv('KARAOKE_LEASE_DEBUG') === '1'
+  }
+
+  private logLeaseDiagnostics(placeableLines: any[]): void {
+    if (!this.debugLeases) {
+      return
+    }
+
+    const sorted = [...placeableLines].sort((a, b) =>
+      a.startTime === b.startTime ? a.leasedYPosition - b.leasedYPosition : a.startTime - b.startTime
+    )
+
+    const overlaps: Array<{ first: any; second: any }> = []
+    const offscreen: any[] = []
+
+    for (let i = 0; i < sorted.length; i++) {
+      const line = sorted[i]
+      const yPixel = (line.leasedYPosition / 1000) * 216
+
+      if (line.leasedYPosition < 0 || line.leasedYPosition > 1000 || yPixel < 0 || yPixel > 216) {
+        offscreen.push(line)
+      }
+
+      for (let j = i + 1; j < sorted.length; j++) {
+        const other = sorted[j]
+        if (other.startTime > line.endTime) {
+          break
+        }
+        const timeOverlap = line.startTime < other.endTime && other.startTime < line.endTime
+        const sameY = line.leasedYPosition === other.leasedYPosition
+        if (timeOverlap && sameY) {
+          overlaps.push({ first: line, second: other })
+        }
+      }
+    }
+
+    console.log('[TimingConverter] lease diagnostics start')
+    console.log(`[TimingConverter] placeable lines: ${sorted.length}`)
+    sorted.forEach((line) => {
+      const yPixel = (line.leasedYPosition / 1000) * 216
+      console.log(
+        `[TimingConverter] ${line.id} source=${line.sourceId} type=${line.type} ` +
+        `t=${line.startTime}-${line.endTime} y=${line.leasedYPosition} (~${yPixel.toFixed(1)}px) text="${line.text}"`
+      )
+    })
+    console.log(`[TimingConverter] overlapping same-y intervals: ${overlaps.length}`)
+    overlaps.forEach((pair) => {
+      console.log(
+        `[TimingConverter][OVERLAP] y=${pair.first.leasedYPosition} ` +
+        `${pair.first.id}(${pair.first.startTime}-${pair.first.endTime}) ` +
+        `vs ${pair.second.id}(${pair.second.startTime}-${pair.second.endTime})`
+      )
+    })
+    console.log(`[TimingConverter] offscreen rows detected: ${offscreen.length}`)
+    offscreen.forEach((line) => {
+      const yPixel = (line.leasedYPosition / 1000) * 216
+      console.log(`[TimingConverter][OFFSCREEN] ${line.id} y=${line.leasedYPosition} (~${yPixel.toFixed(1)}px)`)
+    })
+    console.log('[TimingConverter] lease diagnostics end')
   }
 
   /**
@@ -88,23 +157,15 @@ export class TimingConverter {
 
     // 3. Use TextRenderComposer to get PlaceableLines with proper leasedYPositions
     const placeableLines = this.textComposer.composeSong(song, {
-      includeTitle: this.config.showMetadata,
-      includeArtist: this.config.showMetadata,
-      includeCredit: true
+      includeTitle: false,
+      includeArtist: false,
+      includeCredit: true,
+      leaseTailMs: Math.max(0, this.config.eraseDelayMs ?? 0)
     })
 
-    const hasMetadataPlaceables = placeableLines.some(placeable =>
-    {
-      if (placeable.type === 'metadata')
-      {
-        return true
-      }
+    this.logLeaseDiagnostics(placeableLines as any[])
 
-      const text = placeable.text.trim().toLowerCase()
-      return text.startsWith('title:') || text.startsWith('by:') || text.startsWith('by ')
-    })
-
-    if (this.config.showMetadata && !hasMetadataPlaceables && (song.title || song.artist))
+    if (this.config.showMetadata && (song.title || song.artist))
     {
       let earliestLyricStart = Infinity
       for (const placeable of placeableLines)
@@ -126,10 +187,18 @@ export class TimingConverter {
       const placeable = placeableLines[i]
       // nextPlaceable intentionally not used here; reserved for future logic
 
+      const lowerId = placeable.id.toLowerCase()
+      const lowerSourceId = placeable.sourceId.toLowerCase()
       const isMetadataText = placeable.type === 'metadata'
-        || placeable.text.startsWith('Title:')
-        || placeable.text.toLowerCase().startsWith('by:')
-        || placeable.text.toLowerCase().startsWith('by ')
+        || lowerSourceId === 'title'
+        || lowerSourceId === 'author'
+        || lowerId.startsWith('title:')
+        || lowerId.startsWith('author:')
+
+      if (isMetadataText)
+      {
+        continue
+      }
       const startTime = isMetadataText ? 0 : placeable.startTime
       const endTime = placeable.endTime
 
@@ -170,7 +239,7 @@ export class TimingConverter {
 
       // Remove text at end time
       commands.push(
-        PresentationCommands.removeText(endTime, placeable.id)
+        PresentationCommands.removeText(endTime + this.config.eraseDelayMs, placeable.id)
       )
     }
 
@@ -201,11 +270,11 @@ export class TimingConverter {
   {
     const priority: Record<string, number> = {
       clear_screen: 0,
-      show_metadata: 1,
-      show_text: 2,
-      change_color: 3,
-      transition: 4,
-      remove_text: 5
+      remove_text: 1,
+      show_metadata: 2,
+      show_text: 3,
+      change_color: 4,
+      transition: 5
     }
 
     return [...commands].sort((a, b) =>
@@ -263,24 +332,68 @@ export class TimingConverter {
   ): AnyPresentationCommand[] {
     const commands: AnyPresentationCommand[] = []
 
-    for (const [charIdx, syllableInfo] of charToSyllableMap)
+    const sorted = [...charToSyllableMap.entries()].sort((a, b) => a[0] - b[0])
+
+    type SyllableRange = {
+      startChar: number
+      endChar: number
+      startTime: number
+      endTime: number
+    }
+
+    const ranges: SyllableRange[] = []
+    for (const [charIdx, syllableInfo] of sorted)
     {
-      if (syllableInfo.startTime === undefined) continue
+      if (syllableInfo.startTime === undefined)
+      {
+        continue
+      }
 
-      // Change color at syllable start
-      // Highlighting persists after syllable ends (like DeveloperView)
-      commands.push(
-        PresentationCommands.changeColor(
-          syllableInfo.startTime,
-          textId,
-          charIdx,
-          charIdx + 1,
-          LogicalColor.ActiveText
-        )
+      const startTime = Number(syllableInfo.startTime)
+      const rawEnd = syllableInfo.endTime === undefined ? startTime : Number(syllableInfo.endTime)
+      const endTime = Number.isFinite(rawEnd) ? Math.max(startTime, rawEnd) : startTime
+
+      const previous = ranges[ranges.length - 1]
+      if (
+        previous
+        && previous.endChar === charIdx
+        && previous.startTime === startTime
+        && previous.endTime === endTime
       )
+      {
+        previous.endChar = charIdx + 1
+      }
+      else
+      {
+        ranges.push({
+          startChar: charIdx,
+          endChar: charIdx + 1,
+          startTime,
+          endTime
+        })
+      }
+    }
 
-      // NOTE: We do NOT revert color at syllable end
-      // Highlighting persists for the rest of the line (see DeveloperView line 660-662)
+    for (const range of ranges)
+    {
+      const charCount = Math.max(1, range.endChar - range.startChar)
+      const duration = Math.max(0, range.endTime - range.startTime)
+
+      // Progressive wipe: reveal one additional character across syllable duration.
+      // If duration is zero/very short, this naturally becomes near-instant.
+      for (let step = 0; step < charCount; step++)
+      {
+        const timestamp = range.startTime + Math.floor((duration * step) / charCount)
+        commands.push(
+          PresentationCommands.changeColor(
+            timestamp,
+            textId,
+            range.startChar,
+            range.startChar + step + 1,
+            LogicalColor.ActiveText
+          )
+        )
+      }
     }
 
     return commands
@@ -296,7 +409,8 @@ export class TimingConverter {
   ): AnyPresentationCommand[] {
     const commands: AnyPresentationCommand[] = []
 
-    const lineHeight = this.config.layoutConfig.fontSize * 1.2
+    const fontSize = this.config.layoutConfig.fontSize
+    const titleToAuthorGap = Math.max(120, Math.round(fontSize * 1.3))
 
     // Title on first line
     const titlePosition: Position = {
@@ -318,7 +432,7 @@ export class TimingConverter {
     // Artist on second line (below title)
     const artistPosition: Position = {
       x: 500,
-      y: 400 + lineHeight
+      y: 400 + titleToAuthorGap
     }
 
     commands.push(

@@ -7,10 +7,47 @@
 
 import type { KaraokeProject } from '../types/karaoke'
 
+type SavePicker = (options?: any) => Promise<any>
+
+async function saveBlobWithPrompt(blob: Blob, fileName: string, mimeType: string, extension: string): Promise<void>
+{
+  const picker = (window as any).showSaveFilePicker as SavePicker | undefined
+
+  if (picker)
+  {
+    const handle = await picker({
+      suggestedName: fileName,
+      types: [
+        {
+          description: `${extension.toUpperCase()} file`,
+          accept: {
+            [mimeType]: [`.${extension}`]
+          }
+        }
+      ],
+      excludeAcceptAllOption: false
+    })
+
+    const writable = await handle.createWritable()
+    await writable.write(blob)
+    await writable.close()
+    return
+  }
+
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
 /**
  * Export project as JSON file download
  */
-export function exportProjectAsJSON(project: KaraokeProject): void {
+export async function exportProjectAsJSON(project: KaraokeProject): Promise<void> {
   // Create clean export data
   const exportData = {
     version: '1.0',
@@ -40,29 +77,17 @@ export function exportProjectAsJSON(project: KaraokeProject): void {
   // Create blob
   const blob = new Blob([json], { type: 'application/json' })
 
-  // Create download link
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-
   // Generate filename from project name
   const filename = `${sanitizeFilename(project.name)}_karaoke_project.json`
-  link.download = filename
 
-  // Trigger download
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-
-  // Cleanup
-  URL.revokeObjectURL(url)
+  await saveBlobWithPrompt(blob, filename, 'application/json', 'json')
 }
 
 /**
  * Export project for terminal renderer demo
  * (TypeScript format for direct import)
  */
-export function exportProjectForTerminal(project: KaraokeProject): void {
+export async function exportProjectForTerminal(project: KaraokeProject): Promise<void> {
   // Create TypeScript code
   const tsCode = `/**
  * Exported Karaoke Project: ${project.name}
@@ -97,18 +122,10 @@ export const ${sanitizeVariableName(project.name)}: KaraokeProject = ${JSON.stri
   )}
 `
 
-  // Download as .ts file
+  // Save as .ts file
   const blob = new Blob([tsCode], { type: 'text/typescript' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = `${sanitizeFilename(project.name)}_export.ts`
-
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-
-  URL.revokeObjectURL(url)
+  const fileName = `${sanitizeFilename(project.name)}_export.ts`
+  await saveBlobWithPrompt(blob, fileName, 'text/typescript', 'ts')
 }
 
 /**

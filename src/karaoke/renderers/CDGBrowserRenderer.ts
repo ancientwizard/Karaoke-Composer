@@ -3,6 +3,7 @@ import type { PresentationScript, AnyPresentationCommand } from '../presentation
 import { LogicalColor } from '../presentation/Command'
 import { CDG_SCREEN } from './cdg/CDGPacket'
 import { CDGCore } from './cdg/CDGCore'
+import type { GlyphSetExport } from '@/cdg/glyph-lab'
 
 /**
  * Browser-friendly CDG renderer
@@ -14,6 +15,7 @@ export interface CDGBrowserRendererConfig extends RendererConfig {
   transitionColor?: number
   fontFamily?: string
   fontSize?: number
+  capturedGlyphSet?: GlyphSetExport
   paletteOverrides?: {
     background?: { r: number; g: number; b: number }
     active?: { r: number; g: number; b: number }
@@ -34,6 +36,7 @@ export class CDGBrowserRenderer extends BaseRenderer {
       transitionColor: config.transitionColor,
       fontFamily: config.fontFamily,
       fontSize: config.fontSize,
+      capturedGlyphSet: config.capturedGlyphSet,
       paletteOverrides: config.paletteOverrides
     })
   }

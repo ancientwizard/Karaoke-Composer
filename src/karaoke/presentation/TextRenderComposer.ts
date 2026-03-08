@@ -28,6 +28,7 @@ export interface ComposerOptions
   includeArtist?: boolean    // Show artist name (default: true)
   includeCredit?: boolean    // Show credit line at end (default: true)
   creditText?: string        // Custom credit text (default: "Karaoke arrangement by Ancient-Wizard")
+  leaseTailMs?: number       // Extra hold time for reservations beyond hideTime (e.g. erase delay)
 }
 
 /**
@@ -92,15 +93,52 @@ export class TextRenderComposer
   private leaseManager: LineLeaseManager
   private layoutEngine: TextLayoutEngine
   private timingConfig: TimingConfig
+  private debugEnabled: boolean
+
+  private readEnv(name: string): string | undefined
+  {
+    const processObj = (globalThis as any)?.process
+    const value = processObj?.env?.[name]
+    return typeof value === 'string' ? value : undefined
+  }
 
   constructor(timingConfig: Partial<TimingConfig> = {})
   {
     this.leaseManager = new LineLeaseManager()
     this.layoutEngine = new TextLayoutEngine(DEFAULT_LAYOUT_CONFIG)
+    this.debugEnabled = this.readEnv('KARAOKE_LEASE_DEBUG') === '1'
     this.timingConfig = {
       ...DEFAULT_TIMING_CONFIG,
       ...timingConfig
     }
+  }
+
+  private debug(message: string): void
+  {
+    if (!this.debugEnabled)
+    {
+      return
+    }
+
+    console.log(`[TextRenderComposer] ${message}`)
+  }
+
+  private collapseLinesToMax(lines: string[], maxLines: number): string[]
+  {
+    if (lines.length <= maxLines)
+    {
+      return lines
+    }
+
+    if (maxLines <= 1)
+    {
+      return [lines.join(' ')]
+    }
+
+    const kept = lines.slice(0, maxLines - 1)
+    const mergedTail = lines.slice(maxLines - 1).join(' ')
+    kept.push(mergedTail)
+    return kept
   }
 
   /**
@@ -120,7 +158,8 @@ export class TextRenderComposer
       includeTitle = true,
       includeArtist = true,
       includeCredit = true,
-      creditText = 'Created using: "Karaoke Composer", by Ancient-Wizard.'
+      creditText = 'Created using: "Karaoke Composer", by Ancient-Wizard.',
+      leaseTailMs = 0
     } = options
 
     // Reset state
@@ -175,7 +214,12 @@ export class TextRenderComposer
     }
 
     // Compose all items into placeable lines
-    const placeable = this.composeRenderItems(items)
+    const placeable = this.composeRenderItems(items, leaseTailMs)
+
+    this.debug(
+      `compose complete placeableLines=${placeable.length} rows=${this.leaseManager.getRowCount()} ` +
+      `reservable=${this.leaseManager.getReservableRowCount()} bufferY=${this.leaseManager.getBufferPosition()}`
+    )
 
     return placeable
   }
@@ -414,60 +458,92 @@ export class TextRenderComposer
   /**
    * Compose render items into placeable lines (handles wrapping, positioning, syllable mapping)
    */
-  private composeRenderItems(items: RenderItem[]): PlaceableLine[]
+  private composeRenderItems(items: RenderItem[], leaseTailMs: number): PlaceableLine[]
   {
     const placeable: PlaceableLine[] = []
 
-    items.forEach((item: RenderItem) =>
+    const estimatedLineCounts = items.map((item) =>
     {
-      const fullText = item.text
+      const tempLayout = this.layoutEngine.layoutText(item.text, TextAlign.Center, 0)
+      return tempLayout.lines ? tempLayout.lines.length : 1
+    })
 
-      // First, determine how many lines we'll need (rough estimate)
-      // Use a temporary Y position just to count lines, will be replaced with real leased position
-      const tempLayout = this.layoutEngine.layoutText(fullText, TextAlign.Center, 0)
-      const lineCount = tempLayout.lines ? tempLayout.lines.length : 1
+    for (let itemIdx = 0; itemIdx < items.length; itemIdx++)
+    {
+      const item = items[itemIdx]
+      const fullText = item.text
+      const reservableRows = Math.max(1, this.leaseManager.getReservableRowCount())
+
+      const lineCount = estimatedLineCounts[itemIdx]
+      const leaseLineCount = Math.min(lineCount, reservableRows)
+
+      const nextItem = itemIdx + 1 < items.length ? items[itemIdx + 1] : undefined
+      const nextLineCount = nextItem ? estimatedLineCounts[itemIdx + 1] : 0
+      const backToBackGapMs = nextItem ? Math.max(0, nextItem.showTime - item.hideTime) : Number.POSITIVE_INFINITY
+
+      const shouldSkipExtraBuffer =
+        item.type === 'lyrics'
+        && nextItem?.type === 'lyrics'
+        && leaseLineCount >= 3
+        && Math.min(nextLineCount, reservableRows) >= 3
+        && backToBackGapMs <= 1500
+
+      const leaseEndTime = item.type === 'lyrics'
+        ? item.hideTime + Math.max(0, leaseTailMs)
+        : item.hideTime
 
       // Request Y positions from lease manager BEFORE doing final layout
       let leasedPositions: number[]
 
-      if (lineCount > 1 && item.type === 'lyrics')
+      if (leaseLineCount > 1 && item.type === 'lyrics')
       {
-        // Lyrics: check for split-boundary and use group lease if needed
-        if (this.leaseManager.wouldSplitAcrossBoundary(item.id, item.showTime, item.hideTime, lineCount))
-        {
-          leasedPositions = this.leaseManager.leasePositionGroup(item.id, item.showTime, item.hideTime, lineCount)
-        }
-        else
-        {
-          leasedPositions = this.leaseMultiplePositions(item, lineCount)
-        }
+        leasedPositions = this.leaseManager.leasePositionGroup(item.id, item.showTime, leaseEndTime, leaseLineCount, {
+          reserveBufferLine: !shouldSkipExtraBuffer
+        })
+        leasedPositions.sort((a, b) => a - b)
       }
-      else if (lineCount > 1)
+      else if (leaseLineCount > 1)
       {
         // Metadata multiline: just lease one per line
-        leasedPositions = this.leaseMultiplePositions(item, lineCount)
+        leasedPositions = this.leaseMultiplePositions(item, leaseLineCount)
       }
       else
       {
         // Single line
-        leasedPositions = [this.leaseManager.leasePosition(item.id, item.showTime, item.hideTime)]
+        leasedPositions = [this.leaseManager.leasePosition(item.id, item.showTime, leaseEndTime)]
       }
 
       // Now do final layout with first Y position from lease
       const firstYPos = leasedPositions[0]
       const finalLayout = this.layoutEngine.layoutText(fullText, TextAlign.Center, firstYPos)
-      const finalLineCount = finalLayout.lines ? finalLayout.lines.length : 1
+      const rawFinalLines = finalLayout.lines || [fullText]
+      const lines = this.collapseLinesToMax(rawFinalLines, reservableRows)
+      const finalLineCount = lines.length
+
+      this.debug(
+        `item=${item.id} type=${item.type} show=${item.showTime} hide=${item.hideTime} ` +
+        `leaseEnd=${leaseEndTime} leaseTailMs=${leaseTailMs} ` +
+        `lineCount=${lineCount} leaseLineCount=${leaseLineCount} finalLineCount=${finalLineCount} ` +
+        `reservableRows=${reservableRows} skipExtraBuffer=${shouldSkipExtraBuffer} ` +
+        `nextType=${nextItem?.type || 'none'} nextLineCount=${nextLineCount} gapMs=${backToBackGapMs} ` +
+        `leased=[${leasedPositions.join(', ')}] text="${item.text}"`
+      )
 
       // If line count changed, adjust our leased positions
-      if (finalLineCount !== lineCount && finalLineCount > lineCount)
+      if (finalLineCount > leasedPositions.length)
       {
         // Need more positions
-        for (let i = lineCount; i < finalLineCount; i++)
+        for (let i = leasedPositions.length; i < finalLineCount; i++)
         {
           leasedPositions.push(
-            this.leaseManager.leasePosition(`${item.id}:extra-${i}`, item.showTime, item.hideTime)
+            this.leaseManager.leasePosition(`${item.id}:extra-${i}`, item.showTime, leaseEndTime)
           )
         }
+      }
+
+      if (leasedPositions.length > finalLineCount)
+      {
+        leasedPositions = leasedPositions.slice(0, finalLineCount)
       }
 
       // Build syllable map
@@ -476,11 +552,10 @@ export class TextRenderComposer
       // Create placeable lines
       let charOffsetInSource = 0
       let accumulatedText = ''
-      const lines = finalLayout.lines || [fullText]
 
       lines.forEach((lineText: string, lineIdx: number) =>
       {
-        const leasedYPosition = leasedPositions[lineIdx] || leasedPositions[0]
+        const leasedYPosition = leasedPositions[Math.min(lineIdx, leasedPositions.length - 1)]
 
         // Calculate character offset for wrapped lines
         if (lineIdx > 0 && item.type === 'lyrics')
@@ -513,7 +588,7 @@ export class TextRenderComposer
           leasedYPosition
         })
       })
-    })
+    }
 
     return placeable
   }

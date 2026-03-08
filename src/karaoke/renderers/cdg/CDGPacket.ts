@@ -66,7 +66,7 @@ export class CDGPacket
    * The instruction parameter is the CDG sub-command (COPY_FONT, XOR_FONT, LOAD_LOW, LOAD_HIGH, etc.)
    * Note: In CDG packets, byte [1] contains the instruction, and byte [2-3] are parity Q
    */
-  setCommand(command: CDGCommand): void
+  setCommand(command: CDGCommand, _channel?: number): void
   {
     this.buffer[1] = command & 0x3F  // Instruction at [1] (mask to 6 bits)
     // buffer[2-3] are parity Q, left as zero

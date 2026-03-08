@@ -80,6 +80,14 @@
                 <small class="text-muted d-block mt-1">Range: 8–48</small>
               </div>
             </div>
+
+            <div class="row align-items-center mb-2">
+              <label class="col-sm-5 col-form-label">Erase delay (ms):</label>
+              <div class="col-sm-7">
+                <input type="number" class="form-control" v-model.number="cdgSettings.eraseDelayMs" min="0" max="2000" step="50" />
+                <small class="text-muted d-block mt-1">Additional delay after line finish/highlight end before erase</small>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -155,6 +163,7 @@ import type { KaraokeProject        } from '@/types/karaoke'
 import { getProjectStats            } from '@/services/projectExportService'
 import { KaraokePresentationEngine  } from '@/karaoke/presentation/KaraokePresentationEngine'
 import { CDGBrowserRenderer         } from '@/karaoke/renderers/CDGBrowserRenderer'
+import { GlyphLabStorage            } from '@/cdg/glyph-lab'
 
 const props = defineProps<{
   project: KaraokeProject
@@ -174,10 +183,10 @@ const validation = ref<{ valid: boolean; errors: string[]; warnings: string[] }>
 const proceedDespiteWarnings = ref(false)
 
 // Re-validate whenever the project prop changes
-const engine = new KaraokePresentationEngine()
+const validationEngine = new KaraokePresentationEngine()
 function runValidation()
 {
-  const result = engine.validateProject(props.project, { allowMissingAudio: true })
+  const result = validationEngine.validateProject(props.project, { allowMissingAudio: true })
   validation.value = result
   // reset override if warnings resolved
   if (!validation.value.warnings || validation.value.warnings.length === 0) {
@@ -198,7 +207,8 @@ const cdgSettings = ref({
   showCaptions: true,
   captionDuration: 2,
   fontFamily: 'Arial',
-  fontSize: 16
+  fontSize: 17,
+  eraseDelayMs: 1250
 })
 
 // Progress state for incremental rendering
@@ -273,11 +283,48 @@ function showStatus(type: 'success' | 'error', message: string) {
   console[type === 'success' ? 'log' : 'error'](message)
 }
 
+async function saveBlobWithPrompt(blob: Blob, fileName: string): Promise<void>
+{
+  const picker = (window as any).showSaveFilePicker as
+    | undefined
+    | ((options?: any) => Promise<any>)
+
+  if (picker)
+  {
+    const handle = await picker({
+      suggestedName: fileName,
+      types: [
+        {
+          description: 'CD+G file',
+          accept: {
+            'application/octet-stream': ['.cdg']
+          }
+        }
+      ],
+      excludeAcceptAllOption: false
+    })
+
+    const writable = await handle.createWritable()
+    await writable.write(blob)
+    await writable.close()
+    return
+  }
+
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
 async function exportCDG() {
   exporting.value = true
   try {
     // Re-run validation right before export
-  const validationResult = engine.validateProject(props.project, { allowMissingAudio: true })
+  const validationResult = validationEngine.validateProject(props.project, { allowMissingAudio: true })
     if (!validationResult.valid) {
       showStatus('error', 'Project is not valid for CDG export: ' + validationResult.errors.join('; '))
       return
@@ -289,12 +336,18 @@ async function exportCDG() {
     }
 
     // Generate presentation script and render CDG in-browser
-    const script = engine.generateScript(props.project)
+    const exportEngine = new KaraokePresentationEngine({
+      timingConfig: {
+        eraseDelayMs: Math.max(0, Math.floor(cdgSettings.value.eraseDelayMs || 0))
+      }
+    })
+    const script = exportEngine.generateScript(props.project)
 
     try {
       const sorted = [...script.commands].sort((a, b) => a.timestamp - b.timestamp)
       const firstCmd = sorted[0]
       const firstShowText = sorted.find(cmd => cmd.type === 'show_text') as any
+      const zeroShowText = sorted.filter(cmd => cmd.type === 'show_text' && cmd.timestamp === 0) as any[]
       if (firstCmd) {
         const msg = `SCRIPT: first cmd ${firstCmd.type} t=${(firstCmd.timestamp / 1000).toFixed(3)}s`
         console.log(msg)
@@ -305,11 +358,22 @@ async function exportCDG() {
         console.log(msg)
         await pushDebug(msg)
       }
+      if (zeroShowText.length > 0) {
+        const msg = `SCRIPT: show_text@0 count=${zeroShowText.length}`
+        console.log(msg)
+        await pushDebug(msg)
+        zeroShowText.forEach((cmd, idx) => {
+          const pos = cmd.position ? `(${cmd.position.x},${cmd.position.y})` : '(n/a)'
+          console.log(`SCRIPT: show_text@0[${idx}] id=${cmd.textId} pos=${pos} text="${cmd.text}"`)
+        })
+      }
     } catch (e: any) {
       const msg = `SCRIPT: debug failed ${e?.message || e}`
       console.warn(msg)
       await pushDebug(msg)
     }
+
+    const capturedGlyphSet = GlyphLabStorage.load() || undefined
 
     const renderer = new CDGBrowserRenderer({
       backgroundColor: 0,
@@ -317,6 +381,7 @@ async function exportCDG() {
       transitionColor: 2,
       fontFamily: cdgSettings.value.fontFamily,
       fontSize: cdgSettings.value.fontSize,
+      capturedGlyphSet,
       paletteOverrides: {
         background: hexToRgb(cdgSettings.value.backgroundColor),
         active: hexToRgb(cdgSettings.value.highlightColor),
@@ -380,12 +445,8 @@ async function exportCDG() {
       }
     })
 
-  // Trigger download
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
   const safeName = (props.project.name || 'karaoke').replace(/[^a-z0-9]+/gi, '_')
-  link.download = `${safeName}.cdg`
+  const fileName = `${safeName}.cdg`
 
   // Force UI reconciliation so the progress bar reliably animates to 100% and
   // doesn't visually lag behind the numeric label. This waits one animation
@@ -394,15 +455,16 @@ async function exportCDG() {
   await nextTick()
   await new Promise(resolve => setTimeout(resolve, 40))
 
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-  URL.revokeObjectURL(url)
+  await saveBlobWithPrompt(blob, fileName)
 
   // debug messages are already in top-level `debugMessages` ref and used by the template
 
-    showStatus('success', `✅ CDG generated: ${props.project.name}.cdg`)
+    showStatus('success', `✅ CDG generated: ${fileName}`)
   } catch (error: any) {
+    if (error?.name === 'AbortError') {
+      showStatus('error', 'CDG export canceled')
+      return
+    }
     progressPercent.value = 0
     showStatus('error', `❌ Export failed: ${error?.message || error}`)
   } finally {

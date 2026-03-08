@@ -4,17 +4,23 @@ import legacy from '@vitejs/plugin-legacy'
 import { resolve } from 'path'
 
 // https://vitejs.dev/config/
-export default defineConfig({
-  // base: process.env.GITHUB_PAGES === 'true' ? '/Karaoke-Composer/' : '/',
-  base: '/Karaoke-Composer/',
+export default defineConfig(({ command }) => ({
+  base: command === 'serve' ? '/' : '/Karaoke-Composer/',
   plugins: [
     vue(),
     legacy({targets: ['defaults', 'not IE 11'],}),
   ],
   resolve: {alias: {'@': resolve(__dirname, 'src'),},},
   server: {
+    host: true,
     port: 3000,
+    strictPort: true,
     open: true,
+  },
+  preview: {
+    host: true,
+    port: 4173,
+    strictPort: true,
   },
   build: {
     target: 'es2015',
@@ -22,4 +28,4 @@ export default defineConfig({
     assetsDir: 'assets',
     sourcemap: true,
   },
-})
+}))

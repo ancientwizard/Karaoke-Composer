@@ -28,26 +28,56 @@ export class LineLeaseManager
   private activeLeases: Map<string, LeasedLine> = new Map()
   private nextPositionIndex: number = 0
   private bufferLineIndex: number = 0 // Which position in pool is the buffer (empty separator)
+  private debugEnabled: boolean
+
+  private static readonly DEFAULT_Y_POSITIONS: number[] = [
+    170,
+    280,
+    390,
+    500,
+    610,
+    720,
+    830
+  ]
+
+  private static readEnv(name: string): string | undefined
+  {
+    const processObj = (globalThis as any)?.process
+    const value = processObj?.env?.[name]
+    return typeof value === 'string' ? value : undefined
+  }
 
   constructor()
   {
-    // Define Y position pool: 7 positions distributed evenly across screen height
-    // Screen is 1000 units tall, 216 pixels tall
-    // Each glyph is 12 pixels = 55.5 abstract units
-    // With 7 rows evenly spaced: ~128 abstract units apart
-    // This provides natural spacing for karaoke verses without large gaps
-    this.yPositions = [
-      80,    // Row 1 (8% down)
-      220,   // Row 2 (22% down)
-      360,   // Row 3 (36% down)
-      500,   // Row 4 (50% down) - center
-      640,   // Row 5 (64% down)
-      780,   // Row 6 (78% down)
-      920    // Row 7 (92% down)
-    ]
+    this.debugEnabled = LineLeaseManager.readEnv('KARAOKE_LEASE_DEBUG') === '1'
+
+    const requestedRowsRaw = LineLeaseManager.readEnv('KARAOKE_LEASE_ROWS')
+    const parsedRows = requestedRowsRaw !== undefined && requestedRowsRaw.trim() !== ''
+      ? Number(requestedRowsRaw)
+      : NaN
+    const rowCount = Number.isFinite(parsedRows)
+      ? Math.max(2, Math.min(LineLeaseManager.DEFAULT_Y_POSITIONS.length, Math.floor(parsedRows)))
+      : LineLeaseManager.DEFAULT_Y_POSITIONS.length
+
+    this.yPositions = LineLeaseManager.DEFAULT_Y_POSITIONS.slice(0, rowCount)
 
     // Buffer line starts at top (will sweep down)
     this.bufferLineIndex = 0
+
+    this.debug(
+      `init rows=${this.yPositions.length} reservable=${this.getReservableRowCount()} ` +
+      `bufferY=${this.getBufferPosition()} yPositions=[${this.yPositions.join(', ')}]`
+    )
+  }
+
+  private debug(message: string): void
+  {
+    if (!this.debugEnabled)
+    {
+      return
+    }
+
+    console.log(`[LineLeaseManager] ${message}`)
   }
 
   /**
@@ -67,6 +97,8 @@ export class LineLeaseManager
    */
   leasePosition(lineId: string, startTime: number, endTime: number, groupSize: number = 1): number
   {
+    this.debug(`lease request lineId=${lineId} start=${startTime} end=${endTime} groupSize=${groupSize}`)
+
     // Clean up expired leases first
     this.expireLeases(startTime)
 
@@ -103,6 +135,11 @@ export class LineLeaseManager
         const lastIdx = this.yPositions.indexOf(lastPos)
         this.bufferLineIndex = lastIdx
         this.nextPositionIndex = (lastIdx + 1) % this.yPositions.length
+
+        this.debug(
+          `lease group-granted lineId=${lineId} positions=[${groupPositions.join(', ')}] ` +
+          `bufferIdx=${this.bufferLineIndex} nextIdx=${this.nextPositionIndex}`
+        )
 
         return yPos
       }
@@ -155,6 +192,11 @@ export class LineLeaseManager
         this.bufferLineIndex = positionIndex
         this.nextPositionIndex = (positionIndex + 1) % this.yPositions.length
 
+        this.debug(
+          `lease granted lineId=${lineId} y=${yPos} posIdx=${positionIndex} ` +
+          `bufferIdx=${this.bufferLineIndex} nextIdx=${this.nextPositionIndex}`
+        )
+
         return yPos
       }
 
@@ -173,6 +215,15 @@ export class LineLeaseManager
     this.activeLeases.set(lineId, lease)
     this.nextPositionIndex = (this.nextPositionIndex + 1) % this.yPositions.length
 
+    const conflicting = this.getActiveLeases(startTime)
+      .filter(active => active.lineId !== lineId && active.yPosition === yPos)
+      .map(active => `${active.lineId}[${active.startTime}-${active.endTime}]`)
+
+    this.debug(
+      `lease fallback-overbook lineId=${lineId} y=${yPos} conflicts=${conflicting.length} ` +
+      `${conflicting.length > 0 ? `with=${conflicting.join(',')}` : ''}`
+    )
+
     return yPos
   }
 
@@ -181,8 +232,16 @@ export class LineLeaseManager
    * Returns all positions for the group in a single array
    * Ensures they are contiguous when possible
    */
-  leasePositionGroup(groupId: string, startTime: number, endTime: number, count: number): number[]
+  leasePositionGroup(
+    groupId: string,
+    startTime: number,
+    endTime: number,
+    count: number,
+    options: { reserveBufferLine?: boolean } = {}
+  ): number[]
   {
+    const reserveBufferLine = options.reserveBufferLine ?? true
+
     // Clean up expired leases first
     this.expireLeases(startTime)
 
@@ -204,22 +263,112 @@ export class LineLeaseManager
         this.activeLeases.set(lease.lineId, lease)
       }
 
-      // Move buffer and advance rotation
+      // Optionally reserve one empty line AFTER the group and continue round-robin.
       const lastPos = groupPositions[groupPositions.length - 1]
       const lastIdx = this.yPositions.indexOf(lastPos)
-      this.bufferLineIndex = lastIdx
-      this.nextPositionIndex = (lastIdx + 1) % this.yPositions.length
+      if (reserveBufferLine)
+      {
+        this.bufferLineIndex = (lastIdx + 1) % this.yPositions.length
+        this.nextPositionIndex = (this.bufferLineIndex + 1) % this.yPositions.length
+      }
+      else
+      {
+        this.nextPositionIndex = (lastIdx + 1) % this.yPositions.length
+      }
+
+      this.debug(
+        `lease group-granted groupId=${groupId} positions=[${groupPositions.join(', ')}] ` +
+        `reserveBuffer=${reserveBufferLine} bufferIdx=${this.bufferLineIndex} nextIdx=${this.nextPositionIndex}`
+      )
 
       return groupPositions
     }
 
-    // Fallback: can't find contiguous, assign individually
-    const result: number[] = []
-    for (let i = 0; i < count; i++)
+    // Fallback: guarantee unique row assignment for this group (no duplicate Y rows)
+    const uniquePositions = this.findUniquePositionsForGroup(count, startTime)
+
+    for (let i = 0; i < uniquePositions.length; i++)
     {
-      result.push(this.leasePosition(`${groupId}:${i}`, startTime, endTime))
+      const yPos = uniquePositions[i]
+      this.activeLeases.set(`${groupId}:${i}`, {
+        lineId: `${groupId}:${i}`,
+        startTime,
+        endTime,
+        yPosition: yPos
+      })
     }
-    return result
+
+    if (uniquePositions.length > 0)
+    {
+      const lastIdx = this.yPositions.indexOf(uniquePositions[uniquePositions.length - 1])
+      if (reserveBufferLine)
+      {
+        this.bufferLineIndex = (lastIdx + 1) % this.yPositions.length
+        this.nextPositionIndex = (this.bufferLineIndex + 1) % this.yPositions.length
+      }
+      else
+      {
+        this.nextPositionIndex = (lastIdx + 1) % this.yPositions.length
+      }
+    }
+
+    this.debug(
+      `lease group-fallback groupId=${groupId} requested=${count} assigned=${uniquePositions.length} ` +
+      `positions=[${uniquePositions.join(', ')}] reserveBuffer=${reserveBufferLine} ` +
+      `bufferIdx=${this.bufferLineIndex} nextIdx=${this.nextPositionIndex}`
+    )
+
+    return uniquePositions
+  }
+
+  private findUniquePositionsForGroup(count: number, startTime: number): number[]
+  {
+    const needed = Math.max(1, count)
+    const maxAssignable = Math.max(1, this.yPositions.length - 1) // preserve one buffer row
+    const target = Math.min(needed, maxAssignable)
+
+    const candidates: Array<{ idx: number; y: number; available: boolean; endTime: number }> = []
+    for (let offset = 0; offset < this.yPositions.length; offset++)
+    {
+      const idx = (this.nextPositionIndex + offset) % this.yPositions.length
+      if (idx === this.bufferLineIndex)
+      {
+        continue
+      }
+
+      const y = this.yPositions[idx]
+      let latestEnd = -Infinity
+      let occupied = false
+
+      for (const lease of this.activeLeases.values())
+      {
+        if (lease.yPosition !== y)
+        {
+          continue
+        }
+
+        latestEnd = Math.max(latestEnd, lease.endTime)
+        if (lease.endTime > startTime)
+        {
+          occupied = true
+        }
+      }
+
+      candidates.push({
+        idx,
+        y,
+        available: !occupied,
+        endTime: latestEnd
+      })
+    }
+
+    const available = candidates.filter(c => c.available)
+    const occupied = candidates
+      .filter(c => !c.available)
+      .sort((a, b) => a.endTime - b.endTime)
+
+    const ordered = [...available, ...occupied]
+    return ordered.slice(0, target).map(c => c.y)
   }
 
   /**
@@ -320,12 +469,64 @@ export class LineLeaseManager
    */
   private findContiguousPositions(count: number, startTime: number): number[]
   {
-    const result: number[] = []
+    if (count <= 0)
+    {
+      return []
+    }
 
-    // Try to find 'count' contiguous positions starting from current rotation point
-    for (let startIdx = 0; startIdx < this.yPositions.length; startIdx++)
+    const result: number[] = []
+    const len = this.yPositions.length
+
+    // First pass: strict no-wrap blocks to avoid visual line-order inversion (e.g. [740,180]).
+    for (let offset = 0; offset < len; offset++)
     {
       result.length = 0
+      const startIdx = (this.nextPositionIndex + offset) % len
+      const endIdx = startIdx + count - 1
+
+      if (endIdx >= len)
+      {
+        continue
+      }
+
+      let valid = true
+      for (let idx = startIdx; idx <= endIdx; idx++)
+      {
+        if (idx === this.bufferLineIndex)
+        {
+          valid = false
+          break
+        }
+
+        const yPos = this.yPositions[idx]
+        for (const lease of this.activeLeases.values())
+        {
+          if (lease.yPosition === yPos && lease.endTime > startTime)
+          {
+            valid = false
+            break
+          }
+        }
+
+        if (!valid)
+        {
+          break
+        }
+
+        result.push(yPos)
+      }
+
+      if (valid && result.length === count)
+      {
+        return [...result]
+      }
+    }
+
+    // Try to find 'count' contiguous positions starting from current rotation point
+    for (let startOffset = 0; startOffset < this.yPositions.length; startOffset++)
+    {
+      result.length = 0
+      const startIdx = (this.nextPositionIndex + startOffset) % this.yPositions.length
 
       for (let i = 0; i < count; i++)
       {
@@ -401,6 +602,16 @@ export class LineLeaseManager
   getBufferPosition(): number
   {
     return this.yPositions[this.bufferLineIndex]
+  }
+
+  getRowCount(): number
+  {
+    return this.yPositions.length
+  }
+
+  getReservableRowCount(): number
+  {
+    return Math.max(0, this.yPositions.length - 1)
   }
 
   /**
