@@ -310,9 +310,13 @@ export async function writePacketsToFile(path: string, packets: CDGPacket[]) {
   if (typeof window !== 'undefined') {
     throw new Error('writePacketsToFile is only available in Node.js environments');
   }
-  const { writeFileSync } = await import('fs');
-  const buf = Buffer.concat(packets.map((p) => Buffer.from(p)));
-  writeFileSync(path, buf);
+  const moduleName = 'node:fs';
+  const { writeFileSync } = await import(/* @vite-ignore */ moduleName);
+  const out = new Uint8Array(packets.length * PACKET_SIZE);
+  for (let i = 0; i < packets.length; i++) {
+    out.set(packets[i], i * PACKET_SIZE);
+  }
+  writeFileSync(path, out);
 }
 
 // Generate memory preset packets (16 packets). Returns our CDGPacket (Uint8Array) array.

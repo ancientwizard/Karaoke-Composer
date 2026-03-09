@@ -23,7 +23,6 @@ export default defineConfig(({ command }) => ({
     strictPort: true,
   },
   build: {
-    target: 'es2015',
     outDir: 'dist',
     assetsDir: 'assets',
     sourcemap: true,
