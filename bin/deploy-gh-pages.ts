@@ -3,7 +3,7 @@
 /*
 # deploy-gh-pages
 
-Summary: Build and deploy the `dist/` output to a new `gh-pages/vX.Y.Z` branch.
+Summary: Build and deploy the `dist/` output to the `gh-pages` branch.
 
 Usage:
   $ deploy-gh-pages.ts [--dry-run] [--override-uncommitted] --run
@@ -17,6 +17,7 @@ Options:
 import { runCommand, git, readScriptMd } from '../src/utils/bin-utils'
 import fs from 'fs'
 import path from 'path'
+import os from 'os'
 import ora from 'ora'
 import minimist from 'minimist'
 import { readFileSync } from 'fs'
@@ -44,6 +45,8 @@ const overrideUncommitted = args['override-uncommitted']
 
 const distPath = path.resolve('./dist')
 const spinner = ora()
+const deployBranch = 'gh-pages'
+const dryRunBranch = 'gh-pages-dry-run'
 
 const getVersion = () =>
 {
@@ -78,7 +81,6 @@ const deploy = async () =>
     }
 
     const version = getVersion()
-    const branchName = `gh-pages/v${version}`
 
     spinner.text = 'Building the project for GitHub Pages...'
     runCommand('npm run build')
@@ -88,39 +90,68 @@ const deploy = async () =>
       throw new Error('Build failed: dist/ directory does not exist.')
     }
 
-    spinner.text = `Creating and switching to branch ${branchName}...`
-    runCommand(`git switch -c ${branchName}`)
-
-    spinner.text = 'Cleaning the branch but preserving critical files...'
-    fs.readdirSync('.').forEach((file) =>
+    spinner.text = 'Snapshotting dist/ to a temporary staging directory...'
+    const stagedDistPath = fs.mkdtempSync(path.join(os.tmpdir(), 'karaoke-composer-gh-pages-'))
+    fs.readdirSync(distPath).forEach((entry: string) =>
     {
-      if (file !== '.git' && file !== '.gitignore' && file !== 'node_modules' && file !== 'bin' && file !== 'dist')
+      const src = path.join(distPath, entry)
+      const dst = path.join(stagedDistPath, entry)
+      fs.cpSync(src, dst, { recursive: true })
+    })
+
+    const targetBranch = isDryRun ? dryRunBranch : deployBranch
+    if (isDryRun)
+    {
+      spinner.text = `Preparing dry-run branch ${dryRunBranch} from ${deployBranch}...`
+      runCommand(`git switch -C ${dryRunBranch} ${deployBranch}`)
+    }
+    else
+    {
+      spinner.text = `Switching to deployment branch ${deployBranch}...`
+      runCommand(`git switch ${deployBranch}`)
+    }
+
+    spinner.text = 'Cleaning tracked files from deployment branch...'
+    runCommand('git rm -rf .')
+
+    spinner.text = 'Cleaning untracked files while preserving .git and node_modules/...'
+    fs.readdirSync('.').forEach((file: string) =>
+    {
+      if (file !== '.git' && file !== 'node_modules')
       {
         fs.rmSync(file, { recursive: true, force: true })
       }
     })
 
     spinner.text = 'Moving build files to the root...'
-    fs.cpSync(distPath, './', { recursive: true })
+    fs.readdirSync(stagedDistPath).forEach((entry: string) =>
+    {
+      const src = path.join(stagedDistPath, entry)
+      const dst = path.resolve(entry)
+      fs.cpSync(src, dst, { recursive: true })
+    })
+
+    spinner.text = 'Removing temporary staging directory...'
+    fs.rmSync(stagedDistPath, { recursive: true, force: true })
 
     spinner.text = 'Staging and committing changes...'
-    runCommand('git add .')
-    runCommand(`git commit -m "Deploy to ${branchName}"`)
+    runCommand("git add -A . ':(exclude)node_modules'")
+    runCommand(`git commit -m "Deploy GitHub Pages v${version}"`)
 
     if (isDryRun)
     {
-      spinner.succeed(`Dry-run mode: All tasks completed except pushing to GitHub. Branch ${branchName} created locally.`)
+      spinner.succeed(`Dry-run mode: All tasks completed except pushing to GitHub. Review ${dryRunBranch} locally.`)
       console.log('[Dry-run] Skipping push to remote repository.')
       return
     }
 
-    spinner.text = `Pushing changes to remote branch ${branchName}...`
-    runCommand(`git push origin ${branchName}`)
+    spinner.text = `Pushing changes to remote branch ${targetBranch}...`
+    runCommand(`git push origin ${targetBranch}`)
 
     spinner.text = 'Switching back to main branch...'
     runCommand('git switch main')
 
-    spinner.succeed(`Deployment to GitHub Pages completed successfully on branch ${branchName}!`)
+    spinner.succeed(`Deployment to GitHub Pages completed successfully on branch ${deployBranch}!`)
   }
   catch (error)
   {
