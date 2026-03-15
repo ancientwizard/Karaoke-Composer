@@ -4,7 +4,6 @@
  */
 
 import type { LrcFile, LyricsWord   } from "@/CDGSharp/convert/lrc/LrcModels";
-import { NodeTextRasterizerAdapter  } from "@/CDGSharp/convert/rendering/NodeTextRasterizerAdapter";
 import type { TextRasterizerAdapter } from "@/CDGSharp/convert/rendering/TextRasterizerAdapter";
 import type {
   KaraokeLinePart,
@@ -80,7 +79,7 @@ export class KaraokeCommandPlanner {
 
   private readonly textRasterizer: TextRasterizerAdapter;
 
-  public constructor(textRasterizer: TextRasterizerAdapter = new NodeTextRasterizerAdapter()) {
+  public constructor(textRasterizer: TextRasterizerAdapter) {
     this.textRasterizer = textRasterizer;
   }
 

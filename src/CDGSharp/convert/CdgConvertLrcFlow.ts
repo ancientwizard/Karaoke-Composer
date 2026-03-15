@@ -6,9 +6,10 @@
 import { FlowExecutionError     } from "@/CDGSharp/shared/FlowExecutionError";
 import { FlowOptionsValidator   } from "@/CDGSharp/shared/FlowOptionsValidator";
 import { LrcFileParser          } from "@/CDGSharp/convert/lrc/LrcFileParser";
-import { KaraokeCommandPlanner  } from "@/CDGSharp/convert/planning/KaraokeCommandPlanner";
-import { KaraokePacketGenerator } from "@/CDGSharp/convert/generation/KaraokePacketGenerator";
-import { CdgPacketSerializer    } from "@/CDGSharp/convert/serialization/CdgPacketSerializer";
+import { KaraokeCommandPlanner          } from "@/CDGSharp/convert/planning/KaraokeCommandPlanner";
+import { KaraokePacketGenerator         } from "@/CDGSharp/convert/generation/KaraokePacketGenerator";
+import { CdgPacketSerializer            } from "@/CDGSharp/convert/serialization/CdgPacketSerializer";
+import { NodeTextRasterizerAdapter      } from "@/CDGSharp/convert/rendering/NodeTextRasterizerAdapter";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { LrcFile           } from "@/CDGSharp/convert/lrc/LrcModels";
 import { dirname                } from "node:path";
@@ -36,9 +37,11 @@ export interface CdgConvertLrcOptions {
 export class CdgConvertLrcFlow {
   private static readonly defaultFontName = "Arial";
 
-  private readonly planner = new KaraokeCommandPlanner();
+  private readonly rasterizer = new NodeTextRasterizerAdapter();
 
-  private readonly generator = new KaraokePacketGenerator();
+  private readonly planner = new KaraokeCommandPlanner(this.rasterizer);
+
+  private readonly generator = new KaraokePacketGenerator(this.rasterizer);
 
   private readonly serializer = new CdgPacketSerializer();
 

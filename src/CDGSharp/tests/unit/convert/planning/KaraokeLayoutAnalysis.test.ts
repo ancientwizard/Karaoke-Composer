@@ -3,7 +3,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { LrcFileParser } from "@/CDGSharp/convert/lrc/LrcFileParser";
 import { KaraokeCommandPlanner } from "@/CDGSharp/convert/planning/KaraokeCommandPlanner";
-import { KaraokePlan } from "@/CDGSharp/convert/planning/KaraokeCommandModels";
+import { NodeTextRasterizerAdapter } from "@/CDGSharp/convert/rendering/NodeTextRasterizerAdapter";
+import type { KaraokePlan } from "@/CDGSharp/convert/planning/KaraokeCommandModels";
 
 interface LayoutMetrics {
   lineCounts: number[];
@@ -143,7 +144,7 @@ const summarizePlan = (analysis: ScenarioAnalysis): string => {
 };
 
 const analyzeLayoutForFont = (lrcContent: string, fontSize: number): ScenarioAnalysis => {
-  const planner = new KaraokeCommandPlanner();
+  const planner = new KaraokeCommandPlanner(new NodeTextRasterizerAdapter());
   const lrc = LrcFileParser.parseFileContent(lrcContent);
 
   const plan = planner.createPlan(lrc, {
@@ -168,7 +169,7 @@ const analyzeLayoutForFont = (lrcContent: string, fontSize: number): ScenarioAna
 
 describe("Karaoke layout analysis", () => {
   it("generates graded layout report for font sizes 15 and 17", () => {
-    const lrcPath = resolve(process.cwd(), "music/meet_me_in_november.lrc");
+    const lrcPath = resolve(process.cwd(), "projects/meet_me_in_november.lrc");
     const lrcContent = readFileSync(lrcPath, "utf8");
 
     const analyses = [15, 17].map((fontSize) => analyzeLayoutForFont(lrcContent, fontSize));

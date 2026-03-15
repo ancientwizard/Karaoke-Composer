@@ -1,9 +1,10 @@
 import { describe, expect, it } from "@jest/globals";
 import { KaraokePacketGenerator } from "@/CDGSharp/convert/generation/KaraokePacketGenerator";
+import { NodeTextRasterizerAdapter } from "@/CDGSharp/convert/rendering/NodeTextRasterizerAdapter";
 
 describe("KaraokePacketGenerator", () => {
   it("generates a timing-based packet scaffold for pages", () => {
-    const generator = new KaraokePacketGenerator();
+    const generator = new KaraokePacketGenerator(new NodeTextRasterizerAdapter());
 
     const packets = generator.generate({
       plan: {
@@ -56,14 +57,14 @@ describe("KaraokePacketGenerator", () => {
   });
 
   it("exposes filling-packet helper", () => {
-    const generator = new KaraokePacketGenerator();
+    const generator = new KaraokePacketGenerator(new NodeTextRasterizerAdapter());
     const filling = generator.getFillingPackets(1000);
 
     expect(filling?.length).toBe(300);
   });
 
   it("uses sung-text-color for color table generation", () => {
-    const generator = new KaraokePacketGenerator();
+    const generator = new KaraokePacketGenerator(new NodeTextRasterizerAdapter());
 
     const packets = generator.generate({
       plan: {
@@ -102,7 +103,7 @@ describe("KaraokePacketGenerator", () => {
   });
 
   it("emits sung progression tile packets", () => {
-    const generator = new KaraokePacketGenerator();
+    const generator = new KaraokePacketGenerator(new NodeTextRasterizerAdapter());
 
     const packets = generator.generate({
       plan: {
@@ -141,7 +142,7 @@ describe("KaraokePacketGenerator", () => {
   });
 
   it("keeps title page visible until first lyric page starts", () => {
-    const generator = new KaraokePacketGenerator();
+    const generator = new KaraokePacketGenerator(new NodeTextRasterizerAdapter());
 
     const packets = generator.generate({
       plan: {
@@ -190,7 +191,7 @@ describe("KaraokePacketGenerator", () => {
   });
 
   it("spreads sung highlighting over time as a wipe", () => {
-    const generator = new KaraokePacketGenerator();
+    const generator = new KaraokePacketGenerator(new NodeTextRasterizerAdapter());
 
     const packets = generator.generate({
       plan: {
@@ -240,7 +241,7 @@ describe("KaraokePacketGenerator", () => {
   });
 
   it("draws first lyrics before filler after title clear", () => {
-    const generator = new KaraokePacketGenerator();
+    const generator = new KaraokePacketGenerator(new NodeTextRasterizerAdapter());
 
     const packets = generator.generate({
       plan: {

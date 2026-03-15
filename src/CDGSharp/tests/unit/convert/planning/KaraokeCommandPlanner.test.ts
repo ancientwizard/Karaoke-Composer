@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@jest/globals";
 import { KaraokeCommandPlanner } from "@/CDGSharp/convert/planning/KaraokeCommandPlanner";
-import { TextRasterizerAdapter } from "@/CDGSharp/convert/rendering/TextRasterizerAdapter";
+import { NodeTextRasterizerAdapter } from "@/CDGSharp/convert/rendering/NodeTextRasterizerAdapter";
+import type { TextRasterizerAdapter } from "@/CDGSharp/convert/rendering/TextRasterizerAdapter";
 import { RasterizedTextFactory } from "@/CDGSharp/convert/rendering/RasterizedText";
 
 describe("KaraokeCommandPlanner", () => {
@@ -14,7 +15,7 @@ describe("KaraokeCommandPlanner", () => {
   };
 
   it("creates a basic karaoke plan from parsed lyrics", () => {
-    const planner = new KaraokeCommandPlanner();
+    const planner = new KaraokeCommandPlanner(new NodeTextRasterizerAdapter());
     const plan = planner.createPlan({
       metadata: { title: "Song", artist: "Artist" },
       lyrics: {
@@ -36,7 +37,7 @@ describe("KaraokeCommandPlanner", () => {
   });
 
   it("keeps semantic source page breaks", () => {
-    const planner = new KaraokeCommandPlanner();
+    const planner = new KaraokeCommandPlanner(new NodeTextRasterizerAdapter());
 
     const plan = planner.createPlan(
       {
@@ -63,7 +64,7 @@ describe("KaraokeCommandPlanner", () => {
   });
 
   it("allBreaks forces punctuation line breaks", () => {
-    const planner = new KaraokeCommandPlanner();
+    const planner = new KaraokeCommandPlanner(new NodeTextRasterizerAdapter());
 
     const plan = planner.createPlan(
       {
@@ -83,7 +84,7 @@ describe("KaraokeCommandPlanner", () => {
   });
 
   it("shortens phrase-ending word duration when long pause follows", () => {
-    const planner = new KaraokeCommandPlanner();
+    const planner = new KaraokeCommandPlanner(new NodeTextRasterizerAdapter());
 
     const plan = planner.createPlan(
       {
@@ -103,7 +104,7 @@ describe("KaraokeCommandPlanner", () => {
   });
 
   it("respects maxLines override when dynamic layout would allow more lines", () => {
-    const planner = new KaraokeCommandPlanner();
+    const planner = new KaraokeCommandPlanner(new NodeTextRasterizerAdapter());
 
     const plan = planner.createPlan(
       {
@@ -126,7 +127,7 @@ describe("KaraokeCommandPlanner", () => {
   });
 
   it("balances 5 wrapped lines across max 4 as 3+2 instead of 4+1", () => {
-    const planner = new KaraokeCommandPlanner();
+    const planner = new KaraokeCommandPlanner(new NodeTextRasterizerAdapter());
 
     const plan = planner.createPlan(
       {
@@ -149,7 +150,7 @@ describe("KaraokeCommandPlanner", () => {
   });
 
   it("balances 8 wrapped lines across max 6 as 4+4 instead of 6+2", () => {
-    const planner = new KaraokeCommandPlanner();
+    const planner = new KaraokeCommandPlanner(new NodeTextRasterizerAdapter());
 
     const plan = planner.createPlan(
       {

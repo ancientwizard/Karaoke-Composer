@@ -8,7 +8,7 @@ import type { GeneratedCdgPacket, GenerationInput } from "@/CDGSharp/convert/gen
 import { KaraokePacketScheduling              } from "@/CDGSharp/convert/generation/KaraokePacketScheduling";
 import { KaraokePacketTiming                  } from "@/CDGSharp/convert/generation/KaraokePacketTiming";
 import { KaraokeTileBlockFactory              } from "@/CDGSharp/convert/generation/KaraokeTileBlockFactory";
-import { NodeTextRasterizerAdapter            } from "@/CDGSharp/convert/rendering/NodeTextRasterizerAdapter";
+import type { TextRasterizerAdapter           } from "@/CDGSharp/convert/rendering/TextRasterizerAdapter";
 import type { RasterizedText                  } from "@/CDGSharp/convert/rendering/RasterizedText";
 
 interface TrailingCleanerTask {
@@ -61,7 +61,12 @@ export class KaraokePacketGenerator {
 
   private static readonly displayHeight = 192;
 
-  private readonly rasterizer = new NodeTextRasterizerAdapter();
+  private readonly rasterizer: TextRasterizerAdapter;
+
+  public constructor(rasterizer: TextRasterizerAdapter)
+  {
+    this.rasterizer = rasterizer;
+  }
 
   private static readonly minLineHeightPadding = 0;
 

@@ -40,9 +40,14 @@
               <export-dialog-lrc :project="project" />
             </div>
 
-            <!-- CDG Export -->
-            <div v-if="selectedFormat === 'cdg'" class="tab-pane fade show active">
+            <!-- CDG-A Export (original engine) -->
+            <div v-if="selectedFormat === 'cdg-a'" class="tab-pane fade show active">
               <export-dialog-cdg :project="project" />
+            </div>
+
+            <!-- CDG-B Export (CDGSharp engine) -->
+            <div v-if="selectedFormat === 'cdg-b'" class="tab-pane fade show active">
+              <export-dialog-cdg-sharp :project="project" />
             </div>
 
             <!-- JSON Export -->
@@ -66,9 +71,10 @@
 import { ref, computed } from 'vue'
 import type { KaraokeProject } from '@/types/karaoke'
 import { getProjectStats  } from '@/services/projectExportService'
-import   ExportDialogCdg    from './ExportDialogCDG.vue'
-import   ExportDialogLrc    from './ExportDialogLRC.vue'
-import   ExportDialogJson   from './ExportDialogJSON.vue'
+import   ExportDialogCdg      from './ExportDialogCDG.vue'
+import   ExportDialogCdgSharp from './ExportDialogCDGSharp.vue'
+import   ExportDialogLrc      from './ExportDialogLRC.vue'
+import   ExportDialogJson     from './ExportDialogJSON.vue'
 
 const props = defineProps<{
   project: KaraokeProject
@@ -79,7 +85,7 @@ const emit = defineEmits<{
 }>()
 
 // Selected format tab
-const selectedFormat = ref<'lrc' | 'cdg' | 'json'>('lrc')
+const selectedFormat = ref<'lrc' | 'cdg-a' | 'cdg-b' | 'json'>('lrc')
 
 // State
 const exportStatus = ref<{ type: 'success' | 'error'; message: string } | null>(null)
@@ -92,8 +98,13 @@ const formats = [
     icon: '📄'
   },
   {
-    id: 'cdg' as const,
-    label: 'CDG',
+    id: 'cdg-a' as const,
+    label: 'CDG-A',
+    icon: '💿'
+  },
+  {
+    id: 'cdg-b' as const,
+    label: 'CDG-B',
     icon: '💿'
   },
   {
