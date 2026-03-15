@@ -2,7 +2,10 @@ export default {
   preset: "ts-jest/presets/default-esm",
   testEnvironment: "jsdom",
   extensionsToTreatAsEsm: [".ts"],
-  moduleNameMapper: { "^@/(.*)$": "<rootDir>/src/$1" },
+  moduleNameMapper: {
+    "^@/(.*)$": "<rootDir>/src/$1",
+    "^vitest$": "@jest/globals"
+  },
   transform: {
     "^.+\\.vue$": "@vue/vue3-jest",
     "^.+\\.(ts|tsx)$": ["ts-jest", {
@@ -17,7 +20,8 @@ export default {
   },
   testMatch: [
     "<rootDir>/src/tests/**/*.(test|spec).(ts|js)",
-    "<rootDir>/src/**/__tests__/**/*.(ts|js)"
+    "<rootDir>/src/**/__tests__/**/*.(ts|js)",
+    "<rootDir>/src/CDGSharp/tests/**/*.(test|spec|integration).(ts|js)"
   ],
   moduleFileExtensions: ["vue", "js", "ts", "jsx", "tsx", "json"],
   transformIgnorePatterns: ["node_modules/(?!(.*\\.mjs$))"],

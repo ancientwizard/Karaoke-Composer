@@ -67,7 +67,7 @@ describe('Line reservation regression', () =>
 {
   it('does not assign the same y row to overlapping active lyric lines (project LRC)', () =>
   {
-    const lrcPath = path.join(process.cwd(), 'projects', 'meet-me-in-november-Cmjr.lrc')
+    const lrcPath = path.join(process.cwd(), 'src', 'tests', 'samples', 'meet-me-in-november.lrc')
     expect(fs.existsSync(lrcPath)).toBe(true)
 
     const lrc = fs.readFileSync(lrcPath, 'utf-8')
@@ -83,7 +83,7 @@ describe('Line reservation regression', () =>
 
   it('does not re-lease active lyric rows when erase delay is applied', () =>
   {
-    const lrcPath = path.join(process.cwd(), 'projects', 'meet-me-in-november-Cmjr.lrc')
+    const lrcPath = path.join(process.cwd(), 'src', 'tests', 'samples', 'meet-me-in-november.lrc')
     expect(fs.existsSync(lrcPath)).toBe(true)
 
     const lrc = fs.readFileSync(lrcPath, 'utf-8')
