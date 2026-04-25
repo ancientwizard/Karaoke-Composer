@@ -13,6 +13,7 @@ import { KaraokePacketGenerator           } from "@/CDGSharp/convert/generation/
 import { CdgPacketSerializer              } from "@/CDGSharp/convert/serialization/CdgPacketSerializer";
 import { BrowserTextRasterizerAdapter     } from "@/CDGSharp/convert/rendering/BrowserTextRasterizerAdapter";
 import type { LrcFile                     } from "@/CDGSharp/convert/lrc/LrcModels";
+import type { KaraokeGenerationProgress   } from "@/CDGSharp/convert/generation/KaraokePacketGenerator";
 
 /**
  * Options mirror the CLI flags from convert-lrc.ts, minus file-system paths.
@@ -33,6 +34,14 @@ export interface CdgConvertLrcBrowserOptions {
   transitionMode?: "clear" | "trailing-wipe";
   trailingWipeDelayMs?: number;
   trailingWipeRegionReadyThreshold?: number;
+  onProgress?: (progress: CdgConvertLrcBrowserProgress) => void;
+}
+
+export interface CdgConvertLrcBrowserProgress {
+  phase: "parsing" | "planning" | "generating" | "serializing" | "done";
+  percent: number;
+  message: string;
+  packetCount?: number;
 }
 
 export class CdgConvertLrcBrowserFlow
@@ -67,8 +76,20 @@ export class CdgConvertLrcBrowserFlow
 
     try
     {
+      this.reportProgress(options, {
+        phase: "parsing",
+        percent: 10,
+        message: "Parsing LRC"
+      });
+
       const baseLrcFile = LrcFileParser.parseFileContent(lrcContent);
       const lrcFile     = this.applyLrcTransforms(baseLrcFile, options);
+
+      this.reportProgress(options, {
+        phase: "planning",
+        percent: 30,
+        message: "Planning render commands"
+      });
 
       const plan = this.planner.createPlan(lrcFile, {
         allBreaks:        options.allBreaks   ?? false,
@@ -77,6 +98,12 @@ export class CdgConvertLrcBrowserFlow
         defaultFontName:  options.font      ?? CdgConvertLrcBrowserFlow.defaultFontName,
         defaultFontSize:  options.fontSize  ?? CdgConvertLrcBrowserFlow.defaultFontSize,
         defaultFontStyle: options.fontStyle ?? CdgConvertLrcBrowserFlow.defaultFontStyle
+      });
+
+      this.reportProgress(options, {
+        phase: "generating",
+        percent: 55,
+        message: "Generating CD+G packets"
       });
 
       const generation = this.generator.generateWithDiagnostics({
@@ -93,9 +120,162 @@ export class CdgConvertLrcBrowserFlow
           trailingWipeDelayMs:               options.trailingWipeDelayMs ?? 2000,
           trailingWipeRegionReadyThreshold:  options.trailingWipeRegionReadyThreshold ?? 0.8
         }
+      }, {
+        onProgress: (progress: KaraokeGenerationProgress) => {
+          if (progress.phase === "generating-pages") {
+            const total = Math.max(1, progress.totalPages);
+            const ratio = Math.max(0, Math.min(1, progress.processedPages / total));
+            const percent = 55 + Math.round(ratio * 25);
+
+            this.reportProgress(options, {
+              phase: "generating",
+              percent,
+              message: `Generating packets (${progress.processedPages}/${total} pages)`,
+              packetCount: progress.packetsSoFar
+            });
+            return;
+          }
+
+          if (progress.phase === "finalizing") {
+            this.reportProgress(options, {
+              phase: "serializing",
+              percent: 83,
+              message: "Finalizing packet timeline",
+              packetCount: progress.packetsSoFar
+            });
+          }
+        }
       });
 
-      return this.serializer.serialize(generation.packets);
+      this.reportProgress(options, {
+        phase: "serializing",
+        percent: 85,
+        message: "Serializing binary output",
+        packetCount: generation.packets.length
+      });
+
+      const bytes = this.serializer.serialize(generation.packets);
+
+      this.reportProgress(options, {
+        phase: "done",
+        percent: 100,
+        message: "Encoding complete",
+        packetCount: generation.packets.length
+      });
+
+      return bytes;
+    }
+    catch (error)
+    {
+      if (error instanceof FlowExecutionError) {
+        throw error;
+      }
+
+      if (error instanceof Error) {
+        throw new FlowExecutionError(`CDGSharp browser flow failed: ${error.message}`);
+      }
+
+      throw new FlowExecutionError("CDGSharp browser flow failed with an unknown error.");
+    }
+  }
+
+  public async executeAsync(lrcContent: string, options: CdgConvertLrcBrowserOptions = {}): Promise<Uint8Array>
+  {
+    this.validateOptions(options);
+
+    try
+    {
+      this.reportProgress(options, {
+        phase: "parsing",
+        percent: 10,
+        message: "Parsing LRC"
+      });
+
+      const baseLrcFile = LrcFileParser.parseFileContent(lrcContent);
+      const lrcFile     = this.applyLrcTransforms(baseLrcFile, options);
+
+      this.reportProgress(options, {
+        phase: "planning",
+        percent: 30,
+        message: "Planning render commands"
+      });
+
+      const plan = this.planner.createPlan(lrcFile, {
+        allBreaks:        options.allBreaks   ?? false,
+        wrapGracePx:      options.wrapGracePx ?? 0,
+        maxLines:         options.maxLines,
+        defaultFontName:  options.font      ?? CdgConvertLrcBrowserFlow.defaultFontName,
+        defaultFontSize:  options.fontSize  ?? CdgConvertLrcBrowserFlow.defaultFontSize,
+        defaultFontStyle: options.fontStyle ?? CdgConvertLrcBrowserFlow.defaultFontStyle
+      });
+
+      this.reportProgress(options, {
+        phase: "generating",
+        percent: 55,
+        message: "Generating CD+G packets"
+      });
+
+      const generation = await this.generator.generateWithDiagnosticsAsync({
+        plan,
+        style: {
+          bgColor:      options.bgColor      ?? CdgConvertLrcBrowserFlow.defaultBgColor,
+          textColor:    options.textColor    ?? CdgConvertLrcBrowserFlow.defaultTextColor,
+          sungTextColor: options.sungTextColor ?? CdgConvertLrcBrowserFlow.defaultSungColor,
+          fontName:     options.font      ?? CdgConvertLrcBrowserFlow.defaultFontName,
+          fontSize:     options.fontSize  ?? CdgConvertLrcBrowserFlow.defaultFontSize,
+          fontStyle:    options.fontStyle ?? CdgConvertLrcBrowserFlow.defaultFontStyle,
+          wrapGracePx:  options.wrapGracePx ?? 0,
+          transitionMode:                    options.transitionMode ?? CdgConvertLrcBrowserFlow.defaultTransitionMode,
+          trailingWipeDelayMs:               options.trailingWipeDelayMs ?? 2000,
+          trailingWipeRegionReadyThreshold:  options.trailingWipeRegionReadyThreshold ?? 0.8
+        }
+      }, {
+        onProgress: (progress: KaraokeGenerationProgress) => {
+          if (progress.phase === "generating-pages") {
+            const total = Math.max(1, progress.totalPages);
+            const ratio = Math.max(0, Math.min(1, progress.processedPages / total));
+            const percent = 55 + Math.round(ratio * 25);
+
+            this.reportProgress(options, {
+              phase: "generating",
+              percent,
+              message: `Generating packets (${progress.processedPages}/${total} pages)`,
+              packetCount: progress.packetsSoFar
+            });
+            return;
+          }
+
+          if (progress.phase === "finalizing") {
+            this.reportProgress(options, {
+              phase: "serializing",
+              percent: 83,
+              message: "Finalizing packet timeline",
+              packetCount: progress.packetsSoFar
+            });
+          }
+        },
+        yieldToMainThread: async () => {
+          await this.yieldToMainThread();
+        }
+      });
+
+      this.reportProgress(options, {
+        phase: "serializing",
+        percent: 85,
+        message: "Serializing binary output",
+        packetCount: generation.packets.length
+      });
+
+      const bytes = this.serializer.serialize(generation.packets);
+
+      this.reportProgress(options, {
+        phase: "done",
+        percent: 100,
+        message: "Encoding complete",
+        packetCount: generation.packets.length
+      });
+
+      return bytes;
     }
     catch (error)
     {
@@ -200,6 +380,32 @@ export class CdgConvertLrcBrowserFlow
     }
 
     return transformed;
+  }
+
+  private reportProgress(
+    options: CdgConvertLrcBrowserOptions,
+    progress: CdgConvertLrcBrowserProgress
+  ): void
+  {
+    try
+    {
+      options.onProgress?.(progress);
+    }
+    catch
+    {
+      // Never let UI callback issues affect encoding.
+    }
+  }
+
+  private async yieldToMainThread(): Promise<void> {
+    await new Promise<void>((resolve) => {
+      if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(() => resolve());
+        return;
+      }
+
+      setTimeout(() => resolve(), 0);
+    });
   }
 }
 

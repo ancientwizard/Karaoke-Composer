@@ -215,9 +215,19 @@
 
     <!-- Progress -->
     <div v-if="exporting" class="my-3">
-      <div class="mb-1 small text-muted">Generating CD+G data…</div>
+      <div class="d-flex justify-content-between align-items-center mb-1 small text-muted">
+        <span>{{ exportStageMessage }}</span>
+        <span>{{ visibleProgressPercent }}%</span>
+      </div>
       <div class="progress">
-        <div class="progress-bar progress-bar-striped progress-bar-animated w-100" role="progressbar"></div>
+        <div
+          class="progress-bar progress-bar-striped progress-bar-animated"
+          role="progressbar"
+          :style="{ width: visibleProgressPercent + '%' }"
+          :aria-valuenow="visibleProgressPercent"
+          aria-valuemin="0"
+          aria-valuemax="100"
+        ></div>
       </div>
     </div>
 
@@ -229,10 +239,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, computed, nextTick } from 'vue'
 import type { KaraokeProject } from '@/types/karaoke'
 import { LRCWriter } from '@/formats/LRCFormat'
-import { CdgConvertLrcBrowserFlow } from '@/CDGSharp/convert/CdgConvertLrcBrowserFlow'
+import {
+  CdgConvertLrcBrowserFlow,
+  type CdgConvertLrcBrowserProgress
+} from '@/CDGSharp/convert/CdgConvertLrcBrowserFlow'
 
 const props = defineProps<{
   project: KaraokeProject
@@ -241,6 +254,83 @@ const props = defineProps<{
 const exporting     = ref(false)
 const exportError   = ref<string | null>(null)
 const exportSuccess = ref<string | null>(null)
+const exportStage   = ref<'idle' | 'preparing' | 'rendering' | 'saving'>('idle')
+const progressPercent = ref(0)
+let progressTimer: ReturnType<typeof setInterval> | null = null
+
+const exportStageMessage = computed(() => {
+  switch (exportStage.value) {
+    case 'preparing':
+      return 'Preparing export…'
+    case 'rendering':
+      return 'Rendering CD+G data… this can take a while'
+    case 'saving':
+      return 'Saving file…'
+    default:
+      return 'Generating CD+G data…'
+  }
+})
+
+const visibleProgressPercent = computed(() => Math.max(0, Math.min(100, Math.round(progressPercent.value))))
+
+function startProgressTicker(): void
+{
+  progressPercent.value = 8
+
+  if (progressTimer !== null) {
+    clearInterval(progressTimer)
+  }
+
+  progressTimer = setInterval(() => {
+    // Keep subtle motion while blocked work is pending; hard milestones are set by encoder callbacks.
+    if (progressPercent.value < 48) {
+      progressPercent.value += 0.4
+    } else if (progressPercent.value < 56) {
+      progressPercent.value += 0.15
+    }
+  }, 140)
+}
+
+function applyEncoderProgress(progress: CdgConvertLrcBrowserProgress): void
+{
+  switch (progress.phase) {
+    case 'parsing':
+      exportStage.value = 'preparing'
+      break
+    case 'planning':
+    case 'generating':
+      exportStage.value = 'rendering'
+      break
+    case 'serializing':
+      exportStage.value = 'saving'
+      break
+    case 'done':
+      exportStage.value = 'saving'
+      break
+  }
+
+  if (progress.percent > progressPercent.value) {
+    progressPercent.value = progress.percent
+  }
+}
+
+function stopProgressTicker(): void
+{
+  if (progressTimer !== null) {
+    clearInterval(progressTimer)
+    progressTimer = null
+  }
+}
+
+async function waitForUiPaint(): Promise<void>
+{
+  await nextTick()
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => resolve())
+    })
+  })
+}
 
 // ─── font detection ───────────────────────────────────────────────────────────
 
@@ -457,19 +547,31 @@ async function saveCdgBlob(bytes: Uint8Array, fileName: string): Promise<void>
 
 async function doExport(): Promise<void>
 {
+  const busyStart = Date.now()
+
   exporting.value    = true
+  exportStage.value  = 'preparing'
+  progressPercent.value = 5
   exportError.value  = null
   exportSuccess.value = null
+
+  // Ensure the busy indicator is painted before synchronous rendering starts.
+  await waitForUiPaint()
 
   try
   {
     const lrcContent = LRCWriter.toLRC(props.project)
+    progressPercent.value = 18
 
     const flow  = new CdgConvertLrcBrowserFlow()
     const s     = settings.value
 
+    exportStage.value = 'rendering'
+    progressPercent.value = Math.max(progressPercent.value, 30)
+    startProgressTicker()
+
     // CDGSharp color validation expects nibble (#rgb) form
-    const bytes = flow.execute(lrcContent, {
+    const bytes = await flow.executeAsync(lrcContent, {
       bgColor:       hexToNibble(s.bgColor),
       textColor:     hexToNibble(s.textColor),
       sungTextColor: hexToNibble(s.sungTextColor),
@@ -483,16 +585,25 @@ async function doExport(): Promise<void>
       maxLines:      s.maxLines ?? undefined,
       transitionMode: s.transitionMode,
       trailingWipeDelayMs: s.trailingWipeDelayMs,
-      trailingWipeRegionReadyThreshold: s.trailingWipeRegionReadyThreshold
+      trailingWipeRegionReadyThreshold: s.trailingWipeRegionReadyThreshold,
+      onProgress: (progress) => {
+        applyEncoderProgress(progress)
+      }
     })
 
     const safeName = toKebabFileBase(props.project.name || 'karaoke')
+    exportStage.value = 'saving'
+    progressPercent.value = Math.max(progressPercent.value, 94)
+    stopProgressTicker()
     await saveCdgBlob(bytes, `${safeName}.cdg`)
+
+    progressPercent.value = 100
 
     exportSuccess.value = `✅ CDG-B exported (${bytes.length.toLocaleString()} bytes)`
   }
   catch (err: unknown)
   {
+    stopProgressTicker()
     if ((err as { name?: string })?.name === 'AbortError') {
       return
     }
@@ -500,7 +611,18 @@ async function doExport(): Promise<void>
   }
   finally
   {
+    stopProgressTicker()
+
+    // Keep the busy indicator visible long enough to be perceptible on fast exports.
+    const elapsed = Date.now() - busyStart
+    const minVisibleMs = 450
+    if (elapsed < minVisibleMs) {
+      await new Promise((resolve) => setTimeout(resolve, minVisibleMs - elapsed))
+    }
+
     exporting.value = false
+    exportStage.value = 'idle'
+    progressPercent.value = 0
   }
 }
 </script>

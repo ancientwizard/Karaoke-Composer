@@ -56,6 +56,18 @@ export interface KaraokeGenerationDiagnostics {
   };
 }
 
+export interface KaraokeGenerationProgress {
+  phase: "generating-pages" | "finalizing" | "done";
+  processedPages: number;
+  totalPages: number;
+  packetsSoFar: number;
+}
+
+export interface KaraokeGenerationOptions {
+  onProgress?: (progress: KaraokeGenerationProgress) => void;
+  yieldToMainThread?: () => Promise<void>;
+}
+
 export class KaraokePacketGenerator {
   private static readonly displayWidth = 288;
 
@@ -84,11 +96,11 @@ export class KaraokePacketGenerator {
     return KaraokePacketScheduling.tryGetFillingPackets(durationMs);
   }
 
-  public generate(input: GenerationInput): GeneratedCdgPacket[] {
-    return this.generateWithDiagnostics(input).packets;
+  public generate(input: GenerationInput, options: KaraokeGenerationOptions = {}): GeneratedCdgPacket[] {
+    return this.generateWithDiagnostics(input, options).packets;
   }
 
-  public generateWithDiagnostics(input: GenerationInput): {
+  public generateWithDiagnostics(input: GenerationInput, options: KaraokeGenerationOptions = {}): {
     packets: GeneratedCdgPacket[];
     diagnostics: KaraokeGenerationDiagnostics;
   } {
@@ -116,6 +128,14 @@ export class KaraokePacketGenerator {
 
     const sortedPages = [...pages].sort((a, b) => a.startTimeMs - b.startTimeMs);
     const firstLyricsPageIndex = sortedPages.findIndex((page) => page.mode === "lyrics");
+    const totalPages = sortedPages.length;
+
+    this.reportProgress(options, {
+      phase: "generating-pages",
+      processedPages: 0,
+      totalPages,
+      packetsSoFar: 0
+    });
 
     for (let pageIndex = 0; pageIndex < sortedPages.length; pageIndex += 1) {
       const page = sortedPages[pageIndex];
@@ -172,6 +192,13 @@ export class KaraokePacketGenerator {
 
         packets.push(...lyricsPagePackets);
         renderedDurationMs = KaraokePacketTiming.getRenderDurationMs(packets.length);
+
+        this.reportProgress(options, {
+          phase: "generating-pages",
+          processedPages: pageIndex + 1,
+          totalPages,
+          packetsSoFar: packets.length
+        });
         continue;
       }
 
@@ -208,9 +235,23 @@ export class KaraokePacketGenerator {
       packets.push(...pageFillPackets);
 
       renderedDurationMs = KaraokePacketTiming.getRenderDurationMs(packets.length);
+
+      this.reportProgress(options, {
+        phase: "generating-pages",
+        processedPages: pageIndex + 1,
+        totalPages,
+        packetsSoFar: packets.length
+      });
     }
 
     if (packets.length === 0) {
+      this.reportProgress(options, {
+        phase: "done",
+        processedPages: totalPages,
+        totalPages,
+        packetsSoFar: 0
+      });
+
       return {
         packets: [],
         diagnostics: {
@@ -221,6 +262,20 @@ export class KaraokePacketGenerator {
       };
     }
 
+    this.reportProgress(options, {
+      phase: "finalizing",
+      processedPages: totalPages,
+      totalPages,
+      packetsSoFar: packets.length
+    });
+
+    this.reportProgress(options, {
+      phase: "done",
+      processedPages: totalPages,
+      totalPages,
+      packetsSoFar: packets.length
+    });
+
     return {
       packets,
       diagnostics: {
@@ -229,6 +284,220 @@ export class KaraokePacketGenerator {
         }
       }
     };
+  }
+
+  public async generateWithDiagnosticsAsync(input: GenerationInput, options: KaraokeGenerationOptions = {}): Promise<{
+    packets: GeneratedCdgPacket[];
+    diagnostics: KaraokeGenerationDiagnostics;
+  }> {
+    const packets: GeneratedCdgPacket[] = [];
+    let renderedDurationMs = 0;
+    let pendingTrailingCleanerTasks: TrailingCleanerTask[] = [];
+    const trailingWipePageDiagnostics: TrailingCleanerPageDiagnostics[] = [];
+
+    const pages = [
+      {
+        startTimeMs: 0,
+        lines: [
+          [{ text: input.plan.title, durationMs: 0 }],
+          [{ text: input.plan.artist, durationMs: 0 }]
+        ],
+        includeSung: false,
+        mode: "title" as const
+      },
+      ...input.plan.pages.map((page) => ({
+        ...page,
+        includeSung: true,
+        mode: "lyrics" as const
+      }))
+    ];
+
+    const sortedPages = [...pages].sort((a, b) => a.startTimeMs - b.startTimeMs);
+    const firstLyricsPageIndex = sortedPages.findIndex((page) => page.mode === "lyrics");
+    const totalPages = sortedPages.length;
+
+    this.reportProgress(options, {
+      phase: "generating-pages",
+      processedPages: 0,
+      totalPages,
+      packetsSoFar: 0
+    });
+
+    await this.yieldControl(options);
+
+    for (let pageIndex = 0; pageIndex < sortedPages.length; pageIndex += 1) {
+      const page = sortedPages[pageIndex];
+      if (page === undefined) {
+        continue;
+      }
+
+      const currentRenderDurationMs = renderedDurationMs;
+
+      if (page.mode === "lyrics") {
+        const nextLyricsPageStartTimeMs = sortedPages
+          .slice(pageIndex + 1)
+          .find((candidate) => candidate.mode === "lyrics")?.startTimeMs;
+
+        const lyricsPage = this.createLyricsPagePackets(
+          input,
+          page,
+          currentRenderDurationMs,
+          pageIndex === firstLyricsPageIndex,
+          pendingTrailingCleanerTasks,
+          nextLyricsPageStartTimeMs
+        );
+        let lyricsPagePackets = lyricsPage.packets;
+
+        if ((input.style.transitionMode ?? "clear") === "trailing-wipe") {
+          const pendingTaskCountIn = pendingTrailingCleanerTasks.length;
+          const merged = this.mergeTrailingCleanerTasksIntoPage(
+            input,
+            lyricsPagePackets,
+            pendingTrailingCleanerTasks,
+            lyricsPage.trailingCleanerTasks,
+            new Set(lyricsPage.occupiedRegionIds)
+          );
+          lyricsPagePackets = merged.packets;
+          pendingTrailingCleanerTasks = merged.overflowTasks;
+
+          trailingWipePageDiagnostics.push({
+            lyricsPageIndex: pageIndex,
+            basePacketCount: lyricsPage.packets.length,
+            pendingTaskCountIn,
+            currentTaskCount: lyricsPage.trailingCleanerTasks.length,
+            blockedRegionTaskCount: merged.blockedRegionTaskCount,
+            blockedRegionPacketCount: merged.blockedRegionPacketCount,
+            droppedByThresholdTaskCount: merged.droppedByThresholdTaskCount,
+            droppedByThresholdPacketCount: merged.droppedByThresholdPacketCount,
+            cleanerPacketAppliedCount: merged.appliedCleanerPacketCount,
+            overflowTaskCountOut: merged.overflowTasks.length,
+            overflowPacketCountOut: merged.overflowTasks.reduce((sum, task) => sum + task.packets.length, 0),
+            lineTimingDiagnostics: lyricsPage.trailingCleanerLineDiagnostics
+          });
+        } else {
+          pendingTrailingCleanerTasks = [];
+        }
+
+        packets.push(...lyricsPagePackets);
+        renderedDurationMs = KaraokePacketTiming.getRenderDurationMs(packets.length);
+
+        this.reportProgress(options, {
+          phase: "generating-pages",
+          processedPages: pageIndex + 1,
+          totalPages,
+          packetsSoFar: packets.length
+        });
+
+        await this.yieldControl(options);
+        continue;
+      }
+
+      const timeToFillMs = page.startTimeMs - renderedDurationMs;
+      const shouldApplyInitialFill = packets.length > 0;
+      if (shouldApplyInitialFill) {
+        const filling = this.getFillingPackets(timeToFillMs);
+        if (filling !== null) {
+          packets.push(...filling);
+        }
+      }
+
+      const pageInitPackets: GeneratedCdgPacket[] = [
+        this.createMemoryPresetPacket(0, 0),
+        ...this.createColorTablePackets(input.style.bgColor, input.style.textColor, input.style.sungTextColor, page.includeSung)
+      ];
+
+      const drawTextPackets = this.createTitleDrawTextPackets(input, page.lines);
+      const singPackets = page.includeSung ? this.createSungPackets(input, page.lines, 3) : [];
+      const interleavedOrAppendedPackets = this.combineDrawAndSingPackets(drawTextPackets, singPackets);
+
+      packets.push(...pageInitPackets);
+      packets.push(...interleavedOrAppendedPackets);
+
+      const intrinsicDurationMs = page.lines
+        .flatMap((line) => line)
+        .reduce((sum, linePart) => sum + linePart.durationMs, 0);
+      const pageDurationMs = intrinsicDurationMs;
+      const renderMs = KaraokePacketTiming.getRenderDurationMs(
+        pageInitPackets.length + interleavedOrAppendedPackets.length
+      );
+      const remainingMs = pageDurationMs - renderMs;
+      const pageFillPackets = this.getFillingPackets(remainingMs) ?? [];
+      packets.push(...pageFillPackets);
+
+      renderedDurationMs = KaraokePacketTiming.getRenderDurationMs(packets.length);
+
+      this.reportProgress(options, {
+        phase: "generating-pages",
+        processedPages: pageIndex + 1,
+        totalPages,
+        packetsSoFar: packets.length
+      });
+
+      await this.yieldControl(options);
+    }
+
+    if (packets.length === 0) {
+      this.reportProgress(options, {
+        phase: "done",
+        processedPages: totalPages,
+        totalPages,
+        packetsSoFar: 0
+      });
+
+      return {
+        packets: [],
+        diagnostics: {
+          trailingWipe: {
+            pageDiagnostics: trailingWipePageDiagnostics
+          }
+        }
+      };
+    }
+
+    this.reportProgress(options, {
+      phase: "finalizing",
+      processedPages: totalPages,
+      totalPages,
+      packetsSoFar: packets.length
+    });
+
+    await this.yieldControl(options);
+
+    this.reportProgress(options, {
+      phase: "done",
+      processedPages: totalPages,
+      totalPages,
+      packetsSoFar: packets.length
+    });
+
+    return {
+      packets,
+      diagnostics: {
+        trailingWipe: {
+          pageDiagnostics: trailingWipePageDiagnostics
+        }
+      }
+    };
+  }
+
+  private reportProgress(options: KaraokeGenerationOptions, progress: KaraokeGenerationProgress): void {
+    try {
+      options.onProgress?.(progress);
+    } catch {
+      // Progress callback must never break generation.
+    }
+  }
+
+  private async yieldControl(options: KaraokeGenerationOptions): Promise<void> {
+    if (options.yieldToMainThread === undefined) {
+      return;
+    }
+
+    try {
+      await options.yieldToMainThread();
+    } catch {
+      // Yield helper must never break generation.
+    }
   }
 
   private createLyricsPagePackets(
