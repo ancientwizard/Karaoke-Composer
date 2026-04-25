@@ -25,7 +25,19 @@ export default {
   ],
   moduleFileExtensions: ["vue", "js", "ts", "jsx", "tsx", "json"],
   transformIgnorePatterns: ["node_modules/(?!(.*\\.mjs$))"],
-  collectCoverageFrom: ["src/**/*.{ts,vue}", "!src/**/*.d.ts", "!src/**/index.ts"],
+  collectCoverageFrom: [
+    "src/**/*.{ts,vue}",
+    "!src/**/*.vue",
+    "!src/**/*.d.ts",
+    "!src/**/index.ts",
+    "!src/main.ts",
+    "!src/CDGSharp/bin/**",
+    "!src/lyrics/**",
+    "!src/karaoke/demo/**",
+    "!src/debug/**",
+    "!src/tests/**",
+    "!src/CDGSharp/tests/**"
+  ],
   coverageDirectory: "coverage",
   coverageReporters: ["text", "lcov", "html"],
 }
