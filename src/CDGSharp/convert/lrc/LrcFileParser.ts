@@ -58,7 +58,7 @@ export class LrcFileParser {
     const version = this.tryGetMetadata("version", metadataLines)?.toLowerCase();
     const syllableTiming = this.tryGetMetadata("syllable_timing", metadataLines)?.toLowerCase();
 
-    return version === "2.1" && syllableTiming === "true";
+    return (version?.startsWith("2.") ?? false) && syllableTiming === "true";
   }
 
   private static parseLegacyLyrics(pageLines: string[]): Lyrics {
@@ -147,12 +147,17 @@ export class LrcFileParser {
   }
 
   private static parseExtendedLine(line: string): LyricsLine {
-    const withoutLineTimestamp = line.replace(/^\[\d{2}:\d{2}\.\d{2}\]/, "");
-    const matches = Array.from(withoutLineTimestamp.matchAll(/<(?<time>\d{2}:\d{2}\.\d{2})>(?<text>[^<]*)/g));
+    const withoutLineTimestamp = line.replace(/^\[\d{2}:\d{2}\.\d{2,3}\]/, "");
+    const matches = Array.from(
+      withoutLineTimestamp.matchAll(
+        /<(?<time>\d{2}:\d{2}\.\d{2,3}(?:~\d{2}:\d{2}\.\d{2,3})?)>(?<text>[^<]*)/g
+      )
+    );
 
     const words: LyricsWord[] = [];
     let currentWord = "";
     let currentStartTime: number | null = null;
+    let currentEndTime: number | null = null;
 
     for (const match of matches) {
       const timeText = match.groups?.time;
@@ -161,29 +166,35 @@ export class LrcFileParser {
         continue;
       }
 
-      const startTime = this.parseCentisecondsTimestamp(timeText);
-      if (startTime === null) {
+      const parsedMarker = this.parseExtendedTimeMarker(timeText);
+      if (parsedMarker === null) {
         throw new Error(`Can't parse timestamp "${timeText}"`);
       }
+
+      const { startTime, endTime } = parsedMarker;
 
       for (const ch of text) {
         if (/\s/.test(ch)) {
           if (currentWord.length > 0) {
-            words.push({ text: currentWord, startTime: currentStartTime, endTime: null });
+            words.push({ text: currentWord, startTime: currentStartTime, endTime: currentEndTime });
             currentWord = "";
             currentStartTime = null;
+            currentEndTime = null;
           }
         } else {
           if (currentStartTime === null) {
             currentStartTime = startTime;
           }
           currentWord += ch;
+          if (endTime !== null) {
+            currentEndTime = endTime;
+          }
         }
       }
     }
 
     if (currentWord.length > 0) {
-      words.push({ text: currentWord, startTime: currentStartTime, endTime: null });
+      words.push({ text: currentWord, startTime: currentStartTime, endTime: currentEndTime });
     }
 
     return words;
@@ -199,13 +210,23 @@ export class LrcFileParser {
         continue;
       }
 
-      if (next?.word.startTime !== null && next?.word.startTime !== undefined) {
+      if (
+        current.word.endTime === null &&
+        next?.word.startTime !== null &&
+        next?.word.startTime !== undefined
+      ) {
         current.word.endTime = next.word.startTime;
       }
     }
 
     const last = flattened.at(-1);
-    if (duration !== null && last !== undefined && last.word.startTime !== null && duration > last.word.startTime) {
+    if (
+      duration !== null &&
+      last !== undefined &&
+      last.word.endTime === null &&
+      last.word.startTime !== null &&
+      duration > last.word.startTime
+    ) {
       last.word.endTime = duration;
     }
 
@@ -231,16 +252,42 @@ export class LrcFileParser {
       return null;
     }
 
-    const match = /^(?<minutes>\d{2}):(?<seconds>\d{2})\.(?<centiseconds>\d{2})$/.exec(text);
+    const match = /^(?<minutes>\d{2}):(?<seconds>\d{2})\.(?<fraction>\d{2,3})$/.exec(text);
     if (match?.groups === undefined) {
       return null;
     }
 
-    return LyricsTime.fromCentiseconds(
-      Number(match.groups.minutes),
-      Number(match.groups.seconds),
-      Number(match.groups.centiseconds)
-    );
+    const fraction = match.groups.fraction;
+    const milliseconds =
+      fraction.length === 2
+        ? Number(fraction) * 10
+        : Number(fraction.slice(0, 3));
+
+    if (!Number.isFinite(milliseconds)) {
+      return null;
+    }
+
+    return ((Number(match.groups.minutes) * 60) + Number(match.groups.seconds)) * 1000 + milliseconds;
+  }
+
+  private static parseExtendedTimeMarker(text: string): { startTime: number; endTime: number | null } | null {
+    const [startText, endText] = text.split("~");
+    const startTime = this.parseCentisecondsTimestamp(startText);
+
+    if (startTime === null) {
+      return null;
+    }
+
+    if (endText === undefined) {
+      return { startTime, endTime: null };
+    }
+
+    const endTime = this.parseCentisecondsTimestamp(endText);
+    if (endTime === null || endTime < startTime) {
+      return { startTime, endTime: null };
+    }
+
+    return { startTime, endTime };
   }
 
   private static splitByBlankLines(lines: string[]): string[][] {

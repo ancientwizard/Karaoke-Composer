@@ -57,6 +57,59 @@
       </div>
     </div>
 
+    <!-- LRC + MP3 Import Modal -->
+    <div class="modal" :class="{ show: showImportProject }" v-if="showImportProject" @click="closeImportProject">
+      <div class="modal-dialog" @click.stop>
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Import Project from MP3 + LRC</h5>
+            <button type="button" class="btn-close" @click="closeImportProject"></button>
+          </div>
+          <div class="modal-body">
+            <p class="text-muted mb-3">
+              Select both files to reconstruct a timing project in this browser.
+            </p>
+
+            <div class="mb-3">
+              <label for="importAudioFile" class="form-label">Audio File (MP3, WAV) *</label>
+              <input
+                type="file"
+                class="form-control"
+                id="importAudioFile"
+                accept="audio/*"
+                @change="handleImportAudioFile"
+                required
+              />
+            </div>
+
+            <div class="mb-3">
+              <label for="importLrcFile" class="form-label">LRC File *</label>
+              <input
+                type="file"
+                class="form-control"
+                id="importLrcFile"
+                accept=".lrc,text/plain"
+                @change="handleImportLRCFile"
+                required
+              />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" @click="closeImportProject">Cancel</button>
+            <button
+              type="button"
+              class="btn btn-primary"
+              @click="importProjectFromLRC"
+              :disabled="!canImportProject || importingProject"
+            >
+              <span v-if="!importingProject">Import Project</span>
+              <span v-else>Importing...</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Storage Info Modal -->
     <div class="modal" :class="{ show: showStorageInfo }" v-if="showStorageInfo" @click="closeStorageInfo">
       <div class="modal-dialog" @click.stop>
@@ -165,6 +218,9 @@
             <div class="col-md-6 text-end">
               <button class="btn btn-primary me-2" @click="showCreateProject = true">
                 <i class="bi bi-plus-circle"></i> New Project
+              </button>
+              <button class="btn btn-outline-primary btn-sm me-2" @click="showImportProject = true">
+                <i class="bi bi-upload"></i> Import MP3 + LRC
               </button>
               <button class="btn btn-info btn-sm me-2" @click="openStorageInfo" title="Audio storage information">
                 <i class="bi bi-info-circle"></i> Storage
@@ -281,12 +337,14 @@ import { useRouter } from 'vue-router'
 import type { KaraokeProject } from '@/types/karaoke'
 import { audioStorageService } from '@/services/audioStorageService'
 import { parseLyricsWithMetadata } from '@/utils/lyricsParser'
+import { LRCParser } from '@/formats/LRCFormat'
 import ExportDialog from '@/components/ExportDialog.vue'
 import FontDebugDialog from '@/components/FontDebugDialog.vue'
 
 // Reactive state
 const router = useRouter()
 const showCreateProject = ref(false)
+const showImportProject = ref(false)
 const showStorageInfo = ref(false)
 const showExportDialog = ref(false)
 const projectToExport = ref<KaraokeProject | null>(null)
@@ -312,9 +370,20 @@ const newProject = ref({
   audioFile: null as File | null,
 })
 
+const importProjectState = ref({
+  audioFile: null as File | null,
+  lrcFile: null as File | null
+})
+
+const importingProject = ref(false)
+
 // Computed properties
 const canCreateProject = computed(() => {
   return newProject.value.name && newProject.value.artist && newProject.value.audioFile
+})
+
+const canImportProject = computed(() => {
+  return importProjectState.value.audioFile !== null && importProjectState.value.lrcFile !== null
 })
 
 // const hotkeyHelpText = computed(() => {
@@ -342,6 +411,11 @@ watch(() => newProject.value.lyricsText, (newLyrics) => {
 const closeCreateProject = () => {
   showCreateProject.value = false
   resetNewProject()
+}
+
+const closeImportProject = () => {
+  showImportProject.value = false
+  resetImportProjectState()
 }
 
 const closeStorageInfo = () => {
@@ -431,10 +505,97 @@ const resetNewProject = () => {
   }
 }
 
+const resetImportProjectState = () => {
+  importProjectState.value = {
+    audioFile: null,
+    lrcFile: null
+  }
+}
+
 const handleAudioFile = (event: Event) => {
   const target = event.target as HTMLInputElement
   if (target.files && target.files[0]) {
     newProject.value.audioFile = target.files[0]
+  }
+}
+
+const handleImportAudioFile = (event: Event) => {
+  const target = event.target as HTMLInputElement
+  if (target.files && target.files[0]) {
+    importProjectState.value.audioFile = target.files[0]
+  }
+}
+
+const handleImportLRCFile = (event: Event) => {
+  const target = event.target as HTMLInputElement
+  if (target.files && target.files[0]) {
+    importProjectState.value.lrcFile = target.files[0]
+  }
+}
+
+const readTextFile = async (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+
+    reader.onload = () => {
+      resolve(String(reader.result ?? ''))
+    }
+
+    reader.onerror = () => {
+      reject(new Error(`Failed to read file: ${file.name}`))
+    }
+
+    reader.readAsText(file)
+  })
+}
+
+const importProjectFromLRC = async () => {
+  if (!canImportProject.value) {
+    return
+  }
+
+  importingProject.value = true
+
+  try {
+    const audioFile = importProjectState.value.audioFile!
+    const lrcFile = importProjectState.value.lrcFile!
+    const projectId = `project-${Date.now()}`
+
+    const lrcContent = await readTextFile(lrcFile)
+    const importedProject = LRCParser.toKaraokeProject(lrcContent, projectId)
+
+    const storedAudioFile = await audioStorageService.storeAudioFile(audioFile, projectId)
+
+    const project: KaraokeProject = {
+      ...importedProject,
+      id: projectId,
+      name: importedProject.name?.trim() || lrcFile.name.replace(/\.lrc$/i, ''),
+      artist: importedProject.artist?.trim() || 'Unknown Artist',
+      genre: importedProject.genre || 'Unknown',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      audioFile: {
+        name: audioFile.name,
+        file: audioFile,
+        url: URL.createObjectURL(audioFile),
+        duration: importedProject.audioFile.duration,
+        sampleRate: importedProject.audioFile.sampleRate,
+        storedData: storedAudioFile
+      }
+    }
+
+    projects.value.push(project)
+    saveProjectsToStorage()
+    closeImportProject()
+
+    if (isMounted.value) {
+      router.push(`/timing/${projectId}`)
+    }
+  } catch (error) {
+    console.error('Error importing project from LRC:', error)
+    alert(`Failed to import project: ${error}`)
+  } finally {
+    importingProject.value = false
   }
 }
 
@@ -653,6 +814,9 @@ const handleKeyDown = (event: KeyboardEvent) => {
     if (showCreateProject.value) {
       event.preventDefault()
       closeCreateProject()
+    } else if (showImportProject.value) {
+      event.preventDefault()
+      closeImportProject()
     } else if (showStorageInfo.value) {
       event.preventDefault()
       closeStorageInfo()

@@ -4,7 +4,7 @@ import { LrcFileParser } from "@/CDGSharp/convert/lrc/LrcFileParser";
 describe("LrcFileParser", () => {
   it("parses extended v2.1 syllable timed format", () => {
     const content = [
-      "[version:2.1]",
+      "[version:2.2]",
       "[syllable_timing:true]",
       "[ti:Test Song]",
       "[ar:Test Artist]",
@@ -47,5 +47,47 @@ describe("LrcFileParser", () => {
     expect(firstWord?.endTime).toBe(200);
     expect(secondWord?.startTime).toBe(200);
     expect(secondWord?.endTime).toBe(300);
+  });
+
+  it("preserves explicit end times in extended start~end markers", () => {
+    const content = [
+      "[version:2.1]",
+      "[syllable_timing:true]",
+      "[ti:Marker Song]",
+      "[ar:Marker Artist]",
+      "[duration:00:02.00]",
+      "",
+      "[00:00.10]<00:00.10~00:00.40>Hello <00:00.50~00:00.90>world"
+    ].join("\n");
+
+    const lrc = LrcFileParser.parseFileContent(content);
+    const firstWord = lrc.lyrics.pages[0]?.[0]?.[0];
+    const secondWord = lrc.lyrics.pages[0]?.[0]?.[1];
+
+    expect(firstWord?.startTime).toBe(100);
+    expect(firstWord?.endTime).toBe(400);
+    expect(secondWord?.startTime).toBe(500);
+    expect(secondWord?.endTime).toBe(900);
+  });
+
+  it("parses 3-digit millisecond markers in enhanced format", () => {
+    const content = [
+      "[version:2.2]",
+      "[syllable_timing:true]",
+      "[ti:Milli Song]",
+      "[ar:Milli Artist]",
+      "[duration:00:02.000]",
+      "",
+      "[00:00.123]<00:00.123~00:00.456>Hello <00:00.789~00:01.234>world"
+    ].join("\n");
+
+    const lrc = LrcFileParser.parseFileContent(content);
+    const firstWord = lrc.lyrics.pages[0]?.[0]?.[0];
+    const secondWord = lrc.lyrics.pages[0]?.[0]?.[1];
+
+    expect(firstWord?.startTime).toBe(123);
+    expect(firstWord?.endTime).toBe(456);
+    expect(secondWord?.startTime).toBe(789);
+    expect(secondWord?.endTime).toBe(1234);
   });
 });

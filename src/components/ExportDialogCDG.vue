@@ -283,6 +283,15 @@ function showStatus(type: 'success' | 'error', message: string) {
   console[type === 'success' ? 'log' : 'error'](message)
 }
 
+function toKebabFileBase(name: string): string {
+  const normalized = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+
+  return normalized || 'karaoke'
+}
+
 async function saveBlobWithPrompt(blob: Blob, fileName: string): Promise<void>
 {
   const picker = (window as any).showSaveFilePicker as
@@ -445,7 +454,7 @@ async function exportCDG() {
       }
     })
 
-  const safeName = (props.project.name || 'karaoke').replace(/[^a-z0-9]+/gi, '_')
+  const safeName = toKebabFileBase(props.project.name || 'karaoke')
   const fileName = `${safeName}.cdg`
 
   // Force UI reconciliation so the progress bar reliably animates to 100% and

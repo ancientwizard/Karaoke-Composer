@@ -413,6 +413,15 @@ function hexToNibble(htmlColor: string): string {
   return `#${r}${g}${b}`
 }
 
+function toKebabFileBase(name: string): string {
+  const normalized = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+
+  return normalized || 'karaoke'
+}
+
 async function saveCdgBlob(bytes: Uint8Array, fileName: string): Promise<void>
 {
   const blob    = new Blob([bytes.buffer as ArrayBuffer], { type: 'application/octet-stream' })
@@ -477,7 +486,7 @@ async function doExport(): Promise<void>
       trailingWipeRegionReadyThreshold: s.trailingWipeRegionReadyThreshold
     })
 
-    const safeName = (props.project.name || 'karaoke').replace(/[^a-z0-9]+/gi, '_')
+    const safeName = toKebabFileBase(props.project.name || 'karaoke')
     await saveCdgBlob(bytes, `${safeName}.cdg`)
 
     exportSuccess.value = `✅ CDG-B exported (${bytes.length.toLocaleString()} bytes)`
