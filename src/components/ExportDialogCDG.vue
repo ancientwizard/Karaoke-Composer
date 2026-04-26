@@ -68,7 +68,7 @@
             <div class="row align-items-center mb-2">
               <label class="col-sm-5 col-form-label">Font family:</label>
               <div class="col-sm-7">
-                <input type="text" class="form-control" v-model="cdgSettings.fontFamily" placeholder="Arial" />
+                <input type="text" class="form-control" v-model="cdgSettings.fontFamily" placeholder="DejaVu Sans" />
                 <small class="text-muted d-block mt-1">e.g., Arial, Courier New</small>
               </div>
             </div>
@@ -78,6 +78,16 @@
               <div class="col-sm-7">
                 <input type="number" class="form-control" v-model.number="cdgSettings.fontSize" min="8" max="48" step="1" />
                 <small class="text-muted d-block mt-1">Range: 8–48</small>
+              </div>
+            </div>
+
+            <div class="row align-items-center mb-2">
+              <label class="col-sm-5 col-form-label">Font style:</label>
+              <div class="col-sm-7">
+                <select class="form-select" v-model="cdgSettings.fontStyle">
+                  <option value="regular">Regular</option>
+                  <option value="bold">Bold</option>
+                </select>
               </div>
             </div>
 
@@ -206,8 +216,9 @@ const cdgSettings = ref({
   metadataDuration: 3,
   showCaptions: true,
   captionDuration: 2,
-  fontFamily: 'Arial',
-  fontSize: 17,
+  fontFamily: 'DejaVu Sans',
+  fontSize: 18,
+  fontStyle: 'regular' as 'regular' | 'bold',
   eraseDelayMs: 1250
 })
 
@@ -347,6 +358,14 @@ async function exportCDG() {
     // Generate presentation script and render CDG in-browser
     const exportEngine = new KaraokePresentationEngine({
       timingConfig: {
+        layoutConfig: {
+          screenWidth: 1000,
+          screenHeight: 1000,
+          maxCharsPerLine: 26,
+          fontSize: Math.max(8, Math.floor(cdgSettings.value.fontSize || 18)),
+          fontName: cdgSettings.value.fontFamily,
+          fontStyle: cdgSettings.value.fontStyle
+        },
         eraseDelayMs: Math.max(0, Math.floor(cdgSettings.value.eraseDelayMs || 0))
       }
     })
@@ -382,7 +401,20 @@ async function exportCDG() {
       await pushDebug(msg)
     }
 
-    const capturedGlyphSet = GlyphLabStorage.load() || undefined
+    const loadedGlyphSet = GlyphLabStorage.load()
+    const capturedGlyphSet =
+      loadedGlyphSet &&
+      loadedGlyphSet.config.fontFamily === cdgSettings.value.fontFamily &&
+      loadedGlyphSet.config.pointSize === cdgSettings.value.fontSize
+        ? loadedGlyphSet
+        : undefined
+
+    if (loadedGlyphSet && !capturedGlyphSet) {
+      await pushDebug(
+        `CAPTURED GLYPHS: ignored (captured ${loadedGlyphSet.config.fontFamily} ${loadedGlyphSet.config.pointSize}, ` +
+        `selected ${cdgSettings.value.fontFamily} ${cdgSettings.value.fontSize})`
+      )
+    }
 
     const renderer = new CDGBrowserRenderer({
       backgroundColor: 0,
@@ -390,6 +422,7 @@ async function exportCDG() {
       transitionColor: 2,
       fontFamily: cdgSettings.value.fontFamily,
       fontSize: cdgSettings.value.fontSize,
+      fontStyle: cdgSettings.value.fontStyle,
       capturedGlyphSet,
       paletteOverrides: {
         background: hexToRgb(cdgSettings.value.backgroundColor),

@@ -34,7 +34,7 @@ export class KaraokePresentationEngine {
     const commands = this.timingConverter.convert(project)
 
     // Calculate total duration
-    const durationMs = this.calculateDuration(project)
+    const durationMs = this.calculateDuration(project, commands)
 
     // Build complete script
     return {
@@ -57,13 +57,19 @@ export class KaraokePresentationEngine {
   /**
    * Calculate total duration of presentation
    */
-  private calculateDuration(project: KaraokeProject): number {
+  private calculateDuration(project: KaraokeProject, commands: Array<{ timestamp: number }>): number {
+    // Ensure a short post-roll linger after the final command so exported CDG files
+    // include trailing empty packets and don't look abruptly cut off at end-of-playback.
+    const trailingPadMs = 500
+    const lastCommandTimestamp = commands.reduce((max, cmd) => Math.max(max, cmd.timestamp), 0)
+    const commandTailDurationMs = lastCommandTimestamp + trailingPadMs
+
     // Use audio duration if available
     if (project.audioFile.duration) {
       // The stored `audioFile.duration` may be in seconds (legacy / test fixtures)
       // or in milliseconds (browser-detected and persisted). Normalize to ms.
       const normalized = this.normalizeAudioDurationToMs(project.audioFile.duration)
-      return normalized
+      return Math.max(normalized, commandTailDurationMs)
     }
 
     // Otherwise use last lyric line end time + buffer
@@ -71,11 +77,12 @@ export class KaraokePresentationEngine {
 
     if (lyricsWithTiming.length > 0) {
       const lastLine = lyricsWithTiming[lyricsWithTiming.length - 1]
-      return (lastLine.endTime || 0) + 3000 // Add 3 second buffer
+      const lyricBasedDurationMs = (lastLine.endTime || 0) + 3000 // Add 3 second buffer
+      return Math.max(lyricBasedDurationMs, commandTailDurationMs)
     }
 
     // Default minimum duration
-    return 30000 // 30 seconds
+    return Math.max(30000, commandTailDurationMs) // 30 seconds
   }
 
   /**

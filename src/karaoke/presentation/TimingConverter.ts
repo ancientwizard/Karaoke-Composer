@@ -78,7 +78,7 @@ export class TimingConverter {
       captionDurationMs: config.captionDurationMs ?? DEFAULT_TIMING_CONFIG.captionDurationMs!
     }
     this.layoutEngine = new TextLayoutEngine(this.config.layoutConfig)
-    this.textComposer = new TextRenderComposer()
+    this.textComposer = new TextRenderComposer({}, this.config.layoutConfig)
     this.debugLeases = this.readEnv('KARAOKE_LEASE_DEBUG') === '1'
   }
 
@@ -424,7 +424,7 @@ export class TimingConverter {
         'metadata-title',
         title,
         titlePosition,
-        LogicalColor.ActiveText,
+        LogicalColor.TransitionText,
         TextAlign.Center
       )
     )
@@ -441,7 +441,7 @@ export class TimingConverter {
         'metadata-artist',
         `by ${artist}`,
         artistPosition,
-        LogicalColor.ActiveText,
+        LogicalColor.TransitionText,
         TextAlign.Center
       )
     )

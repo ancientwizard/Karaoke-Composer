@@ -2,7 +2,7 @@ import { CDGPacket, CDGPalette, CDG_SCREEN } from './CDGPacket'
 import { CDGTextRenderer, CDGFont } from './CDGFont'
 import { renderGlyphToVRAM } from '@/cdg/glyph-renderer'
 import { VRAM } from '@/cdg/encoder'
-import { DynamicGlyphRasterizer } from '@/cdg/DynamicGlyphRasterizer'
+import { BrowserTextRasterizerAdapter } from '@/CDGSharp/convert/rendering/BrowserTextRasterizerAdapter'
 import type { AnyPresentationCommand, PresentationScript, LogicalColor } from '../../presentation/Command'
 import type { GlyphSetExport } from '@/cdg/glyph-lab'
 import type { GlyphData } from '@/cdg/glyph-renderer'
@@ -13,6 +13,7 @@ export interface CDGCoreConfig {
   transitionColor?: number
   fontFamily?: string
   fontSize?: number
+  fontStyle?: 'regular' | 'bold'
   capturedGlyphSet?: GlyphSetExport
   paletteOverrides?: {
     background?: { r: number; g: number; b: number }
@@ -43,9 +44,9 @@ export class CDGCore
   private packets: CDGPacket[]
   private displayedTexts: Map<string, TrackedText>
   private vram: VRAM  // VRAM buffer for rendering glyphs
-  private cdgConfig: { backgroundColor: number; activeColor: number; transitionColor: number; fontFamily: string; fontSize: number }
+  private cdgConfig: { backgroundColor: number; activeColor: number; transitionColor: number; fontFamily: string; fontSize: number; fontStyle: 'regular' | 'bold' }
   private colorMapping: Map<LogicalColor, number>
-  private dynamicRasterizer: DynamicGlyphRasterizer
+  private browserRasterizer: BrowserTextRasterizerAdapter
   private capturedGlyphMap: Map<string, GlyphData>
   // running count of packets emitted (includes emitted and padding)
   private packetCount: number
@@ -56,8 +57,9 @@ export class CDGCore
       backgroundColor: config.backgroundColor ?? 0,
       activeColor: config.activeColor ?? 1,
       transitionColor: config.transitionColor ?? 2,
-      fontFamily: config.fontFamily ?? 'Arial',
-      fontSize: config.fontSize ?? 16
+      fontFamily: config.fontFamily ?? 'DejaVu Sans',
+      fontSize: config.fontSize ?? 18,
+      fontStyle: config.fontStyle ?? 'regular'
     }
 
     this.palette = new CDGPalette()
@@ -68,7 +70,7 @@ export class CDGCore
     this.packetCount = 0
     this.vram = new VRAM()
     this.vram.clear(this.cdgConfig.backgroundColor)
-    this.dynamicRasterizer = new DynamicGlyphRasterizer()
+    this.browserRasterizer = new BrowserTextRasterizerAdapter()
     this.capturedGlyphMap = this.createCapturedGlyphMap(config.capturedGlyphSet)
 
     this.colorMapping = new Map([
@@ -467,7 +469,7 @@ export class CDGCore
 
     const colorIndex = this.colorMapping.get(color) ?? this.cdgConfig.transitionColor
 
-    // Use DynamicGlyphRasterizer to get glyphs with actual font metrics
+    // Rasterize each character using BrowserTextRasterizerAdapter
     const charWidths: number[] = []
     const glyphData: any[] = []
 
@@ -478,10 +480,10 @@ export class CDGCore
       charWidths.push(glyph.width)
     }
 
-    // Calculate total width with spacing
-    const charSpacing = Math.max(1, Math.ceil(this.cdgConfig.fontSize * 0.15))  // ~15% of font size
-    const widthInPixels = charWidths.reduce((sum, w) => sum + w, 0) + 
-                         (charWidths.length - 1) * charSpacing
+    // No extra charSpacing — BrowserTextRasterizerAdapter advance widths already include
+    // natural inter-character spacing from the font's side bearings.
+    const charSpacing = 0
+    const widthInPixels = charWidths.reduce((sum, w) => sum + w, 0)
     const totalPixelWidth = CDG_SCREEN.WIDTH
     const centeredStartX = Math.floor((totalPixelWidth - widthInPixels) / 2)
     const startPixelX = Math.max(0, centeredStartX)
@@ -862,7 +864,37 @@ export class CDGCore
       return captured
     }
 
-    return this.dynamicRasterizer.getGlyph(char, this.cdgConfig.fontFamily, this.cdgConfig.fontSize)
+    const rasterized = this.browserRasterizer.rasterizeText(
+      char,
+      this.cdgConfig.fontFamily,
+      this.cdgConfig.fontSize,
+      this.cdgConfig.fontStyle
+    )
+    return this.rasterizedTextToGlyphData(rasterized)
+  }
+
+  private rasterizedTextToGlyphData(rasterized: { width: number; height: number; pixels: boolean[][] }): GlyphData
+  {
+    const rows: number[] = []
+    for (let y = 0; y < rasterized.height; y++)
+    {
+      const pixelRow = rasterized.pixels[y]
+      if (!pixelRow)
+      {
+        rows.push(0)
+        continue
+      }
+      let packed = 0
+      for (let x = 0; x < rasterized.width; x++)
+      {
+        if (pixelRow[x])
+        {
+          packed |= (1 << (rasterized.width - 1 - x))
+        }
+      }
+      rows.push(packed)
+    }
+    return { width: rasterized.width, height: rasterized.height, rows }
   }
 
   private createCapturedGlyphMap(capturedGlyphSet?: GlyphSetExport): Map<string, GlyphData>

@@ -15,6 +15,7 @@ export interface CDGBrowserRendererConfig extends RendererConfig {
   transitionColor?: number
   fontFamily?: string
   fontSize?: number
+  fontStyle?: 'regular' | 'bold'
   capturedGlyphSet?: GlyphSetExport
   paletteOverrides?: {
     background?: { r: number; g: number; b: number }
@@ -36,6 +37,7 @@ export class CDGBrowserRenderer extends BaseRenderer {
       transitionColor: config.transitionColor,
       fontFamily: config.fontFamily,
       fontSize: config.fontSize,
+      fontStyle: config.fontStyle,
       capturedGlyphSet: config.capturedGlyphSet,
       paletteOverrides: config.paletteOverrides
     })

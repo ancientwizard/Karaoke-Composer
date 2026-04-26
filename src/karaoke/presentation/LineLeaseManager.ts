@@ -237,10 +237,11 @@ export class LineLeaseManager
     startTime: number,
     endTime: number,
     count: number,
-    options: { reserveBufferLine?: boolean } = {}
+    options: { reserveBufferLine?: boolean; reserveAfterGroupSlots?: number } = {}
   ): number[]
   {
     const reserveBufferLine = options.reserveBufferLine ?? true
+    const reserveAfterGroupSlots = Math.max(0, Math.floor(options.reserveAfterGroupSlots ?? 0))
 
     // Clean up expired leases first
     this.expireLeases(startTime)
@@ -263,6 +264,52 @@ export class LineLeaseManager
         this.activeLeases.set(lease.lineId, lease)
       }
 
+      // Optionally reserve one or more trailing rows (best effort) so the next
+      // arriving multi-line lyric group has a better chance to stay clustered.
+      // These placeholders expire with the same lease window and do not render.
+      if (reserveAfterGroupSlots > 0)
+      {
+        const reservedRows = new Set<number>(groupPositions)
+        for (let i = 1; i <= reserveAfterGroupSlots; i++)
+        {
+          const idx = (this.yPositions.indexOf(groupPositions[groupPositions.length - 1]) + i) % this.yPositions.length
+          if (idx === this.bufferLineIndex)
+          {
+            continue
+          }
+
+          const yPos = this.yPositions[idx]
+          if (reservedRows.has(yPos))
+          {
+            continue
+          }
+
+          let available = true
+          for (const lease of this.activeLeases.values())
+          {
+            if (lease.yPosition === yPos && lease.endTime > startTime)
+            {
+              available = false
+              break
+            }
+          }
+
+          if (!available)
+          {
+            continue
+          }
+
+          const reserveId = `${groupId}:reserve-tail:${i}`
+          this.activeLeases.set(reserveId, {
+            lineId: reserveId,
+            startTime,
+            endTime,
+            yPosition: yPos
+          })
+          reservedRows.add(yPos)
+        }
+      }
+
       // Optionally reserve one empty line AFTER the group and continue round-robin.
       const lastPos = groupPositions[groupPositions.length - 1]
       const lastIdx = this.yPositions.indexOf(lastPos)
@@ -278,97 +325,84 @@ export class LineLeaseManager
 
       this.debug(
         `lease group-granted groupId=${groupId} positions=[${groupPositions.join(', ')}] ` +
-        `reserveBuffer=${reserveBufferLine} bufferIdx=${this.bufferLineIndex} nextIdx=${this.nextPositionIndex}`
+        `reserveBuffer=${reserveBufferLine} reserveAfter=${reserveAfterGroupSlots} ` +
+        `bufferIdx=${this.bufferLineIndex} nextIdx=${this.nextPositionIndex}`
       )
 
       return groupPositions
     }
 
-    // Fallback: guarantee unique row assignment for this group (no duplicate Y rows)
-    const uniquePositions = this.findUniquePositionsForGroup(count, startTime)
-
-    for (let i = 0; i < uniquePositions.length; i++)
-    {
-      const yPos = uniquePositions[i]
-      this.activeLeases.set(`${groupId}:${i}`, {
-        lineId: `${groupId}:${i}`,
-        startTime,
-        endTime,
-        yPosition: yPos
-      })
-    }
-
-    if (uniquePositions.length > 0)
-    {
-      const lastIdx = this.yPositions.indexOf(uniquePositions[uniquePositions.length - 1])
-      if (reserveBufferLine)
-      {
-        this.bufferLineIndex = (lastIdx + 1) % this.yPositions.length
-        this.nextPositionIndex = (this.bufferLineIndex + 1) % this.yPositions.length
-      }
-      else
-      {
-        this.nextPositionIndex = (lastIdx + 1) % this.yPositions.length
-      }
-    }
-
     this.debug(
-      `lease group-fallback groupId=${groupId} requested=${count} assigned=${uniquePositions.length} ` +
-      `positions=[${uniquePositions.join(', ')}] reserveBuffer=${reserveBufferLine} ` +
-      `bufferIdx=${this.bufferLineIndex} nextIdx=${this.nextPositionIndex}`
+      `lease group-pending groupId=${groupId} requested=${count} ` +
+      `reason=no-contiguous-block-available reserveBuffer=${reserveBufferLine} reserveAfter=${reserveAfterGroupSlots}`
     )
 
-    return uniquePositions
+    return []
   }
 
-  private findUniquePositionsForGroup(count: number, startTime: number): number[]
+  /**
+   * Returns the next lease-release timestamp strictly after the provided time.
+   * Useful for "wait-until-rows-clear" scheduling in all-or-none group leasing.
+   */
+  getNextLeaseReleaseAfter(time: number): number | undefined
   {
-    const needed = Math.max(1, count)
-    const maxAssignable = Math.max(1, this.yPositions.length - 1) // preserve one buffer row
-    const target = Math.min(needed, maxAssignable)
+    let next: number | undefined
 
-    const candidates: Array<{ idx: number; y: number; available: boolean; endTime: number }> = []
-    for (let offset = 0; offset < this.yPositions.length; offset++)
+    for (const lease of this.activeLeases.values())
     {
-      const idx = (this.nextPositionIndex + offset) % this.yPositions.length
-      if (idx === this.bufferLineIndex)
+      if (lease.endTime > time)
       {
-        continue
-      }
-
-      const y = this.yPositions[idx]
-      let latestEnd = -Infinity
-      let occupied = false
-
-      for (const lease of this.activeLeases.values())
-      {
-        if (lease.yPosition !== y)
+        if (next === undefined || lease.endTime < next)
         {
-          continue
-        }
-
-        latestEnd = Math.max(latestEnd, lease.endTime)
-        if (lease.endTime > startTime)
-        {
-          occupied = true
+          next = lease.endTime
         }
       }
-
-      candidates.push({
-        idx,
-        y,
-        available: !occupied,
-        endTime: latestEnd
-      })
     }
 
-    const available = candidates.filter(c => c.available)
-    const occupied = candidates
-      .filter(c => !c.available)
-      .sort((a, b) => a.endTime - b.endTime)
+    return next
+  }
 
-    const ordered = [...available, ...occupied]
-    return ordered.slice(0, target).map(c => c.y)
+  /**
+   * Returns the earliest time at or after `afterTime` when all active leases
+   * will have fully expired. If no leases are active, returns `afterTime` unchanged.
+   *
+   * Used by the credit renderer to wait for a fully clear screen before placing text.
+   */
+  getTimeAllClear(afterTime: number): number
+  {
+    let latest = afterTime
+
+    for (const lease of this.activeLeases.values())
+    {
+      if (lease.endTime > afterTime)
+      {
+        latest = Math.max(latest, lease.endTime)
+      }
+    }
+
+    return latest
+  }
+
+  /**
+   * Lease a specific row by pool index, bypassing rotation entirely.
+   * The caller is responsible for ensuring the row is available (e.g. after getTimeAllClear).
+   * Does NOT advance nextPositionIndex or bufferLineIndex.
+   *
+   * @param lineId  - Unique ID for this lease
+   * @param startTime - When the text appears
+   * @param endTime   - When the text disappears
+   * @param rowIndex  - Index into the yPositions pool (clamped to valid range)
+   */
+  leaseAtFixedRow(lineId: string, startTime: number, endTime: number, rowIndex: number): number
+  {
+    const clampedIndex = Math.max(0, Math.min(rowIndex, this.yPositions.length - 1))
+    const yPos = this.yPositions[clampedIndex]
+
+    this.activeLeases.set(lineId, { lineId, startTime, endTime, yPosition: yPos })
+
+    this.debug(`lease fixed-row lineId=${lineId} rowIndex=${clampedIndex} y=${yPos}`)
+
+    return yPos
   }
 
   /**
@@ -519,68 +553,6 @@ export class LineLeaseManager
       if (valid && result.length === count)
       {
         return [...result]
-      }
-    }
-
-    // Try to find 'count' contiguous positions starting from current rotation point
-    for (let startOffset = 0; startOffset < this.yPositions.length; startOffset++)
-    {
-      result.length = 0
-      const startIdx = (this.nextPositionIndex + startOffset) % this.yPositions.length
-
-      for (let i = 0; i < count; i++)
-      {
-        const idx = (startIdx + i) % this.yPositions.length
-        const yPos = this.yPositions[idx]
-
-        // Skip buffer position
-        if (idx === this.bufferLineIndex)
-        {
-          break
-        }
-
-        // Check if available
-        let isAvailable = true
-        for (const lease of this.activeLeases.values())
-        {
-          if (lease.yPosition === yPos && lease.endTime > startTime)
-          {
-            isAvailable = false
-            break
-          }
-        }
-
-        if (!isAvailable)
-        {
-          break
-        }
-
-        result.push(yPos)
-      }
-
-      // If we found enough contiguous, do final validation and return them
-      if (result.length === count)
-      {
-        // Final check: verify all positions are STILL available (in case of concurrent leases)
-        let allStillAvailable = true
-        for (const yPos of result)
-        {
-          for (const lease of this.activeLeases.values())
-          {
-            if (lease.yPosition === yPos && lease.endTime > startTime)
-            {
-              allStillAvailable = false
-              break
-            }
-          }
-          if (!allStillAvailable) break
-        }
-
-        if (allStillAvailable)
-        {
-          return result
-        }
-        // Otherwise, continue searching from next position
       }
     }
 

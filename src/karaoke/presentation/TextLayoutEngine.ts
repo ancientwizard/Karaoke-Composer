@@ -19,6 +19,10 @@
 import type { Position  } from '@/karaoke/presentation/Command'
 import      { TextAlign } from '@/karaoke/presentation/Command'
 import      { CDGFont   } from '@/karaoke/renderers/cdg/CDGFont'
+import { BrowserTextRasterizerAdapter } from '@/CDGSharp/convert/rendering/BrowserTextRasterizerAdapter'
+
+// CDG screen pixel width (288) used for line-fit calculations
+const CDG_PIXEL_WIDTH = 288
 
 /**
  * Configuration for text layout
@@ -27,7 +31,9 @@ export interface LayoutConfig {
   screenWidth: number     // Abstract screen width (e.g., 1000 units)
   screenHeight: number    // Abstract screen height (e.g., 1000 units)
   maxCharsPerLine: number // Maximum characters before wrapping
-  fontSize: number        // Relative font size
+  fontSize: number        // Font size in pixels (used for line-width measurement)
+  fontName?: string       // Font family name (e.g. 'DejaVu Sans'); defaults to 'DejaVu Sans'
+  fontStyle?: 'regular' | 'bold'  // Font weight; defaults to 'regular'
 }
 
 /**
@@ -48,8 +54,9 @@ export class TextLayoutEngine
 {
   private config: LayoutConfig
   private font: CDGFont
-  private charGap = 2 // pixels between characters (adjust here to test different values)
-  private readonly horizontalMargin = 24
+  private rasterizer: BrowserTextRasterizerAdapter
+  private charGap = 2 // pixels between characters — used only in calculateCharacterPositions (CDGFont path)
+  private readonly horizontalMargin = 12
   private legacyVerticalPositions: number[] = [500, 640, 360, 780, 220]
   private legacyVerticalIndex: number = 0
 
@@ -57,6 +64,7 @@ export class TextLayoutEngine
   {
     this.config = config
     this.font = new CDGFont()
+    this.rasterizer = new BrowserTextRasterizerAdapter()
   }
 
   getDefaultVerticalPosition(): number
@@ -106,7 +114,7 @@ export class TextLayoutEngine
   private breakIntoLines(text: string): string[]
   {
     const initialLines = this.breakIntoLinesByCharacters(text)
-    const maxPixelWidth = 300 - (this.horizontalMargin * 2)
+    const maxPixelWidth = CDG_PIXEL_WIDTH - (this.horizontalMargin * 2)
     const finalLines: string[] = []
 
     for (const line of initialLines)
@@ -180,22 +188,13 @@ export class TextLayoutEngine
       return 0
     }
 
-    let width = 0
-    for (let i = 0; i < text.length; i++)
-    {
-      const glyph = this.font.getGlyph(text[i])
-      width += glyph.width
-      if (i < text.length - 1)
-      {
-        width += this.charGap
-      }
-    }
-
-    // Safety factor to account for dynamic glyph rasterization/spacing differences
-    // between layout estimation and final renderer metrics.
-    width += Math.ceil(text.length * 0.8)
-
-    return width
+    // Use BrowserTextRasterizerAdapter to measure the whole string at once.
+    // In the browser this uses OffscreenCanvas + context.measureText() for
+    // accurate advance-width including kerning.  In Node/Jest it falls back
+    // to a reasonable per-character estimate so tests stay deterministic.
+    const fontName  = this.config.fontName  ?? 'DejaVu Sans'
+    const fontStyle = this.config.fontStyle ?? 'regular'
+    return this.rasterizer.measureText(text, fontName, this.config.fontSize, fontStyle)
   }
 
   private splitLongWordByPixels(word: string, maxPixelWidth: number): string[]
@@ -270,7 +269,86 @@ export class TextLayoutEngine
       result.push(currentLine)
     }
 
-    return result.length > 0 ? result : [line]
+    if (result.length <= 1)
+    {
+      return result.length > 0 ? result : [line]
+    }
+
+    return this.balanceLonelyTailLines(result, maxPixelWidth)
+  }
+
+  /**
+   * Rebalance wrapped lines to avoid short one-word tail lines when possible.
+   *
+   * Greedy wrapping can produce:
+   *   line 1: "... many words ..."
+   *   line 2: "small"
+   *
+   * This shifts one or more trailing words from the previous line to the tail
+   * if both lines still fit in maxPixelWidth.
+   */
+  private balanceLonelyTailLines(lines: string[], maxPixelWidth: number): string[]
+  {
+    const balanced = [...lines]
+
+    for (let i = balanced.length - 1; i > 0; i--)
+    {
+      const tailWords = balanced[i].trim().split(/\s+/).filter(Boolean)
+      if (tailWords.length !== 1)
+      {
+        continue
+      }
+
+      const lonelyWord = tailWords[0]
+      // Keep legitimate long-word tails (user feedback: these look fine).
+      if (lonelyWord.length > 8)
+      {
+        continue
+      }
+
+      const prevWords = balanced[i - 1].trim().split(/\s+/).filter(Boolean)
+      if (prevWords.length <= 1)
+      {
+        continue
+      }
+
+      let movedAny = false
+      while (prevWords.length > 1)
+      {
+        const moved = prevWords[prevWords.length - 1]
+        const candidatePrev = prevWords.slice(0, -1).join(' ')
+        const candidateTail = `${moved} ${balanced[i].trim()}`.trim()
+
+        if (
+          this.measureLineWidthPixels(candidatePrev) <= maxPixelWidth &&
+          this.measureLineWidthPixels(candidateTail) <= maxPixelWidth
+        )
+        {
+          prevWords.pop()
+          balanced[i - 1] = candidatePrev
+          balanced[i] = candidateTail
+          movedAny = true
+
+          // Stop once tail is no longer a lonely single word.
+          if (balanced[i].trim().split(/\s+/).filter(Boolean).length > 1)
+          {
+            break
+          }
+        }
+        else
+        {
+          break
+        }
+      }
+
+      if (movedAny)
+      {
+        // Re-evaluate earlier pairs as well in case we created a new short tail.
+        continue
+      }
+    }
+
+    return balanced
   }
 
   /**
@@ -419,15 +497,13 @@ export class TextLayoutEngine
 export const DEFAULT_LAYOUT_CONFIG: LayoutConfig = {
   screenWidth: 1000,
   screenHeight: 1000,
-  // I'll assume these were used with our fixed 5x7 Glyphs buffered for 6x12 rendering
-  maxCharsPerLine: 28,  // Balance wrap quality with fewer multi-line fragments for lease stability
-                        //  (so lame AI, size is user defined and the number
-                        //    is a function of size. We'll need to fix this later
-                        //    as we fine tune later now that we use actual fonts and size)
-                        //  (however I see the consumer can override based on font size)
-  fontSize: 50          // This specific value is too large but at the momnet I can't be
-                        //  sure of its meaning. If it was point size it was far too big
-                        //  for karaoke .cdg rendering.
+  // At DejaVu Sans 18px the browser-measured advance width averages ~10px/char.
+  // CDG content area is 288 - 2*12 margin = 264px → ~26 chars before pixel-wrap kicks in.
+  // maxCharsPerLine is a coarse first-pass guard; pixel-based wrapping is the real arbiter.
+  maxCharsPerLine: 26,
+  fontSize: 18,
+  fontName: 'DejaVu Sans',
+  fontStyle: 'regular'
 }
 
 // VIM: set filetype=typescript :

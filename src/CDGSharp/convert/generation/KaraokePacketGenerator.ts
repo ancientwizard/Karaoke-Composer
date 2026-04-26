@@ -18,6 +18,22 @@ interface TrailingCleanerTask {
   packets: GeneratedCdgPacket[];
 }
 
+type RenderableTitlePage = {
+  startTimeMs: number;
+  lines: Array<Array<{ text: string; durationMs: number }>>;
+  includeSung: false;
+  mode: "title";
+};
+
+type RenderableLyricsPage = {
+  startTimeMs: number;
+  lines: Array<Array<{ text: string; durationMs: number }>>;
+  includeSung: true;
+  mode: "lyrics";
+};
+
+type RenderablePage = RenderableTitlePage | RenderableLyricsPage;
+
 export interface TrailingCleanerLineTimingDiagnostics {
   lineIndex: number;
   text: string;
@@ -92,6 +108,16 @@ export class KaraokePacketGenerator {
 
   private static readonly defaultTrailingWipeDelayMs = 2000;
 
+  private static readonly closingCreditDelayMs = 1500;
+
+  private static readonly closingCreditDurationMs = 8000;
+
+  private static readonly closingTailPadMs = 500;
+
+  private static readonly closingCreditText = "Created using: \"Karaoke Composer\", by Ancient-Wizard.";
+
+  private static readonly closingCreditHorizontalPaddingPx = 16;
+
   public getFillingPackets(durationMs: number): GeneratedCdgPacket[] | null {
     return KaraokePacketScheduling.tryGetFillingPackets(durationMs);
   }
@@ -109,22 +135,7 @@ export class KaraokePacketGenerator {
     let pendingTrailingCleanerTasks: TrailingCleanerTask[] = [];
     const trailingWipePageDiagnostics: TrailingCleanerPageDiagnostics[] = [];
 
-    const pages = [
-      {
-        startTimeMs: 0,
-        lines: [
-          [{ text: input.plan.title, durationMs: 0 }],
-          [{ text: input.plan.artist, durationMs: 0 }]
-        ],
-        includeSung: false,
-        mode: "title" as const
-      },
-      ...input.plan.pages.map((page) => ({
-        ...page,
-        includeSung: true,
-        mode: "lyrics" as const
-      }))
-    ];
+    const pages = this.buildRenderablePages(input);
 
     const sortedPages = [...pages].sort((a, b) => a.startTimeMs - b.startTimeMs);
     const firstLyricsPageIndex = sortedPages.findIndex((page) => page.mode === "lyrics");
@@ -216,8 +227,11 @@ export class KaraokePacketGenerator {
         ...this.createColorTablePackets(input.style.bgColor, input.style.textColor, input.style.sungTextColor, page.includeSung)
       ];
 
-      const drawTextPackets = this.createTitleDrawTextPackets(input, page.lines);
-      const singPackets = page.includeSung ? this.createSungPackets(input, page.lines, 3) : [];
+      const isMultiLineCredit = page.lines.length > 2;
+      const drawTextPackets = isMultiLineCredit
+        ? this.createDrawTextPackets(input, page.lines, 1)
+        : this.createTitleDrawTextPackets(input, page.lines);
+      const singPackets: GeneratedCdgPacket[] = [];
       const interleavedOrAppendedPackets = this.combineDrawAndSingPackets(drawTextPackets, singPackets);
 
       packets.push(...pageInitPackets);
@@ -269,6 +283,10 @@ export class KaraokePacketGenerator {
       packetsSoFar: packets.length
     });
 
+    packets.push(this.createMemoryPresetPacket(0, 0));
+    const tailFillPackets = this.getFillingPackets(KaraokePacketGenerator.closingTailPadMs) ?? [];
+    packets.push(...tailFillPackets);
+
     this.reportProgress(options, {
       phase: "done",
       processedPages: totalPages,
@@ -295,22 +313,7 @@ export class KaraokePacketGenerator {
     let pendingTrailingCleanerTasks: TrailingCleanerTask[] = [];
     const trailingWipePageDiagnostics: TrailingCleanerPageDiagnostics[] = [];
 
-    const pages = [
-      {
-        startTimeMs: 0,
-        lines: [
-          [{ text: input.plan.title, durationMs: 0 }],
-          [{ text: input.plan.artist, durationMs: 0 }]
-        ],
-        includeSung: false,
-        mode: "title" as const
-      },
-      ...input.plan.pages.map((page) => ({
-        ...page,
-        includeSung: true,
-        mode: "lyrics" as const
-      }))
-    ];
+    const pages = this.buildRenderablePages(input);
 
     const sortedPages = [...pages].sort((a, b) => a.startTimeMs - b.startTimeMs);
     const firstLyricsPageIndex = sortedPages.findIndex((page) => page.mode === "lyrics");
@@ -406,8 +409,11 @@ export class KaraokePacketGenerator {
         ...this.createColorTablePackets(input.style.bgColor, input.style.textColor, input.style.sungTextColor, page.includeSung)
       ];
 
-      const drawTextPackets = this.createTitleDrawTextPackets(input, page.lines);
-      const singPackets = page.includeSung ? this.createSungPackets(input, page.lines, 3) : [];
+      const isMultiLineCredit = page.lines.length > 2;
+      const drawTextPackets = isMultiLineCredit
+        ? this.createDrawTextPackets(input, page.lines, 1)
+        : this.createTitleDrawTextPackets(input, page.lines);
+      const singPackets: GeneratedCdgPacket[] = [];
       const interleavedOrAppendedPackets = this.combineDrawAndSingPackets(drawTextPackets, singPackets);
 
       packets.push(...pageInitPackets);
@@ -463,6 +469,10 @@ export class KaraokePacketGenerator {
 
     await this.yieldControl(options);
 
+    packets.push(this.createMemoryPresetPacket(0, 0));
+    const tailFillPackets = this.getFillingPackets(KaraokePacketGenerator.closingTailPadMs) ?? [];
+    packets.push(...tailFillPackets);
+
     this.reportProgress(options, {
       phase: "done",
       processedPages: totalPages,
@@ -486,6 +496,131 @@ export class KaraokePacketGenerator {
     } catch {
       // Progress callback must never break generation.
     }
+  }
+
+  private buildRenderablePages(input: GenerationInput): RenderablePage[] {
+    const lyricsPages: RenderableLyricsPage[] = input.plan.pages.map((page) => ({
+      ...page,
+      includeSung: true as const,
+      mode: "lyrics" as const
+    }));
+
+    const lastLyricsEndTimeMs = input.plan.pages.reduce((max, page) => {
+      const pageDurationMs = page.lines
+        .flatMap((line) => line)
+        .reduce((sum, linePart) => sum + linePart.durationMs, 0);
+      return Math.max(max, page.startTimeMs + pageDurationMs);
+    }, 0);
+
+    const closingCreditStartTimeMs =
+      lastLyricsEndTimeMs > 0
+        ? lastLyricsEndTimeMs + KaraokePacketGenerator.closingCreditDelayMs
+        : KaraokePacketGenerator.closingCreditDelayMs;
+
+    const closingCreditLines = this.wrapTextToLines(
+      KaraokePacketGenerator.closingCreditText,
+      KaraokePacketGenerator.displayWidth - (KaraokePacketGenerator.closingCreditHorizontalPaddingPx * 2),
+      input.style.fontName,
+      input.style.fontSize,
+      input.style.fontStyle
+    );
+
+    const normalizedClosingCreditLines =
+      closingCreditLines.length > 0 ? closingCreditLines : [KaraokePacketGenerator.closingCreditText];
+
+    const distributedDurations = this.distributeDurationAcrossLines(
+      KaraokePacketGenerator.closingCreditDurationMs,
+      normalizedClosingCreditLines.length
+    );
+
+    const closingCreditLineParts = normalizedClosingCreditLines.map((text, index) => [
+      {
+        text,
+        durationMs: distributedDurations[index] ?? 0
+      }
+    ]);
+
+    return [
+      {
+        startTimeMs: 0,
+        lines: [
+          [{ text: input.plan.title, durationMs: 0 }],
+          [{ text: input.plan.artist, durationMs: 0 }]
+        ],
+        includeSung: false,
+        mode: "title" as const
+      },
+      ...lyricsPages,
+      {
+        startTimeMs: closingCreditStartTimeMs,
+        lines: closingCreditLineParts,
+        includeSung: false,
+        mode: "title" as const
+      }
+    ];
+  }
+
+  private wrapTextToLines(
+    text: string,
+    maxWidthPx: number,
+    fontName: string,
+    fontSize: number,
+    fontStyle: "regular" | "bold"
+  ): string[] {
+    const trimmed = text.trim();
+    if (trimmed.length === 0) {
+      return [];
+    }
+
+    const maxWidth = Math.max(24, maxWidthPx);
+    const words = trimmed.split(/\s+/).filter((word) => word.length > 0);
+    if (words.length === 0) {
+      return [];
+    }
+
+    const lines: string[] = [];
+    let current = words[0] ?? "";
+
+    for (let index = 1; index < words.length; index += 1) {
+      const word = words[index];
+      if (word === undefined) {
+        continue;
+      }
+
+      const candidate = `${current} ${word}`;
+      const candidateWidth = this.rasterizer.measureText(candidate, fontName, fontSize, fontStyle);
+      if (candidateWidth <= maxWidth) {
+        current = candidate;
+        continue;
+      }
+
+      lines.push(current);
+      current = word;
+    }
+
+    if (current.length > 0) {
+      lines.push(current);
+    }
+
+    return lines;
+  }
+
+  private distributeDurationAcrossLines(totalDurationMs: number, lineCount: number): number[] {
+    const count = Math.max(1, lineCount);
+    const total = Math.max(0, totalDurationMs);
+    const base = Math.floor(total / count);
+    let remainder = total - (base * count);
+
+    const result: number[] = [];
+    for (let i = 0; i < count; i += 1) {
+      const extra = remainder > 0 ? 1 : 0;
+      result.push(base + extra);
+      if (remainder > 0) {
+        remainder -= 1;
+      }
+    }
+
+    return result;
   }
 
   private async yieldControl(options: KaraokeGenerationOptions): Promise<void> {

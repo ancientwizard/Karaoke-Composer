@@ -16,7 +16,7 @@
 
 import type { Song } from '@/lyrics/types'
 import { LineLeaseManager } from './LineLeaseManager'
-import { TextLayoutEngine, DEFAULT_LAYOUT_CONFIG } from './TextLayoutEngine'
+import { TextLayoutEngine, DEFAULT_LAYOUT_CONFIG, type LayoutConfig } from './TextLayoutEngine'
 import { TextAlign } from './Command'
 
 /**
@@ -102,10 +102,10 @@ export class TextRenderComposer
     return typeof value === 'string' ? value : undefined
   }
 
-  constructor(timingConfig: Partial<TimingConfig> = {})
+  constructor(timingConfig: Partial<TimingConfig> = {}, layoutConfig: LayoutConfig = DEFAULT_LAYOUT_CONFIG)
   {
     this.leaseManager = new LineLeaseManager()
-    this.layoutEngine = new TextLayoutEngine(DEFAULT_LAYOUT_CONFIG)
+    this.layoutEngine = new TextLayoutEngine(layoutConfig)
     this.debugEnabled = this.readEnv('KARAOKE_LEASE_DEBUG') === '1'
     this.timingConfig = {
       ...DEFAULT_TIMING_CONFIG,
@@ -398,14 +398,14 @@ export class TextRenderComposer
       const nextTiming = timings[timelineIdx + 1]
 
       // Lead-in
-      const idealLeadIn = 1000
+      const idealLeadIn = 2000
       const showTime = Math.max(0, highlightStart - idealLeadIn)
 
       // Intelligent trail
       let hideTime: number
       if (nextTiming)
       {
-        const nextShowTime = Math.max(0, nextTiming.highlightStart - 1000)
+        const nextShowTime = Math.max(0, nextTiming.highlightStart - idealLeadIn)
         const availableTrail = nextShowTime - highlightEnd
 
         if (availableTrail > 500)
@@ -448,8 +448,8 @@ export class TextRenderComposer
       id: 'credit',
       text: creditText,
       type: 'credit',
-      showTime: lastHighlightTime + 500,
-      hideTime: lastHighlightTime + 5500,
+      showTime: lastHighlightTime + 1500,
+      hideTime: lastHighlightTime + 9500,
       alignment: 'center',
       highlightable: false
     }
@@ -474,6 +474,54 @@ export class TextRenderComposer
       const fullText = item.text
       const reservableRows = Math.max(1, this.leaseManager.getReservableRowCount())
 
+      // ── Credit fast-path ────────────────────────────────────────────────────────
+      // Credits bypass the rotating lease pool entirely:
+      //   1. Wait until every active lease has expired (screen fully clear).
+      //   2. Place text at fixed pool rows starting at index 1 (row 0 stays empty
+      //      above the text as a visual breathing gap).
+      //   3. Never touch nextPositionIndex / bufferLineIndex — nothing follows.
+      if (item.type === 'credit')
+      {
+        const clearTime = this.leaseManager.getTimeAllClear(item.showTime)
+        const creditShowTime = Math.max(item.showTime, clearTime)
+        const creditHideTime = creditShowTime + (item.hideTime - item.showTime)
+
+        const creditLayout = this.layoutEngine.layoutText(item.text, TextAlign.Center, 0)
+        const rawLines = creditLayout.lines || [item.text]
+        // Leave row 0 empty — at most (reservableRows - 1) lines can be placed from index 1
+        const creditLines = this.collapseLinesToMax(rawLines, reservableRows - 1)
+
+        creditLines.forEach((lineText: string, lineIdx: number) =>
+        {
+          const yPos = this.leaseManager.leaseAtFixedRow(
+            `${item.id}:${lineIdx}`,
+            creditShowTime,
+            creditHideTime,
+            1 + lineIdx   // pool index: 0 = blank buffer, 1+ = credit rows
+          )
+
+          placeable.push({
+            id: `${item.id}:${lineIdx}`,
+            sourceId: item.id,
+            text: lineText,
+            type: item.type,
+            startTime: creditShowTime,
+            endTime: creditHideTime,
+            words: [],
+            leasedYPosition: yPos
+          })
+        })
+
+        this.debug(
+          `item=${item.id} credit fast-path clearTime=${clearTime} ` +
+          `creditShow=${creditShowTime} creditHide=${creditHideTime} ` +
+          `lines=${creditLines.length}`
+        )
+
+        continue
+      }
+      // ── End credit fast-path ─────────────────────────────────────────────────────
+
       const lineCount = estimatedLineCounts[itemIdx]
       const leaseLineCount = Math.min(lineCount, reservableRows)
 
@@ -488,18 +536,62 @@ export class TextRenderComposer
         && Math.min(nextLineCount, reservableRows) >= 3
         && backToBackGapMs <= 1500
 
-      const leaseEndTime = item.type === 'lyrics'
-        ? item.hideTime + Math.max(0, leaseTailMs)
-        : item.hideTime
+      const shouldReserveTrailingSlot =
+        item.type === 'lyrics'
+        && nextItem?.type === 'lyrics'
+        && leaseLineCount <= 2
+        && Math.min(nextLineCount, reservableRows) >= 3
+        && backToBackGapMs <= 1500
+
+      let effectiveShowTime = item.showTime
+      let effectiveHideTime = item.hideTime
+
+      let leaseEndTime = item.type === 'lyrics'
+        ? effectiveHideTime + Math.max(0, leaseTailMs)
+        : effectiveHideTime
 
       // Request Y positions from lease manager BEFORE doing final layout
       let leasedPositions: number[]
 
       if (leaseLineCount > 1 && item.type === 'lyrics')
       {
-        leasedPositions = this.leaseManager.leasePositionGroup(item.id, item.showTime, leaseEndTime, leaseLineCount, {
-          reserveBufferLine: !shouldSkipExtraBuffer
+        leasedPositions = this.leaseManager.leasePositionGroup(item.id, effectiveShowTime, leaseEndTime, leaseLineCount, {
+          reserveBufferLine: !shouldSkipExtraBuffer,
+          reserveAfterGroupSlots: shouldReserveTrailingSlot ? 1 : 0
         })
+
+        // Strict all-or-none behavior for multiline lyrics:
+        // if a full block is not available yet, wait until rows clear and retry.
+        let waitAttempts = 0
+        const maxWaitAttempts = 20
+        while (leasedPositions.length !== leaseLineCount && waitAttempts < maxWaitAttempts)
+        {
+          const nextRelease = this.leaseManager.getNextLeaseReleaseAfter(effectiveShowTime)
+          if (nextRelease === undefined)
+          {
+            break
+          }
+
+          const delayedShow = Math.max(effectiveShowTime + 1, nextRelease)
+          const shift = delayedShow - item.showTime
+          effectiveShowTime = delayedShow
+          effectiveHideTime = item.hideTime + shift
+          leaseEndTime = effectiveHideTime + Math.max(0, leaseTailMs)
+
+          leasedPositions = this.leaseManager.leasePositionGroup(item.id, effectiveShowTime, leaseEndTime, leaseLineCount, {
+            reserveBufferLine: !shouldSkipExtraBuffer,
+            reserveAfterGroupSlots: shouldReserveTrailingSlot ? 1 : 0
+          })
+
+          waitAttempts++
+        }
+
+        // Emergency fallback: if still unresolved, at least avoid empty placement.
+        if (leasedPositions.length !== leaseLineCount)
+        {
+          leasedPositions = [this.leaseManager.leasePosition(item.id, effectiveShowTime, leaseEndTime)]
+        }
+
         leasedPositions.sort((a, b) => a - b)
       }
       else if (leaseLineCount > 1)
@@ -522,9 +614,11 @@ export class TextRenderComposer
 
       this.debug(
         `item=${item.id} type=${item.type} show=${item.showTime} hide=${item.hideTime} ` +
+        `effectiveShow=${effectiveShowTime} effectiveHide=${effectiveHideTime} ` +
         `leaseEnd=${leaseEndTime} leaseTailMs=${leaseTailMs} ` +
         `lineCount=${lineCount} leaseLineCount=${leaseLineCount} finalLineCount=${finalLineCount} ` +
         `reservableRows=${reservableRows} skipExtraBuffer=${shouldSkipExtraBuffer} ` +
+        `reserveTrailingSlot=${shouldReserveTrailingSlot} ` +
         `nextType=${nextItem?.type || 'none'} nextLineCount=${nextLineCount} gapMs=${backToBackGapMs} ` +
         `leased=[${leasedPositions.join(', ')}] text="${item.text}"`
       )
@@ -580,8 +674,8 @@ export class TextRenderComposer
           sourceId: item.id,
           text: lineText,
           type: item.type,
-          startTime: item.showTime,
-          endTime: item.hideTime,
+          startTime: effectiveShowTime,
+          endTime: effectiveHideTime,
           words: item.words || [],
           charOffsetInSource: item.highlightable ? charOffsetInSource : undefined,
           charToSyllableMap: item.highlightable ? charToSyllableMap : undefined,
