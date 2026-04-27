@@ -36,10 +36,6 @@ function timeToPacks(val, pps = CDG_PPS) {
   return Math.floor((val / 1000) * pps);
 }
 
-import { CDGTextRenderer } from '../karaoke/renderers/cdg/CDGFont';
-import { CDG_SCREEN      } from '../karaoke/renderers/cdg/CDGPacket';
-const textRenderer = new CDGTextRenderer();
-
 const events = [];
 for (const clip of parsed.clips || []) {
   if (clip.type === 'TextClip') {
@@ -52,9 +48,7 @@ for (const clip of parsed.clips || []) {
       else if (clip.duration != null) evDurPacks = timeToPacks(clip.duration, PPS);
       else evDurPacks = Math.ceil(PPS * 2);
       const durationPacks = Math.max(1, evDurPacks);
-      const tileRow = Math.floor((ev.clip_y_offset || 0) / CDG_SCREEN.TILE_HEIGHT);
-      const tileCol = Math.floor((ev.clip_x_offset || 0) / CDG_SCREEN.TILE_WIDTH);
-      const tiles = textRenderer.renderAt(clip.text || '', tileRow, tileCol);
+      const tiles: any[] = [];
       for (const t of tiles) {
         const pixels = [];
         for (let r = 0; r < Math.min(12, t.tileData.length); r++) {

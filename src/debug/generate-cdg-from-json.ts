@@ -2,7 +2,6 @@
 
 import fs from 'fs'
 import path from 'path'
-import { CDGTextRenderer } from '../karaoke/renderers/cdg/CDGFont'
 import { scheduleFontEvents } from '../cdg/scheduler'
 import { writePacketsToFile, generatePaletteLoadPackets, generateBorderPacket, generateMemoryPresetPackets, writeFontBlock, VRAM, makeEmptyPacket, TV_GRAPHICS, COPY_FONT, XOR_FONT } from '../cdg/encoder'
 import { CDG_SCREEN, CDGCommand } from '../karaoke/renderers/cdg/CDGPacket'
@@ -225,7 +224,6 @@ async function main() {
   }
 
   // Build FontEvents from TextClips only (BMP clips not handled here)
-  const textRenderer = new CDGTextRenderer()
   const palette = new CDGPalette()
   const paletteColors = palette.getColors()
 
@@ -263,11 +261,7 @@ async function main() {
         else evDurPacks = Math.ceil(pps * 2) // default to 2 seconds
         const durationPacks = Math.max(1, evDurPacks)
 
-        // Add border offset to place text in visible area (border is 6 tiles wide, 12 tiles tall)
-        const tileRow = CDG_SCREEN.BORDER_HEIGHT / CDG_SCREEN.TILE_HEIGHT + Math.floor((ev.clip_y_offset || 0) / CDG_SCREEN.TILE_HEIGHT)
-        const tileCol = CDG_SCREEN.BORDER_WIDTH / CDG_SCREEN.TILE_WIDTH + Math.floor((ev.clip_x_offset || 0) / CDG_SCREEN.TILE_WIDTH)
-
-        const tiles = textRenderer.renderAt(clip.text || '', tileRow, tileCol)
+        const tiles: any[] = []
         for (const t of tiles) {
           const pixels: number[][] = []
           for (let r = 0; r < Math.min(12, t.tileData.length); r++) {

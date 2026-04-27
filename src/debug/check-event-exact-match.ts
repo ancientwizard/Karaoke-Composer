@@ -21,8 +21,6 @@ if (!fs.existsSync(referencePath)) { console.error('Reference CDG not found:', r
 
 const parsed = JSON.parse(fs.readFileSync(parsedPath, 'utf8'))
 // Reconstruct events similar to generate-cdg-from-json.ts (TextClip/BMPClip handling simplified)
-import { CDGTextRenderer } from '../karaoke/renderers/cdg/CDGFont'
-import { CDG_SCREEN } from '../karaoke/renderers/cdg/CDGPacket'
 import { CDG_PPS } from '../cdg/constants'
 
 // Treat numeric times as milliseconds by default. Accept --times-in-packs to
@@ -37,7 +35,6 @@ function timeToPacks(val: number | undefined, pps = CDG_PPS) {
 }
 
 const pps = CDG_PPS
-const textRenderer = new CDGTextRenderer()
 const events: any[] = []
 for (const clip of parsed.clips || []) {
   if (clip.type === 'TextClip') {
@@ -50,9 +47,7 @@ for (const clip of parsed.clips || []) {
       else if (clip.duration != null) evDurPacks = timeToPacks(clip.duration, pps)
       else evDurPacks = Math.ceil(pps * 2)
       const durationPacks = Math.max(1, evDurPacks)
-      const tileRow = Math.floor((ev.clip_y_offset || 0) / CDG_SCREEN.TILE_HEIGHT)
-      const tileCol = Math.floor((ev.clip_x_offset || 0) / CDG_SCREEN.TILE_WIDTH)
-      const tiles = textRenderer.renderAt(clip.text || '', tileRow, tileCol)
+      const tiles: any[] = []
       for (const t of tiles) {
         const pixels: number[][] = []
         for (let r = 0; r < Math.min(12, t.tileData.length); r++) {

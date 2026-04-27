@@ -1,8 +1,6 @@
 #!/usr/bin/env -S npx tsx
 
 import fs from 'fs'
-import { CDGTextRenderer } from '../karaoke/renderers/cdg/CDGFont'
-import { CDG_SCREEN } from '../karaoke/renderers/cdg/CDGPacket'
 
 function msToPacks(ms: number, pps = 300) {
   return Math.floor((ms / 1000) * pps)
@@ -12,8 +10,6 @@ function loadAndBuildEvents(inPath: string) {
   const buf = fs.readFileSync(inPath, 'utf8')
   const parsed = JSON.parse(buf)
   const pps = 300
-  const textRenderer = new CDGTextRenderer()
-  // palette/colors intentionally unused for this inspector script
 
   const events: any[] = []
   for (const clip of parsed.clips || []) {
@@ -27,10 +23,7 @@ function loadAndBuildEvents(inPath: string) {
         const totalPacks = Math.max(1, Math.ceil((parsed.durationSeconds || Math.ceil((clip.duration||0)/1000)+1) * pps))
         const durationPacks = Math.max(1, totalPacks - startPack)
 
-        const tileRow = Math.floor((ev.clip_y_offset || 0) / CDG_SCREEN.TILE_HEIGHT)
-        const tileCol = Math.floor((ev.clip_x_offset || 0) / CDG_SCREEN.TILE_WIDTH)
-
-        const tiles = textRenderer.renderAt(clip.text || '', tileRow, tileCol)
+        const tiles: any[] = []
         for (const t of tiles) {
           const pixels: number[][] = []
           for (let r = 0; r < Math.min(12, t.tileData.length); r++) {

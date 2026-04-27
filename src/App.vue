@@ -23,9 +23,6 @@
             <li v-if="developerMode" class="nav-item btn btn-primary">
               <router-link class="nav-link text-white" to="/developer">🔧 Developer</router-link>
             </li>
-            <li v-if="developerMode" class="nav-item btn btn-primary">
-              <router-link class="nav-link text-white" to="/glyph-lab">🔤 Glyph Lab</router-link>
-            </li>
           </ul>
         </div>
       </div>

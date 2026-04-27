@@ -251,7 +251,7 @@ export class CdgConvertLrcFlow {
             : `${Math.round(line.leadBeforeNextPageMs)}ms`;
 
         lines.push(
-          `    L${line.lineIndex + 1} firstLyrics=${line.isFirstLyricsPage} active=${line.activeLineDurationMs}ms total=${line.lineDurationMs}ms base=${line.baseDelayMs}ms assigned=${line.assignedDelayMs}ms start=${Math.round(line.wipeStartAbsoluteMs)}ms next=${nextPageText} lead=${leadText} text=\"${line.text}\"`
+          `    L${line.lineIndex + 1} firstLyrics=${line.isFirstLyricsPage} active=${line.activeLineDurationMs}ms total=${line.lineDurationMs}ms base=${line.baseDelayMs}ms assigned=${line.assignedDelayMs}ms start=${Math.round(line.wipeStartAbsoluteMs)}ms next=${nextPageText} lead=${leadText} text="${line.text}"`
         );
       }
 

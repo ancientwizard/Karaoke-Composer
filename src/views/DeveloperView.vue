@@ -51,11 +51,10 @@
           <label class="checkbox-label" style="margin-top: 0.5rem;">
             <strong>Glyph Source:</strong>
             <select v-model="glyphSource" style="margin: 0 0.5rem;">
-              <option value="static">Static CDGFont (Fixed)</option>
               <option value="dynamic">Dynamic Rasterizer (Browser Font)</option>
             </select>
           </label>
-          <div v-if="glyphSource === 'dynamic'" style="margin-top: 0.5rem;">
+          <div style="margin-top: 0.5rem;">
             <label>
               Font:
               <input v-model="dynamicFontFamily" type="text" placeholder="Arial" style="width: 100px; margin: 0 0.5rem;" />
@@ -103,7 +102,7 @@
         <div>Colors: {{ Object.keys(diagnostics.colorCounts).join(', ') || 'none' }}</div>
         <div>Last render: {{ diagnostics.lastRender }}</div>
         <div style="grid-column: 1 / -1; padding-top: 1rem; border-top: 1px solid #ccc; margin-top: 1rem;">
-          <strong>Glyph Source:</strong> {{ glyphSource === 'static' ? 'Static CDGFont (Fixed)' : `Dynamic Rasterizer (${dynamicFontFamily}, ${dynamicFontSize}px)` }}
+          <strong>Glyph Source:</strong> Dynamic Rasterizer ({{ dynamicFontFamily }}, {{ dynamicFontSize }}px)
         </div>
       </div>
     </section>
@@ -124,12 +123,9 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import CDGCanvasDisplay from '@/components/CDGCanvasDisplay.vue'
 import { VRAM } from '@/cdg/encoder'
 import { renderGlyphToVRAM } from '@/cdg/glyph-renderer'
-import { CDGFont } from '@/karaoke/renderers/cdg/CDGFont'
 import { DynamicGlyphRasterizer } from '@/cdg/DynamicGlyphRasterizer'
 import { SongsLibrary } from '@/lyrics/library'
-import { TextLayoutEngine, DEFAULT_LAYOUT_CONFIG } from '@/karaoke/presentation/TextLayoutEngine'
 import { TextRenderComposer, type PlaceableLine } from '@/karaoke/presentation/TextRenderComposer'
-import { TextAlign } from '@/karaoke/presentation/Command'
 
 import { CDG, DefaultPalette, ColorUtils } from '@/cdg/constants'
 import type { GlyphData } from '@/cdg/glyph-renderer'
@@ -142,9 +138,7 @@ import { TextRenderQueue } from '@/karaoke/presentation/TextRenderQueue'
  */
 const activeTab = ref('Glyph Alignment')
 const availableTabs = ['Glyph Alignment']
-const font = new CDGFont()
 const dynamicRasterizer = new DynamicGlyphRasterizer()
-const layoutEngine = new TextLayoutEngine(DEFAULT_LAYOUT_CONFIG)
 const renderComposer = new TextRenderComposer()  // Core composition engine
 const renderQueue = new TextRenderQueue(14)  // 14 pixels per line (12px glyph + 2px gap)
 const isPlaying = ref(false)
@@ -157,7 +151,7 @@ const selectedSongKey = ref('meet-me-in-november')
 const availableSongs = computed(() => Object.keys(SongsLibrary.asRecord()))
 
 // Glyph source selection
-const glyphSource = ref<'static' | 'dynamic'>('dynamic')  // Use dynamic rasterizer by default
+const glyphSource = ref<'dynamic'>('dynamic')
 const dynamicFontFamily = ref('Arial')
 const dynamicFontSize = ref(16)
 
@@ -362,19 +356,7 @@ function generateGlyphTest(): void
 
 function createCharGlyph(char: string): GlyphData
 {
-  if (glyphSource.value === 'dynamic')
-  {
-    return dynamicRasterizer.getGlyph(char, dynamicFontFamily.value, dynamicFontSize.value)
-  }
-  else
-  {
-    // Static CDGFont
-    const glyph = font.getGlyph(char)
-    return {
-      width: glyph.width,
-      rows: glyph.rows
-    }
-  }
+  return dynamicRasterizer.getGlyph(char, dynamicFontFamily.value, dynamicFontSize.value)
 }
 
 
@@ -512,11 +494,7 @@ function onFrame(now: number): void
       let layout = lineLayoutCache.get(placeable.id)
       if (!layout)
       {
-        // For dynamic glyphs, calculate positions using actual glyph widths
-        // For static glyphs, use TextLayoutEngine estimation
-        if (glyphSource.value === 'dynamic')
-        {
-          // Convert abstract Y position (0-1000) to pixel Y coordinate
+        // Convert abstract Y position (0-1000) to pixel Y coordinate
           const pixelY = Math.round((leasedYPosition / 1000) * CDG.screenHeight)
           
           // Build custom layout with actual rasterized glyph widths
@@ -555,12 +533,6 @@ function onFrame(now: number): void
             lines: [fullText],
             charPositions
           }
-        }
-        else
-        {
-          // Use TextLayoutEngine for static glyphs
-          layout = layoutEngine.layoutText(fullText, TextAlign.Center, leasedYPosition)
-        }
         lineLayoutCache.set(placeable.id, layout)
       }
 
@@ -625,9 +597,7 @@ function onFrame(now: number): void
               {
                 // Syllable spans from first char X to last char X + last glyph width
                 const syllableStartX = firstCharPos.x
-                const lastGlyph = glyphSource.value === 'dynamic'
-                  ? dynamicRasterizer.getGlyph(placeable.text[syllableLastCharIdx], dynamicFontFamily.value, dynamicFontSize.value)
-                  : font.getGlyph(placeable.text[syllableLastCharIdx])
+                const lastGlyph = dynamicRasterizer.getGlyph(placeable.text[syllableLastCharIdx], dynamicFontFamily.value, dynamicFontSize.value)
                 
                 if (lastGlyph)
                 {
@@ -641,9 +611,7 @@ function onFrame(now: number): void
                   const charPos = layout.charPositions[charIdx]
                   if (charPos)
                   {
-                    const currentGlyph = glyphSource.value === 'dynamic'
-                      ? dynamicRasterizer.getGlyph(placeable.text[charIdx], dynamicFontFamily.value, dynamicFontSize.value)
-                      : font.getGlyph(placeable.text[charIdx])
+                    const currentGlyph = dynamicRasterizer.getGlyph(placeable.text[charIdx], dynamicFontFamily.value, dynamicFontSize.value)
                     
                     if (currentGlyph)
                     {

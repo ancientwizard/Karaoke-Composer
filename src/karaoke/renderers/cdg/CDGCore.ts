@@ -1,10 +1,8 @@
 import { CDGPacket, CDGPalette, CDG_SCREEN } from './CDGPacket'
-import { CDGTextRenderer, CDGFont } from './CDGFont'
 import { renderGlyphToVRAM } from '@/cdg/glyph-renderer'
 import { VRAM } from '@/cdg/encoder'
 import { BrowserTextRasterizerAdapter } from '@/CDGSharp/convert/rendering/BrowserTextRasterizerAdapter'
 import type { AnyPresentationCommand, PresentationScript, LogicalColor } from '../../presentation/Command'
-import type { GlyphSetExport } from '@/cdg/glyph-lab'
 import type { GlyphData } from '@/cdg/glyph-renderer'
 
 export interface CDGCoreConfig {
@@ -14,7 +12,6 @@ export interface CDGCoreConfig {
   fontFamily?: string
   fontSize?: number
   fontStyle?: 'regular' | 'bold'
-  capturedGlyphSet?: GlyphSetExport
   paletteOverrides?: {
     background?: { r: number; g: number; b: number }
     active?: { r: number; g: number; b: number }
@@ -40,15 +37,13 @@ interface TrackedText {
 export class CDGCore
 {
   private palette: CDGPalette
-  private textRenderer: CDGTextRenderer
   private packets: CDGPacket[]
   private displayedTexts: Map<string, TrackedText>
   private vram: VRAM  // VRAM buffer for rendering glyphs
   private cdgConfig: { backgroundColor: number; activeColor: number; transitionColor: number; fontFamily: string; fontSize: number; fontStyle: 'regular' | 'bold' }
   private colorMapping: Map<LogicalColor, number>
   private browserRasterizer: BrowserTextRasterizerAdapter
-  private capturedGlyphMap: Map<string, GlyphData>
-  // running count of packets emitted (includes emitted and padding)
+  // running count of packets emitted
   private packetCount: number
 
   constructor(config: CDGCoreConfig = {})
@@ -64,14 +59,12 @@ export class CDGCore
 
     this.palette = new CDGPalette()
     this.applyPaletteOverrides(config.paletteOverrides)
-    this.textRenderer = new CDGTextRenderer(new CDGFont())
     this.packets = []
     this.displayedTexts = new Map()
     this.packetCount = 0
     this.vram = new VRAM()
     this.vram.clear(this.cdgConfig.backgroundColor)
     this.browserRasterizer = new BrowserTextRasterizerAdapter()
-    this.capturedGlyphMap = this.createCapturedGlyphMap(config.capturedGlyphSet)
 
     this.colorMapping = new Map([
       ['background' as any, this.cdgConfig.backgroundColor],
@@ -858,12 +851,6 @@ export class CDGCore
 
   private resolveGlyph(char: string): GlyphData
   {
-    const captured = this.capturedGlyphMap.get(char)
-    if (captured)
-    {
-      return captured
-    }
-
     const rasterized = this.browserRasterizer.rasterizeText(
       char,
       this.cdgConfig.fontFamily,
@@ -897,26 +884,6 @@ export class CDGCore
     return { width: rasterized.width, height: rasterized.height, rows }
   }
 
-  private createCapturedGlyphMap(capturedGlyphSet?: GlyphSetExport): Map<string, GlyphData>
-  {
-    const map = new Map<string, GlyphData>()
-    if (!capturedGlyphSet)
-    {
-      return map
-    }
-
-    for (const glyph of capturedGlyphSet.glyphs)
-    {
-      map.set(glyph.char, {
-        width: glyph.width,
-        height: glyph.height,
-        rows: glyph.rows,
-        yOffset: -glyph.baselineY
-      })
-    }
-
-    return map
-  }
 }
 
 // VIM: set filetype=typescript :

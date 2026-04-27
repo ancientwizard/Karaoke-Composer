@@ -173,7 +173,6 @@ import type { KaraokeProject        } from '@/types/karaoke'
 import { getProjectStats            } from '@/services/projectExportService'
 import { KaraokePresentationEngine  } from '@/karaoke/presentation/KaraokePresentationEngine'
 import { CDGBrowserRenderer         } from '@/karaoke/renderers/CDGBrowserRenderer'
-import { GlyphLabStorage            } from '@/cdg/glyph-lab'
 
 const props = defineProps<{
   project: KaraokeProject
@@ -401,21 +400,6 @@ async function exportCDG() {
       await pushDebug(msg)
     }
 
-    const loadedGlyphSet = GlyphLabStorage.load()
-    const capturedGlyphSet =
-      loadedGlyphSet &&
-      loadedGlyphSet.config.fontFamily === cdgSettings.value.fontFamily &&
-      loadedGlyphSet.config.pointSize === cdgSettings.value.fontSize
-        ? loadedGlyphSet
-        : undefined
-
-    if (loadedGlyphSet && !capturedGlyphSet) {
-      await pushDebug(
-        `CAPTURED GLYPHS: ignored (captured ${loadedGlyphSet.config.fontFamily} ${loadedGlyphSet.config.pointSize}, ` +
-        `selected ${cdgSettings.value.fontFamily} ${cdgSettings.value.fontSize})`
-      )
-    }
-
     const renderer = new CDGBrowserRenderer({
       backgroundColor: 0,
       activeColor: 1,
@@ -423,7 +407,6 @@ async function exportCDG() {
       fontFamily: cdgSettings.value.fontFamily,
       fontSize: cdgSettings.value.fontSize,
       fontStyle: cdgSettings.value.fontStyle,
-      capturedGlyphSet,
       paletteOverrides: {
         background: hexToRgb(cdgSettings.value.backgroundColor),
         active: hexToRgb(cdgSettings.value.highlightColor),

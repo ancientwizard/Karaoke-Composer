@@ -4,9 +4,7 @@ import fs from 'fs'
 import path from 'path'
 import { writeFontBlock } from '../cdg/encoder'
 import ReferenceReplayer from '../cdg/referenceReplayer'
-import { CDG_SCREEN } from '../karaoke/renderers/cdg/CDGPacket'
 import { CDG_PPS } from '../cdg/constants'
-import { CDGTextRenderer } from '../karaoke/renderers/cdg/CDGFont'
 
 function usage() {
   console.error('Usage: npx tsx src/debug/find-exact-matches-replayer.ts <parsed.json> <reference.cdg> [startEventIndex] [count]')
@@ -27,7 +25,6 @@ if (!fs.existsSync(referencePath)) { console.error('Reference CDG not found:', r
 
 const parsed = JSON.parse(fs.readFileSync(parsedPath, 'utf8'))
 const pps = CDG_PPS
-const textRenderer = new CDGTextRenderer()
 const events: any[] = []
 // Time units: treat numeric values as milliseconds by default. Use
 // --times-in-packs if the caller passes pack indices directly. This avoids
@@ -53,9 +50,7 @@ for (const clip of parsed.clips || []) {
       else if (clip.duration != null) evDurPacks = timeToPacks(clip.duration, pps)
       else evDurPacks = Math.ceil(pps * 2)
       const durationPacks = Math.max(1, evDurPacks)
-      const tileRow = Math.floor((ev.clip_y_offset || 0) / CDG_SCREEN.TILE_HEIGHT)
-      const tileCol = Math.floor((ev.clip_x_offset || 0) / CDG_SCREEN.TILE_WIDTH)
-      const tiles = textRenderer.renderAt(clip.text || '', tileRow, tileCol)
+      const tiles: any[] = []
       for (const t of tiles) {
         const pixels: number[][] = []
         for (let r = 0; r < Math.min(12, t.tileData.length); r++) {

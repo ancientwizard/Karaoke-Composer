@@ -24,5 +24,7 @@ module.exports = {
     // single-line objects are common in Vue prop definitions and a strict
     // enforcement here produces noisy autofixes. Disable this rule.
     'object-curly-newline': 'off',
+    // Honour the conventional underscore prefix for intentionally unused parameters.
+    '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
   },
 }

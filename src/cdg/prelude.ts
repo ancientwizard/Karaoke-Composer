@@ -1,11 +1,9 @@
-import { generatePaletteLoadPackets, generateBorderPacket, generateMemoryPresetPackets, writeFontBlock, VRAM } from './encoder'
-import { CDG_SCREEN } from '../karaoke/renderers/cdg/CDGPacket'
-import { CDGTextRenderer } from '../karaoke/renderers/cdg/CDGFont'
+import { generatePaletteLoadPackets, generateBorderPacket, generateMemoryPresetPackets } from './encoder'
 
 export type PreludeOptions = {
   pps?: number
   preludeMaxPackets?: number
-  mode?: 'aggressive' | 'minimal'
+  mode?: 'minimal'
   persistentDurationSeconds?: number
 }
 
@@ -87,56 +85,7 @@ export function synthesizePrelude(parsed: any, opts: PreludeOptions = {}) {
   // If mode is 'minimal' only synthesize text tiles which appear "persistent"
   // (heuristic: event/clip duration >= persistentDurationSeconds). The
   // aggressive default will synthesize all static tiles.
-  const textRenderer = new CDGTextRenderer()
   const fontPkts: Uint8Array[] = []
-  try {
-    // Default to minimal prelude: avoid writing font tiles in the prelude so
-    // the scheduler places them at the correct times. Aggressive mode will
-    // emit font packets into the prelude (opt-in).
-  const mode = opts.mode || 'minimal'
-    // Only synthesize font packets in aggressive mode. Minimal mode emits
-    // only palette/border/memory presets; the scheduler will generate font
-    // packets at runtime from the JSON events.
-    if (mode === 'aggressive') {
-      // For determinism iterate clips in input order and events in order.
-      for (const c of parsed.clips || []) {
-        if (c.type !== 'TextClip') continue
-        const fg = (c.foreground_color != null) ? c.foreground_color : 1
-        const bg = (c.background_color != null) ? c.background_color : 0
-        for (const ev of c.events || []) {
-          // aggressive mode: synthesize all tiles
-          const tileRow = Math.floor((ev.clip_y_offset || 0) / CDG_SCREEN.TILE_HEIGHT)
-          const tileCol = Math.floor((ev.clip_x_offset || 0) / CDG_SCREEN.TILE_WIDTH)
-          const glyphs = textRenderer.renderAt(c.text || '', tileRow, tileCol)
-          // sort glyphs by Y then X to ensure deterministic ordering
-          glyphs.sort((a: any, b: any) => (a.pixelY - b.pixelY) || (a.pixelX - b.pixelX))
-          for (const g of glyphs) {
-            const pixels: number[][] = []
-            for (let r = 0; r < Math.min(12, g.rows.length); r++) {
-              const rowbits = g.rows[r]
-              const rowArr: number[] = []
-              for (let cbit = 0; cbit < 6; cbit++) {
-                const bit = (rowbits >> (5 - cbit)) & 1
-                rowArr.push(bit ? fg : bg)
-              }
-              pixels.push(rowArr)
-            }
-            try {
-              const vv = new VRAM()
-              const tileCol = Math.floor(g.pixelX / CDG_SCREEN.TILE_WIDTH)
-              const tileRow = Math.floor(g.pixelY / CDG_SCREEN.TILE_HEIGHT)
-              const pkts = writeFontBlock(vv, tileCol, tileRow, pixels)
-              for (const p of pkts) fontPkts.push(p)
-            } catch (e) {
-              // ignore per-block failures to keep synthesizer robust
-            }
-          }
-        }
-      }
-    }
-  } catch (e) {
-    // ignore render failures
-  }
 
   const packets: Uint8Array[] = [...palettePkts, ...borderPkts, ...memoryPkts, ...fontPkts]
 

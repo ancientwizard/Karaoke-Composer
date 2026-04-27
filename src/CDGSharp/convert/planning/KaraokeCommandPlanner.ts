@@ -237,7 +237,7 @@ export class KaraokeCommandPlanner {
     const isPhraseEndByBoundary =
       nextIndex !== null &&
       (nextIndex.pageIndex !== index.pageIndex || nextIndex.lineIndex !== index.lineIndex);
-    const isPhraseEndByPunctuation = /[\.,;:!?]$/.test(word.text);
+    const isPhraseEndByPunctuation = /[.,;:!?]$/.test(word.text);
 
     const shortenDuration = (availableDurationMs: number): number => {
       const minDurationMs = 180;
@@ -348,11 +348,11 @@ export class KaraokeCommandPlanner {
 
       const consumedWithNext = [...consumed, nextWord];
       if (lineFits(consumedWithNext)) {
-        const nextBreakPos = /[\.,;:!?]$/.test(nextWord.text)
+        const nextBreakPos = /[.,;:!?]$/.test(nextWord.text)
           ? consumedWithNext.length
           : punctuationBreakPos;
 
-        if (settings.allBreaks && /[\.,;:!?]$/.test(nextWord.text)) {
+        if (settings.allBreaks && /[.,;:!?]$/.test(nextWord.text)) {
           return { line: consumedWithNext, leftover: tail };
         }
 

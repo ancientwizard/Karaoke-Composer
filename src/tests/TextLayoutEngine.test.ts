@@ -87,15 +87,15 @@ describe('TextLayoutEngine', () =>
         spacings.push(layout.charPositions[i].x - layout.charPositions[i - 1].x)
       }
 
-      // With variable-width glyphs (3-5px) + 1px gap, spacing varies by glyph
+      // With variable-width glyphs from the rasterizer, spacing varies per character
       const avgSpacing = spacings.reduce((a, b) => a + b, 0) / spacings.length
       const maxDeviation = Math.max(...spacings.map(s => Math.abs(s - avgSpacing)))
 
-      // Expect spacing to be in range 4-6px (min 3px glyph + 3px gap to max 5px + 3px gap)
-      expect(avgSpacing).toBeGreaterThan(3)
-      expect(avgSpacing).toBeLessThan(9)
-      // Deviation should be modest but not zero due to variable widths (now up to 3.33 with corrected widths)
-      expect(maxDeviation).toBeLessThan(3.5)
+      // Rasterizer advance widths for DejaVu Sans 18px are typically 8-14px
+      expect(avgSpacing).toBeGreaterThan(5)
+      expect(avgSpacing).toBeLessThan(20)
+      // Variable-width fonts have natural spacing deviation
+      expect(maxDeviation).toBeLessThan(10)
     })
 
     it('should maintain spacing across multiple lines', () =>

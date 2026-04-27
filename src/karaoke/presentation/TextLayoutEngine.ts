@@ -18,7 +18,6 @@
 
 import type { Position  } from '@/karaoke/presentation/Command'
 import      { TextAlign } from '@/karaoke/presentation/Command'
-import      { CDGFont   } from '@/karaoke/renderers/cdg/CDGFont'
 import { BrowserTextRasterizerAdapter } from '@/CDGSharp/convert/rendering/BrowserTextRasterizerAdapter'
 
 // CDG screen pixel width (288) used for line-fit calculations
@@ -53,9 +52,7 @@ export interface LayoutResult {
 export class TextLayoutEngine
 {
   private config: LayoutConfig
-  private font: CDGFont
   private rasterizer: BrowserTextRasterizerAdapter
-  private charGap = 2 // pixels between characters — used only in calculateCharacterPositions (CDGFont path)
   private readonly horizontalMargin = 12
   private legacyVerticalPositions: number[] = [500, 640, 360, 780, 220]
   private legacyVerticalIndex: number = 0
@@ -63,7 +60,6 @@ export class TextLayoutEngine
   constructor(config: LayoutConfig)
   {
     this.config = config
-    this.font = new CDGFont()
     this.rasterizer = new BrowserTextRasterizerAdapter()
   }
 
@@ -398,21 +394,19 @@ export class TextLayoutEngine
     const basePy = (basePosition.y / this.config.screenHeight) * pixelHeight
 
     const linePixelHeight = 12 // Line height
+    const fontName  = this.config.fontName  ?? 'DejaVu Sans'
+    const fontStyle = this.config.fontStyle ?? 'regular'
 
     for (let lineIdx = 0; lineIdx < lines.length; lineIdx++)
     {
       const line = lines[lineIdx]
       
-      // Calculate line width based on actual glyph widths + inter-character spacing
+      // Calculate line width using rasterizer advance widths
       let linePixelWidth = 0
 
       for (let i = 0; i < line.length; i++)
       {
-        const glyph = this.font.getGlyph(line[i])
-        linePixelWidth += glyph.width
-        // Add inter-character spacing (except after last character)
-        if (i < line.length - 1)
-          linePixelWidth += this.charGap
+        linePixelWidth += this.rasterizer.measureText(line[i], fontName, this.config.fontSize, fontStyle)
       }
 
       // Calculate starting X for this line based on alignment
@@ -434,7 +428,7 @@ export class TextLayoutEngine
       const y = basePy + (lineIdx * linePixelHeight)
       const clampedY = Math.max(10, Math.min(y, pixelHeight - 20))
 
-      // Add position for each character using actual glyph widths
+      // Add position for each character using rasterizer advance widths
       let currentX = startX
       for (let charIdx = 0; charIdx < line.length; charIdx++)
       {
@@ -443,9 +437,7 @@ export class TextLayoutEngine
           y: clampedY
         })
         
-        // Move X by actual glyph width + inter-character spacing for next character
-        const glyph = this.font.getGlyph(line[charIdx])
-        currentX += glyph.width + this.charGap
+        currentX += this.rasterizer.measureText(line[charIdx], fontName, this.config.fontSize, fontStyle)
       }
     }
 
@@ -484,15 +476,6 @@ export class TextLayoutEngine
 
 /**
  * Default layout configuration for standard karaoke display
- *
- * NOTE: Font size is currently "conceptual" - glyphs render at fixed 12 pixels tall.
- * The fontSize parameter here affects character spacing and line height calculations
- * but NOT the actual rendered glyph size. To increase displayed text size:
- * - Reduce maxCharsPerLine (forces larger gaps, appears bigger)
- * - Increase fontSize (affects spacing only)
- * 
- * To implement true scalable fonts, CDGFont would need to support multiple
- * glyph sizes or implement pixel-based scaling in the renderer.
  */
 export const DEFAULT_LAYOUT_CONFIG: LayoutConfig = {
   screenWidth: 1000,
